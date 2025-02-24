@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.14)
 
-project(DREAMPlace LANGUAGES CXX)
+project(placer LANGUAGES CXX)
 set(CMAKE_VERBOSE_MAKEFILE ON)
 
 if (CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
@@ -65,55 +65,20 @@ find_package(Cairo)
 message(STATUS "Cairo: ${CAIRO_INCLUDE_DIRS}")
 message(STATUS "Cairo: ${CAIRO_LIBRARIES}")
 
-get_filename_component(OPS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dreamplace/ops ABSOLUTE)
-get_filename_component(UTILITY_LIBRARY_DIRS ${CMAKE_CURRENT_BINARY_DIR}/dreamplace/ops/utility ABSOLUTE)
+get_filename_component(OPS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/ops ABSOLUTE)
+get_filename_component(UTILITY_LIBRARY_DIRS ${CMAKE_CURRENT_BINARY_DIR}/src/ops/utility ABSOLUTE)
 message(STATUS "OPS_DIR ${OPS_DIR}")
 message(STATUS "UTILITY_LIBRARY_DIRS ${UTILITY_LIBRARY_DIRS}")
 
 # thirdparty libraries 
-# flute for steiner tree generation 
-find_path(FLUTE_INCLUDE_DIRS flute.hpp PATHS ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/*)
-string(REPLACE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR} FLUTE_LINK_DIRS ${FLUTE_INCLUDE_DIRS})
-message(STATUS "FLUTE_INCLUDE_DIRS ${FLUTE_INCLUDE_DIRS}")
-message(STATUS "FLUTE_LINK_DIRS ${FLUTE_LINK_DIRS}")
-include_directories(${FLUTE_INCLUDE_DIRS})
 
-# Limbo for parsers 
-set(LIMBO_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/Limbo)
-message(STATUS "LIMBO_SOURCE_DIR ${LIMBO_SOURCE_DIR}")
-set(LIMBO_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/thirdparty/Limbo)
-message(STATUS "LIMBO_BINARY_DIR ${LIMBO_BINARY_DIR}")
-if(CUDA_FOUND)
-  if (${CUDA_VERSION_MAJOR} VERSION_GREATER_EQUAL "11")
-    set(CUB_DIR ${CUDA_INCLUDE_DIRS})
-  else()
-    set(CUB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/cub)
-  endif()
-endif()
-message(STATUS "CUB_DIR ${CUB_DIR}")
+set(DREAMPLACE_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/DREAMPlace)
+message(STATUS "DREAMPLACE_SOURCE_DIR ${DREAMPLACE_SOURCE_DIR}")
+include_directories(${DREAMPLACE_SOURCE_DIR})
 
-# munkres-cpp for Hungarian algorithm 
-set(MUNKRES_CPP_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/munkres-cpp/src)
-set(MUNKRES_CPP_LINK_DIRS ${CMAKE_CURRENT_BINARY_DIR}/thirdparty/munkres-cpp)
-message(STATUS "MUNKRES_CPP_INCLUDE_DIRS ${MUNKRES_CPP_INCLUDE_DIRS}")
-message(STATUS "MUNKRES_CPP_LINK_DIRS ${MUNKRES_CPP_LINK_DIRS}")
-
-# lemon for network flow algorithms 
-find_path(LEMON_SOURCE_DIR lemon PATHS ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/Limbo/limbo/thirdparty/* 
-	NO_DEFAULT_PATH
-	)
-set(LEMON_INCLUDE_DIRS "${LEMON_SOURCE_DIR}")
-string(REPLACE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR} LEMON_BINARY_DIR ${LEMON_SOURCE_DIR})
-list(APPEND LEMON_INCLUDE_DIRS "${LEMON_BINARY_DIR}")
-set(LEMON_LINK_DIRS ${LEMON_BINARY_DIR}/lemon)
-message(STATUS "LEMON_INCLUDE_DIRS ${LEMON_INCLUDE_DIRS}")
-message(STATUS "LEMON_LINK_DIRS ${LEMON_LINK_DIRS}")
-
-set(OPENTIMER_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/OpenTimer)
-message(STATUS "OPENTIMER_SOURCE_DIR ${OPENTIMER_SOURCE_DIR}")
-set(OPENTIMER_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/thirdparty/OpenTimer)
-message(STATUS "OPENTIMER_BINARY_DIR ${OPENTIMER_BINARY_DIR}")
-include_directories(${OPENTIMER_SOURCE_DIR})
+set(3DPLACER_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/3d-placer)
+message(STATUS "3DPLACER_SOURCE_DIR ${3DPLACER_SOURCE_DIR}")
+include_directories(${3DPLACER_SOURCE_DIR})
 
 if (CUDA_FOUND)
   if (NOT CMAKE_CUDA_ARCHITECTURES)
@@ -134,12 +99,12 @@ if (CUDA_FOUND)
   list(APPEND CUDA_NVCC_FLAGS ${CUDA_ARCH_FLAGS} --compiler-options;-fPIC)
 endif(CUDA_FOUND)
 
-configure_file(${CMAKE_CURRENT_SOURCE_DIR}/dreamplace/configure.py.in ${CMAKE_CURRENT_BINARY_DIR}/dreamplace/configure.py)
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/src/configure.py.in ${CMAKE_CURRENT_BINARY_DIR}/src/configure.py)
 
 add_subdirectory(thirdparty)
-add_subdirectory(dreamplace)
+add_subdirectory(src)
 add_subdirectory(unittest)
 add_subdirectory(benchmarks)
 add_subdirectory(test)
 
-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/dreamplace/configure.py DESTINATION dreamplace)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/src/configure.py DESTINATION src)
