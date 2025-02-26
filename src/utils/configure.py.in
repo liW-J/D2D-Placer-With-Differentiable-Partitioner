@@ -22,5 +22,14 @@ compile_configurations = {
         "CAIRO_FOUND" : "${CAIRO_FOUND}", 
         "CAIRO_INCLUDE_DIRS" : "${CAIRO_INCLUDE_DIRS}", 
         "CAIRO_LIBRARIES" : "${CAIRO_LIBRARIES}", 
-        }
+        "PLACER_CPP_DIR" : "${PLACER_CPP_DIR}", 
+        "PLACER_CPP_INCLUDE_DIR" : "${PLACER_CPP_INCLUDE_DIR}", 
+        "PLACER_UNITTES_DIR" : "${PLACER_UNITTES_DIR}", 
+        "PLACER_BENCHMARKS_DIR" : "${PLACER_BENCHMARKS_DIR}", 
+        "PLACER_TEST_DIR" : "${PLACER_TEST_DIR}", 
+        "PLACER_THIRDPARTY_DIR" : "${PLACER_THIRDPARTY_DIR}", 
+        "PLACER_RESULT_DIR" : "${PLACER_RESULT_DIR}", 
+        "PLACER_SOURCE_DIR" : "${PLACER_SOURCE_DIR}", 
+        "PLACER_BUILD_DIR" : "${PLACER_BUILD_DIR}",      
+        }               
 
