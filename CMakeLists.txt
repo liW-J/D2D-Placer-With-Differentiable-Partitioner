@@ -44,7 +44,7 @@ set(CUDA_PROPAGATE_HOST_FLAGS ON)
 # it will change the RPATH when installing 
 set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 
-include(cmake/TorchExtension.cmake)
+include(config/cmake/TorchExtension.cmake)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -59,11 +59,6 @@ find_package(ZLIB REQUIRED)
 set(Boost_NO_BOOST_CMAKE TRUE)
 find_package(Boost 1.55.0 REQUIRED)
 message(STATUS "Boost_INCLUDE_DIRS = ${Boost_INCLUDE_DIRS}")
-
-#find_package(CUDA 9.0)
-find_package(Cairo)
-message(STATUS "Cairo: ${CAIRO_INCLUDE_DIRS}")
-message(STATUS "Cairo: ${CAIRO_LIBRARIES}")
 
 get_filename_component(OPS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/ops ABSOLUTE)
 get_filename_component(UTILITY_LIBRARY_DIRS ${CMAKE_CURRENT_BINARY_DIR}/src/ops/utility ABSOLUTE)

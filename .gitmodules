@@ -1,6 +1,6 @@
 [submodule "thirdparty/DREAMPlace"]
 	path = thirdparty/DREAMPlace
-	url = git@github.com:limbo018/DREAMPlace.git
+	url = https://github.com/limbo018/DREAMPlace.git
 [submodule "thirdparty/3d-placer"]
 	path = thirdparty/3d-placer
-	url = git@github.com:1z2s3e4v/3d-placer.git
+	url = https://github.com/1z2s3e4v/3d-placer.git
