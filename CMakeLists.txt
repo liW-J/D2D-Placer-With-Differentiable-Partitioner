@@ -21,7 +21,6 @@ set(PLACER_BENCHMARKS_DIR "${CMAKE_INSTALL_PREFIX}/benchmarks")
 set(PLACER_CPP_DIR "${CMAKE_INSTALL_PREFIX}/src/ops")
 set(PLACER_CPP_INCLUDE_DIR "${CMAKE_INSTALL_PREFIX}/src/ops/include")
 
-
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Release" CACHE STRING
         "Choose the type of build, options are: Debug Release."
@@ -116,14 +115,14 @@ add_subdirectory(test)
 
 # configure files
 configure_file(
-  ${CMAKE_CURRENT_SOURCE_DIR}/src/utils/configure.py.in 
-  ${PROJECT_SOURCE_DIR}/configure.py
+  ${CMAKE_CURRENT_SOURCE_DIR}/config/configure.py.in 
+  ${PLACER_SOURCE_DIR}/configure.py
 )
 
 configure_file(
-  ${CMAKE_CURRENT_SOURCE_DIR}/src/utils/configure.h.in
+  ${CMAKE_CURRENT_SOURCE_DIR}/config/configure.h.in
   ${PLACER_CPP_INCLUDE_DIR}/configure.h
 )
 
-install(FILES ${PROJECT_SOURCE_DIR}/configure.py DESTINATION src)
+install(FILES ${PLACER_SOURCE_DIR}/configure.py DESTINATION src)
 install(FILES ${PLACER_CPP_INCLUDE_DIR}/configure.h DESTINATION src/ops/include)
