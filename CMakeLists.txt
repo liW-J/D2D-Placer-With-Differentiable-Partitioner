@@ -21,6 +21,8 @@ set(PLACER_BENCHMARKS_DIR "${CMAKE_INSTALL_PREFIX}/benchmarks")
 set(PLACER_CPP_DIR "${CMAKE_INSTALL_PREFIX}/src/ops")
 set(PLACER_CPP_INCLUDE_DIR "${CMAKE_INSTALL_PREFIX}/src/ops/include")
 
+message(STATUS "PLACER_SOURCE_DIR ${PLACER_SOURCE_DIR}")
+
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Release" CACHE STRING
         "Choose the type of build, options are: Debug Release."
@@ -57,7 +59,7 @@ set(CUDA_PROPAGATE_HOST_FLAGS ON)
 # it will change the RPATH when installing 
 set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 
-include(config/cmake/TorchExtension.cmake)
+# include(config/cmake/TorchExtension.cmake)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -69,17 +71,14 @@ set_property(GLOBAL PROPERTY POSITION_INDEPENDENT_CODE TRUE)
 find_package(OpenMP REQUIRED)
 #find_program(PYTHON "python" REQUIRED)
 find_package(ZLIB REQUIRED)
-set(Boost_NO_BOOST_CMAKE TRUE)
-find_package(Boost 1.55.0 REQUIRED)
 message(STATUS "Boost_INCLUDE_DIRS = ${Boost_INCLUDE_DIRS}")
 
 get_filename_component(OPS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/ops ABSOLUTE)
-get_filename_component(UTILITY_LIBRARY_DIRS ${CMAKE_CURRENT_BINARY_DIR}/src/ops/utility ABSOLUTE)
+get_filename_component(UTILITY_LIBRARY_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/src/ops/utility ABSOLUTE)
 message(STATUS "OPS_DIR ${OPS_DIR}")
 message(STATUS "UTILITY_LIBRARY_DIRS ${UTILITY_LIBRARY_DIRS}")
 
 # thirdparty libraries 
-
 set(DREAMPLACE_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/DREAMPlace)
 message(STATUS "DREAMPLACE_SOURCE_DIR ${DREAMPLACE_SOURCE_DIR}")
 include_directories(${DREAMPLACE_SOURCE_DIR})
@@ -107,22 +106,23 @@ if (CUDA_FOUND)
   list(APPEND CUDA_NVCC_FLAGS ${CUDA_ARCH_FLAGS} --compiler-options;-fPIC)
 endif(CUDA_FOUND)
 
-add_subdirectory(thirdparty)
-add_subdirectory(src)
-add_subdirectory(unittest)
-add_subdirectory(benchmarks)
-add_subdirectory(test)
-
 # configure files
 configure_file(
   ${CMAKE_CURRENT_SOURCE_DIR}/config/configure.py.in 
   ${PLACER_SOURCE_DIR}/configure.py
 )
+message(STATUS "PLACER_SOURCE_DIR ${PLACER_SOURCE_DIR}")
 
 configure_file(
   ${CMAKE_CURRENT_SOURCE_DIR}/config/configure.h.in
   ${PLACER_CPP_INCLUDE_DIR}/configure.h
 )
 
-install(FILES ${PLACER_SOURCE_DIR}/configure.py DESTINATION src)
-install(FILES ${PLACER_CPP_INCLUDE_DIR}/configure.h DESTINATION src/ops/include)
+# install(FILES ${PLACER_SOURCE_DIR}/configure.py DESTINATION src)
+# install(FILES ${PLACER_CPP_INCLUDE_DIR}/configure.h DESTINATION src/ops/include)
+
+add_subdirectory(thirdparty)
+add_subdirectory(src)
+add_subdirectory(unittest)
+add_subdirectory(benchmarks)
+add_subdirectory(test)

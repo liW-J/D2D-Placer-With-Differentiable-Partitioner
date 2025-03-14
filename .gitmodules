@@ -3,4 +3,4 @@
 	url = https://github.com/limbo018/DREAMPlace.git
 [submodule "thirdparty/3d-placer"]
 	path = thirdparty/3d-placer
-	url = git@github.com:liW-J/3d-placer.git
+	url = https://github.com/liW-J/3d-placer.git
