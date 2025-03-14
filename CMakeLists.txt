@@ -118,9 +118,6 @@ configure_file(
   ${PLACER_CPP_INCLUDE_DIR}/configure.h
 )
 
-# install(FILES ${PLACER_SOURCE_DIR}/configure.py DESTINATION src)
-# install(FILES ${PLACER_CPP_INCLUDE_DIR}/configure.h DESTINATION src/ops/include)
-
 add_subdirectory(thirdparty)
 add_subdirectory(src)
 add_subdirectory(unittest)
