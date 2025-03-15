@@ -5,6 +5,10 @@
 # @brief  Record all configurations including compilation 
 #
 
+import sys
+
+sys.path.append("${CMAKE_INSTALL_PREFIX}/thirdparty/DREAMPlace")
+
 compile_configurations = {
         "CMAKE_CXX_COMPILER" : "${CMAKE_CXX_COMPILER}", 
         "CMAKE_CC_COMPILER" : "${CMAKE_CC_COMPILER}", 
@@ -30,6 +34,7 @@ compile_configurations = {
         "PLACER_THIRDPARTY_DIR" : "${PLACER_THIRDPARTY_DIR}", 
         "PLACER_RESULT_DIR" : "${PLACER_RESULT_DIR}", 
         "PLACER_SOURCE_DIR" : "${PLACER_SOURCE_DIR}", 
+        "PLACER_INSTALL_DIR" : "${PLACER_INSTALL_DIR}",
         "PLACER_BUILD_DIR" : "${PLACER_BUILD_DIR}",      
         }               
 

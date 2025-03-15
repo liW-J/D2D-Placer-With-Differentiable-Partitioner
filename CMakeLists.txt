@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.14)
 
 project(placer LANGUAGES CXX)
 set(CMAKE_VERBOSE_MAKEFILE ON)
-
+add_subdirectory(thirdparty)
 
 if (CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
     set (CMAKE_INSTALL_PREFIX "${CMAKE_CURRENT_SOURCE_DIR}/install" CACHE PATH "Prefix prepended to install directories" FORCE )
@@ -10,8 +10,9 @@ endif()
 message(STATUS "CMAKE_INSTALL_PREFIX: ${CMAKE_INSTALL_PREFIX}")
 
 # Project directories
-set(PLACER_SOURCE_DIR "${CMAKE_INSTALL_PREFIX}/src")
-set(PLACER_BUILD_DIR "${CMAKE_INSTALL_PREFIX}/build")
+set(PLACER_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src")
+set(PLACER_BINARY_DIR "${CMAKE_CURRENT_SOURCE_DIR}/build")
+set(PLACER_INSTALL_DIR "${CMAKE_INSTALL_PREFIX}/src")
 set(PLACER_CONFIG_DIR "${CMAKE_INSTALL_PREFIX}/config")
 set(PLACER_RESULT_DIR "${CMAKE_INSTALL_PREFIX}/result")
 set(PLACER_TEST_DIR "${CMAKE_INSTALL_PREFIX}/test")
@@ -58,11 +59,9 @@ set(CUDA_PROPAGATE_HOST_FLAGS ON)
 # required for executable to run at the install directory 
 # it will change the RPATH when installing 
 set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
-
-# include(config/cmake/TorchExtension.cmake)
-
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+include(config/cmake/TorchExtension.cmake)
 
 # without this, clang will complain about linking 
 #set(CMAKE_CXX_VISIBILITY_PRESET hidden)
@@ -82,10 +81,14 @@ message(STATUS "UTILITY_LIBRARY_DIRS ${UTILITY_LIBRARY_DIRS}")
 set(DREAMPLACE_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/DREAMPlace)
 message(STATUS "DREAMPLACE_SOURCE_DIR ${DREAMPLACE_SOURCE_DIR}")
 include_directories(${DREAMPLACE_SOURCE_DIR})
+set(DREAMPLACE_INCLUDE_DIRS ${DREAMPLACE_SOURCE_DIR}/dreamplace/ops)
+set(DREAMPLACE_BINARY_DIR ${PLACER_BINARY_DIR}/thirdparty/DREAMPlace)
 
 set(3DPLACER_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/3d-placer)
 message(STATUS "3DPLACER_SOURCE_DIR ${3DPLACER_SOURCE_DIR}")
 include_directories(${3DPLACER_SOURCE_DIR})
+set(3DPLACER_INCLUDE_DIRS ${3DPLACER_SOURCE_DIR}/src)
+set(3DPLACER_LIBRARIES ${PLACER_BINARY_DIR}/thirdparty/3d-placer/src/lib3d_placer_lib.a)
 
 if (CUDA_FOUND)
   if (NOT CMAKE_CUDA_ARCHITECTURES)
@@ -109,16 +112,61 @@ endif(CUDA_FOUND)
 # configure files
 configure_file(
   ${CMAKE_CURRENT_SOURCE_DIR}/config/configure.py.in 
-  ${PLACER_SOURCE_DIR}/configure.py
+  ${PLACER_INSTALL_DIR}/configure.py
 )
-message(STATUS "PLACER_SOURCE_DIR ${PLACER_SOURCE_DIR}")
 
 configure_file(
   ${CMAKE_CURRENT_SOURCE_DIR}/config/configure.h.in
   ${PLACER_CPP_INCLUDE_DIR}/configure.h
 )
 
-add_subdirectory(thirdparty)
+
+# thirdparty libraries for dreamplace
+
+# flute for steiner tree generation 
+find_path(FLUTE_INCLUDE_DIRS flute.hpp PATHS ${DREAMPLACE_SOURCE_DIR}/thirdparty/*)
+string(REPLACE ${DREAMPLACE_SOURCE_DIR} ${DREAMPLACE_BINARY_DIR} FLUTE_LINK_DIRS ${FLUTE_INCLUDE_DIRS})
+message(STATUS "FLUTE_INCLUDE_DIRS ${FLUTE_INCLUDE_DIRS}")
+message(STATUS "FLUTE_LINK_DIRS ${FLUTE_LINK_DIRS}")
+include_directories(${FLUTE_INCLUDE_DIRS})
+
+# Limbo for parsers 
+set(LIMBO_SOURCE_DIR ${DREAMPLACE_SOURCE_DIR}/thirdparty/Limbo)
+message(STATUS "LIMBO_SOURCE_DIR ${LIMBO_SOURCE_DIR}")
+set(LIMBO_BINARY_DIR ${DREAMPLACE_BINARY_DIR}/thirdparty/Limbo)
+message(STATUS "LIMBO_BINARY_DIR ${LIMBO_BINARY_DIR}")
+if(CUDA_FOUND)
+  if (${CUDA_VERSION_MAJOR} VERSION_GREATER_EQUAL "11")
+    set(CUB_DIR ${CUDA_INCLUDE_DIRS})
+  else()
+    set(CUB_DIR ${DREAMPLACE_SOURCE_DIR}/thirdparty/cub)
+  endif()
+endif()
+message(STATUS "CUB_DIR ${CUB_DIR}")
+
+# munkres-cpp for Hungarian algorithm 
+set(MUNKRES_CPP_INCLUDE_DIRS ${DREAMPLACE_SOURCE_DIR}/thirdparty/munkres-cpp/src)
+set(MUNKRES_CPP_LINK_DIRS ${DREAMPLACE_BINARY_DIR}/thirdparty/munkres-cpp)
+message(STATUS "MUNKRES_CPP_INCLUDE_DIRS ${MUNKRES_CPP_INCLUDE_DIRS}")
+message(STATUS "MUNKRES_CPP_LINK_DIRS ${MUNKRES_CPP_LINK_DIRS}")
+
+# lemon for network flow algorithms 
+find_path(LEMON_SOURCE_DIR lemon PATHS ${DREAMPLACE_SOURCE_DIR}/thirdparty/Limbo/limbo/thirdparty/* 
+	NO_DEFAULT_PATH
+	)
+set(LEMON_INCLUDE_DIRS "${LEMON_SOURCE_DIR}")
+string(REPLACE ${DREAMPLACE_SOURCE_DIR} ${DREAMPLACE_BINARY_DIR} LEMON_BINARY_DIR ${LEMON_SOURCE_DIR})
+list(APPEND LEMON_INCLUDE_DIRS "${LEMON_BINARY_DIR}")
+set(LEMON_LINK_DIRS ${LEMON_BINARY_DIR}/lemon)
+message(STATUS "LEMON_INCLUDE_DIRS ${LEMON_INCLUDE_DIRS}")
+message(STATUS "LEMON_LINK_DIRS ${LEMON_LINK_DIRS}")
+
+set(OPENTIMER_SOURCE_DIR ${DREAMPLACE_SOURCE_DIR}/thirdparty/OpenTimer)
+message(STATUS "OPENTIMER_SOURCE_DIR ${OPENTIMER_SOURCE_DIR}")
+set(OPENTIMER_BINARY_DIR ${DREAMPLACE_BINARY_DIR}/thirdparty/OpenTimer)
+message(STATUS "OPENTIMER_BINARY_DIR ${OPENTIMER_BINARY_DIR}")
+include_directories(${OPENTIMER_SOURCE_DIR})
+
 add_subdirectory(src)
 add_subdirectory(unittest)
 add_subdirectory(benchmarks)
