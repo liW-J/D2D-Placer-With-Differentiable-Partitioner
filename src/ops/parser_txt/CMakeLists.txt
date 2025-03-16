@@ -4,21 +4,19 @@ set(TARGET_NAME ${OP_NAME})
 
 set(INCLUDE_DIRS 
   ${CMAKE_CURRENT_SOURCE_DIR}/..
-  ${DREAMPLACE_INCLUDE_DIRS}
+  ${DREAMPLACE_OPS_DIR}
   ${3DPLACER_INCLUDE_DIRS}
   ${LIMBO_SOURCE_DIR}
-  ${CUB_DIR}
+  ${Boost_INCLUDE_DIRS}
+  ${ZLIB_INCLUDE_DIRS}
   )
 
-message(STATUS "LIMBO_BINARY_DIR ${LIMBO_BINARY_DIR}")
-
 set(LINK_LIBS 
-  ${3DPLACER_LIBRARIES}
+  utility_cxx
+  place_io_cxx
+  3d_placer_lib
   OpenMP::OpenMP_CXX
   ${ZLIB_LIBRARIES}
-  ${LIMBO_BINARY_DIR}/limbo/parsers/gdsii/stream/libgdsparser.a
-  ${LIMBO_BINARY_DIR}/limbo/thirdparty/gzstream/libgzstream.a
-  # ${DREAMPLACE_BINARY_DIR}/dreamplace/ops/utility/libutility_cxx.a
   )
 
 add_pytorch_extension(${TARGET_NAME}_cpp 
@@ -28,7 +26,8 @@ add_pytorch_extension(${TARGET_NAME}_cpp
 
 install(TARGETS 
   ${TARGET_NAME}_cpp
-  DESTINATION src/ops/${OP_NAME})
+  DESTINATION src/ops/${OP_NAME}
+  )
 
 # if (TORCH_ENABLE_CUDA)
 # add_pytorch_extension(${TARGET_NAME}_cuda 
@@ -39,7 +38,7 @@ install(TARGETS
 #   EXTRA_DEFINITIONS DRAWPLACE=${DRAWPLACE})
 # install(TARGETS 
 #   ${TARGET_NAME}_cuda 
-#   DESTINATION dreamplace/ops/${OP_NAME})
+#   DESTINATION thirdparty/DREAMPlace/dreamplace/ops/${OP_NAME})
 # endif(TORCH_ENABLE_CUDA)
 
 file(GLOB INSTALL_SRCS ${CMAKE_CURRENT_SOURCE_DIR}/*.py)

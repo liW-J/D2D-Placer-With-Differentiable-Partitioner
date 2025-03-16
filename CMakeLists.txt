@@ -2,7 +2,6 @@ cmake_minimum_required(VERSION 3.14)
 
 project(placer LANGUAGES CXX)
 set(CMAKE_VERBOSE_MAKEFILE ON)
-add_subdirectory(thirdparty)
 
 if (CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
     set (CMAKE_INSTALL_PREFIX "${CMAKE_CURRENT_SOURCE_DIR}/install" CACHE PATH "Prefix prepended to install directories" FORCE )
@@ -72,17 +71,17 @@ find_package(OpenMP REQUIRED)
 find_package(ZLIB REQUIRED)
 message(STATUS "Boost_INCLUDE_DIRS = ${Boost_INCLUDE_DIRS}")
 
-get_filename_component(OPS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/ops ABSOLUTE)
-get_filename_component(UTILITY_LIBRARY_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/src/ops/utility ABSOLUTE)
-message(STATUS "OPS_DIR ${OPS_DIR}")
-message(STATUS "UTILITY_LIBRARY_DIRS ${UTILITY_LIBRARY_DIRS}")
-
 # thirdparty libraries 
 set(DREAMPLACE_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/DREAMPlace)
 message(STATUS "DREAMPLACE_SOURCE_DIR ${DREAMPLACE_SOURCE_DIR}")
 include_directories(${DREAMPLACE_SOURCE_DIR})
-set(DREAMPLACE_INCLUDE_DIRS ${DREAMPLACE_SOURCE_DIR}/dreamplace/ops)
+set(DREAMPLACE_INCLUDE_DIRS ${DREAMPLACE_SOURCE_DIR}/dreamplace)
 set(DREAMPLACE_BINARY_DIR ${PLACER_BINARY_DIR}/thirdparty/DREAMPlace)
+
+get_filename_component(DREAMPLACE_OPS_DIR ${DREAMPLACE_SOURCE_DIR}/dreamplace/ops ABSOLUTE)
+get_filename_component(DREAMPLACE_UTILITY_LIBRARY_DIRS ${DREAMPLACE_SOURCE_DIR}/dreamplace/ops/utility ABSOLUTE)
+message(STATUS "DREAMPLACE_OPS_DIR ${DREAMPLACE_OPS_DIR}")
+message(STATUS "DREAMPLACE_UTILITY_LIBRARY_DIRS ${DREAMPLACE_UTILITY_LIBRARY_DIRS}")
 
 set(3DPLACER_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/3d-placer)
 message(STATUS "3DPLACER_SOURCE_DIR ${3DPLACER_SOURCE_DIR}")
@@ -108,17 +107,6 @@ if (CUDA_FOUND)
   message(STATUS "CUDA_ARCH_FLAGS: ${CUDA_ARCH_FLAGS}")
   list(APPEND CUDA_NVCC_FLAGS ${CUDA_ARCH_FLAGS} --compiler-options;-fPIC)
 endif(CUDA_FOUND)
-
-# configure files
-configure_file(
-  ${CMAKE_CURRENT_SOURCE_DIR}/config/configure.py.in 
-  ${PLACER_INSTALL_DIR}/configure.py
-)
-
-configure_file(
-  ${CMAKE_CURRENT_SOURCE_DIR}/config/configure.h.in
-  ${PLACER_CPP_INCLUDE_DIR}/configure.h
-)
 
 
 # thirdparty libraries for dreamplace
@@ -167,7 +155,20 @@ set(OPENTIMER_BINARY_DIR ${DREAMPLACE_BINARY_DIR}/thirdparty/OpenTimer)
 message(STATUS "OPENTIMER_BINARY_DIR ${OPENTIMER_BINARY_DIR}")
 include_directories(${OPENTIMER_SOURCE_DIR})
 
+add_subdirectory(thirdparty)
+set (CMAKE_INSTALL_PREFIX "${CMAKE_CURRENT_SOURCE_DIR}/install" CACHE PATH "Prefix prepended to install directories" FORCE )
 add_subdirectory(src)
 add_subdirectory(unittest)
 add_subdirectory(benchmarks)
 add_subdirectory(test)
+
+# configure files
+configure_file(
+  ${CMAKE_CURRENT_SOURCE_DIR}/config/configure.py.in 
+  ${PLACER_INSTALL_DIR}/configure.py
+)
+
+configure_file(
+  ${CMAKE_CURRENT_SOURCE_DIR}/config/configure.h.in
+  ${PLACER_CPP_INCLUDE_DIR}/configure.h
+)

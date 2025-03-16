@@ -2,26 +2,36 @@
  * @Author: JeanneWillis hi@jeannewillis.cn
  * @Date: 2025-03-15 14:41:38
  * @LastEditors: JeanneWillis hi@jeannewillis.cn
- * @LastEditTime: 2025-03-15 20:49:07
+ * @LastEditTime: 2025-03-16 20:21:48
  * @FilePath: /D2D-placer/src/ops/read_txt/src/read_txt.cpp
  * @Description: 
  */
 
-
-// dreamplacer database dependency
-#include "utility/src/torch.h"
-#include "utility/src/utils.h"
-#include "utility/src/detailed_place_db.h"
-#include "utility/src/make_placedb.h"
-
+// dreamplace database dependency
+#include "dreamplace/ops/place_io/src/PyPlaceDB.h"
+// 3d-placer parser
 #include "parser/parser.h"
 
-int main() {
-    // cout << "Hello, World!" << endl;
-    return 0;
+#include "include/common.h"
+
+PLACER_BEGIN_NAMESPACE
+
+DREAMPLACE_NAMESPACE::PlaceDB parser_txt_forward(string fileName)
+{
+  DREAMPLACE_NAMESPACE::PlaceDB db; 
+
+  // txt2bookself
+  Parser_C parser;
+  if(!parser.read_file(fileName))
+    return db;
+  return db;
 }
 
-// PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
-//   m.def("k_reorder", &DREAMPLACE_NAMESPACE::k_reorder_forward, "K-reorder");
-// }
+PLACER_END_NAMESPACE
+
+PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
+  m.def("parser_txt", &PLACER_NAMESPACE::parser_txt_forward, "parser_txt_forward");
+}
+
+
 
