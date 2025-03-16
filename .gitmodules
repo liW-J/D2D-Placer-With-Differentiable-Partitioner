@@ -1,6 +1,7 @@
-[submodule "thirdparty/DREAMPlace"]
-	path = thirdparty/DREAMPlace
-	url = https://github.com/liW-J/DREAMPlace.git
 [submodule "thirdparty/3d-placer"]
 	path = thirdparty/3d-placer
 	url = https://github.com/liW-J/3d-placer.git
+
+[submodule "thirdparty/DREAMPlace"]
+	path = thirdparty/DREAMPlace
+	url = https://github.com/liW-J/DREAMPlace.git

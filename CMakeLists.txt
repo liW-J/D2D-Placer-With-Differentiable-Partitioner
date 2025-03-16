@@ -156,7 +156,6 @@ message(STATUS "OPENTIMER_BINARY_DIR ${OPENTIMER_BINARY_DIR}")
 include_directories(${OPENTIMER_SOURCE_DIR})
 
 add_subdirectory(thirdparty)
-set (CMAKE_INSTALL_PREFIX "${CMAKE_CURRENT_SOURCE_DIR}/install" CACHE PATH "Prefix prepended to install directories" FORCE )
 add_subdirectory(src)
 add_subdirectory(unittest)
 add_subdirectory(benchmarks)

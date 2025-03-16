@@ -13,7 +13,7 @@ set(INCLUDE_DIRS
 
 set(LINK_LIBS 
   utility_cxx
-  place_io_cxx
+  # place_io_cxx
   3d_placer_lib
   OpenMP::OpenMP_CXX
   ${ZLIB_LIBRARIES}
