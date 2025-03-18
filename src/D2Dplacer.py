@@ -25,6 +25,7 @@ import dreamplace.NonLinearPlace as NonLinearPlace
 from colorama import Fore, Style
 from ops.parser_txt.parser_txt import ParserTxt
 from utils.Power import Power
+import ThermalAwarePlace
 
 def place(params):
     """
@@ -62,7 +63,7 @@ def place(params):
 
     # solve placement
     tt = time.time()
-    placer = NonLinearPlace.NonLinearPlace(params, placedb, timer)
+    placer = ThermalAwarePlace.ThermalAwarePlace(params, placedb, timer)
     logging.info("non-linear placement initialization takes %.2f seconds" %
                  (time.time() - tt))
     metrics = placer(params, placedb)
