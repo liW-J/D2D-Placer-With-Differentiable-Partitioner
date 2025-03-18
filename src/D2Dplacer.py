@@ -24,6 +24,7 @@ import dreamplace.Timer as Timer
 import dreamplace.NonLinearPlace as NonLinearPlace
 from colorama import Fore, Style
 from ops.parser_txt.parser_txt import ParserTxt
+from utils.Power import Power
 
 def place(params):
     """
@@ -39,6 +40,11 @@ def place(params):
     tt = time.time()
     placedb = PlaceDB.PlaceDB()
     placedb(params)
+    
+    # generate power for cells
+    power = Power()
+    power.generate_power_for_cells(placedb)
+    
     breakpoint()
     logging.info("reading database takes %.2f seconds" % (time.time() - tt))
 
@@ -196,7 +202,7 @@ if __name__ == "__main__":
     # parser iccad txt format to aux
     parser_txt = ParserTxt(params.txt_input, "")
     result = parser_txt()
-    params.aux_input = "run_tmp/case1/flattened-2d/flattened-2d.aux"
+    params.aux_input = "run_tmp/case2/flattened-2d/flattened-2d.aux"
 
     # control numpy multithreading
     os.environ["OMP_NUM_THREADS"] = "%d" % (params.num_threads)
