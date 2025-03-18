@@ -46,7 +46,6 @@ def place(params):
     power = Power()
     power.generate_power_for_cells(placedb)
     
-    breakpoint()
     logging.info("reading database takes %.2f seconds" % (time.time() - tt))
 
     # Read timing constraints provided in the benchmarks into out timing analysis

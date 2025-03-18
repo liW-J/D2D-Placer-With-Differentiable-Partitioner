@@ -28,7 +28,7 @@ import EvalMetrics
 import pdb
 import dreamplace.ops.fence_region.fence_region as fence_region
 import dreamplace.NonLinearPlace as NonLinearPlace
-
+import ops.power_map.power_map as power_map
 
 class ThermalAwarePlace(NonLinearPlace.NonLinearPlace):
     """
@@ -44,6 +44,57 @@ class ThermalAwarePlace(NonLinearPlace.NonLinearPlace):
         @param timer the timing analysis engine
         """
         super(ThermalAwarePlace, self).__init__(params, placedb, timer)
+        self.op_collections.power_op = self.build_power_map(params, 
+                                                        placedb, 
+                                                        self.data_collections, 
+                                                        name="%dx%d bins" % (placedb.num_bins_x, placedb.num_bins_y))
+
+    def build_power_map(self, params, placedb, data_collections, name):
+        """
+        @brief 
+        @param params parameters
+        @param placedb placement database
+        @param data_collections a collection of data and variables required for constructing ops
+        @param num_bins_x number of bins in horizontal direction
+        @param num_bins_y number of bins in vertical direction
+        @param name string for printing
+        """
+        num_bins_x = placedb.num_bins_x
+        num_bins_y = placedb.num_bins_y
+        bin_size_x = (placedb.xh - placedb.xl) / num_bins_x
+        bin_size_y = (placedb.yh - placedb.yl) / num_bins_y
+
+        max_num_bins_x = np.ceil(
+            (np.amax(placedb.node_size_x[0:placedb.num_movable_nodes]) +
+             2 * bin_size_x) / bin_size_x)
+        max_num_bins_y = np.ceil(
+            (np.amax(placedb.node_size_y[0:placedb.num_movable_nodes]) +
+             2 * bin_size_y) / bin_size_y)
+        max_num_bins = max(int(max_num_bins_x), int(max_num_bins_y))
+        logging.info(
+            "%s #bins %dx%d, bin sizes %gx%g, max_num_bins = %d, padding = %d"
+            % (name, num_bins_x, num_bins_y,
+               bin_size_x / placedb.row_height,
+               bin_size_y / placedb.row_height, max_num_bins, 0))
+        if num_bins_x < max_num_bins:
+            logging.warning("num_bins_x (%d) < max_num_bins (%d)" %
+                            (num_bins_x, max_num_bins))
+        if num_bins_y < max_num_bins:
+            logging.warning("num_bins_y (%d) < max_num_bins (%d)" %
+                            (num_bins_y, max_num_bins))
+
+        range_list = [[0, placedb.num_movable_nodes], [data_collections.node_size_x.numel(), data_collections.node_size_x.numel()]]
+        return power_map.PowerMap(
+            node_size_x=data_collections.node_size_x,
+            node_size_y=data_collections.node_size_y,
+            xl=placedb.xl,
+            yl=placedb.yl,
+            xh=placedb.xh,
+            yh=placedb.yh,
+            num_bins_x=num_bins_x,
+            num_bins_y=num_bins_y,
+            range_list=range_list,
+            deterministic_flag=params.deterministic_flag)
 
     def __call__(self, params, placedb):
         """
@@ -808,6 +859,8 @@ class ThermalAwarePlace(NonLinearPlace.NonLinearPlace):
             cur_metric.evaluate(placedb, {"hpwl": self.op_collections.hpwl_op}, self.pos[0])
             logging.info(cur_metric)
             iteration += 1
+        
+        self.op_collections.power_op(self.pos[0])
 
         # save results
         cur_pos = self.pos[0].data.clone().cpu().numpy()
