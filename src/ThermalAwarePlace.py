@@ -94,7 +94,8 @@ class ThermalAwarePlace(NonLinearPlace.NonLinearPlace):
             num_bins_x=num_bins_x,
             num_bins_y=num_bins_y,
             range_list=range_list,
-            deterministic_flag=params.deterministic_flag)
+            deterministic_flag=params.deterministic_flag,
+            power=data_collections.node_power)
 
     def __call__(self, params, placedb):
         """
@@ -860,7 +861,7 @@ class ThermalAwarePlace(NonLinearPlace.NonLinearPlace):
             logging.info(cur_metric)
             iteration += 1
         
-        self.op_collections.power_op(self.pos[0])
+        # self.op_collections.power_op(self.pos[0])
 
         # save results
         cur_pos = self.pos[0].data.clone().cpu().numpy()
