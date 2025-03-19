@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-03-18 16:21:18
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-03-18 20:52:14
+LastEditTime: 2025-03-19 11:55:20
 FilePath: /D2D-placer/src/ops/power_map/power_map.py
 Description: Compute power map on CPU
 '''
@@ -24,14 +24,14 @@ class PowerMapFunction(Function):
                 initial_power_map, xl, yl, xh, yh, 
                 num_bins_x, num_bins_y, 
                 range_begin, range_end, 
-                deterministic_flag):
+                deterministic_flag, power):
         
         func = power_map_cpp.power_map
         output = func(pos.view(pos.numel()), node_size_x, node_size_y,
                       initial_power_map, xl, yl, xh, yh, 
                       num_bins_x, num_bins_y, 
                       range_begin, range_end, 
-                      deterministic_flag)
+                      deterministic_flag, power)
         return output
     
 class PowerMap(object):
@@ -39,6 +39,7 @@ class PowerMap(object):
                  xl, yl, xh, yh, num_bins_x, num_bins_y, 
                  range_list, 
                  deterministic_flag, 
+                 power,
                  initial_power_map=None):
         
         super(PowerMap, self).__init__()
@@ -53,7 +54,7 @@ class PowerMap(object):
         self.range_list = range_list
         self.deterministic_flag = deterministic_flag
         self.initial_power_map = initial_power_map
-        
+        self.power = power
     def forward(self, pos):
         """
         @brief API 
@@ -79,7 +80,8 @@ class PowerMap(object):
                     num_bins_y=self.num_bins_y,
                     range_begin=index_range[0],
                     range_end=index_range[1], 
-                    deterministic_flag=self.deterministic_flag)
+                    deterministic_flag=self.deterministic_flag,
+                    power=self.power)
         breakpoint()
 
         return power_map
