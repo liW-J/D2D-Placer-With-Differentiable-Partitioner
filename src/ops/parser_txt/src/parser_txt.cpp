@@ -2,7 +2,7 @@
  * @Author: JeanneWillis hi@jeannewillis.cn
  * @Date: 2025-03-15 14:41:38
  * @LastEditors: JeanneWillis hi@jeannewillis.cn
- * @LastEditTime: 2025-03-16 23:03:10
+ * @LastEditTime: 2025-03-18 16:29:27
  * @FilePath: /D2D-placer/src/ops/read_txt/src/read_txt.cpp
  * @Description: 
  */
@@ -31,7 +31,7 @@ int parser_txt_forward(pybind11::list const& args)
       argv[i][token.size()] = '\0';
   }
 
-  // txt2bookself
+  // txt2bookself by 3d-placer
   ParamHdl_C paramHdl = ParamHdl_C(argc, argv);
   Parser_C parser;
   parser.read_file(paramHdl.get_input_fileName());

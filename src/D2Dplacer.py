@@ -24,6 +24,8 @@ import dreamplace.Timer as Timer
 import dreamplace.NonLinearPlace as NonLinearPlace
 from colorama import Fore, Style
 from ops.parser_txt.parser_txt import ParserTxt
+from utils.Power import Power
+import ThermalAwarePlace
 
 def place(params):
     """
@@ -39,7 +41,11 @@ def place(params):
     tt = time.time()
     placedb = PlaceDB.PlaceDB()
     placedb(params)
-    breakpoint()
+    
+    # generate power for cells
+    power = Power()
+    power.generate_power_for_cells(placedb)
+    
     logging.info("reading database takes %.2f seconds" % (time.time() - tt))
 
     # Read timing constraints provided in the benchmarks into out timing analysis
@@ -56,7 +62,7 @@ def place(params):
 
     # solve placement
     tt = time.time()
-    placer = NonLinearPlace.NonLinearPlace(params, placedb, timer)
+    placer = ThermalAwarePlace.ThermalAwarePlace(params, placedb, timer)
     logging.info("non-linear placement initialization takes %.2f seconds" %
                  (time.time() - tt))
     metrics = placer(params, placedb)
@@ -196,7 +202,7 @@ if __name__ == "__main__":
     # parser iccad txt format to aux
     parser_txt = ParserTxt(params.txt_input, "")
     result = parser_txt()
-    params.aux_input = "run_tmp/case1/flattened-2d/flattened-2d.aux"
+    params.aux_input = "run_tmp/case2/flattened-2d/flattened-2d.aux"
 
     # control numpy multithreading
     os.environ["OMP_NUM_THREADS"] = "%d" % (params.num_threads)
