@@ -202,7 +202,7 @@ if __name__ == "__main__":
     # parser iccad txt format to aux
     parser_txt = ParserTxt(params.txt_input, "")
     result = parser_txt()
-    params.aux_input = "run_tmp/case2/flattened-2d/flattened-2d.aux"
+    params.aux_input = "run_tmp/case4/flattened-2d/flattened-2d.aux"
 
     # control numpy multithreading
     os.environ["OMP_NUM_THREADS"] = "%d" % (params.num_threads)

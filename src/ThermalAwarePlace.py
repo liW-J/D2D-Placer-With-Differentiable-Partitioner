@@ -17,6 +17,7 @@ import gzip
 import copy
 import matplotlib.pyplot as plt
 import inspect
+import json
 
 if sys.version_info[0] < 3:
     import cPickle as pickle
@@ -861,7 +862,26 @@ class ThermalAwarePlace(NonLinearPlace.NonLinearPlace):
             logging.info(cur_metric)
             iteration += 1
         
-        # self.op_collections.power_op(self.pos[0])
+        # calculate power 
+        self.op_collections.power_op(self.pos[0])
+
+        # def read_json(file_path):
+        #     with open(file_path, 'r') as f:
+        #         data = json.load(f)
+        #     return data
+
+        # def save_json(data, file_path):
+        #     with open(file_path, 'w') as f:
+        #         json.dump(data, f, indent=4)  # indent=4 使输出格式化
+
+        # file_path = 'benchmarks/iccad2022/iccad2022-case4.json'
+        # data = read_json(file_path)
+        
+        # data['die_size_x']['data'] = placedb.xh
+        # data['die_size_y']['data'] = placedb.yh
+
+        # save_json(data, file_path)
+        
 
         # save results
         cur_pos = self.pos[0].data.clone().cpu().numpy()

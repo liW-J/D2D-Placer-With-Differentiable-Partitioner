@@ -2,7 +2,7 @@
  * @Author: JeanneWillis hi@jeannewillis.cn
  * @Date: 2025-03-18 16:21:55
  * @LastEditors: JeanneWillis hi@jeannewillis.cn
- * @LastEditTime: 2025-03-18 21:25:26
+ * @LastEditTime: 2025-03-24 23:31:47
  * @FilePath: /D2D-placer/src/ops/power_map/src/power_map.cpp
  * @Description: Compute power map on CPU
  */
@@ -25,7 +25,7 @@ void distributeBox2Bin(const int num_bins_x, const int num_bins_y,
     return DREAMPLACE_STD_NAMESPACE::max(
         T(0.0),
         DREAMPLACE_STD_NAMESPACE::min(node_xh, bin_xh) -
-            DREAMPLACE_STD_NAMESPACE::max(node_xl, bin_xl)) * node_power;
+            DREAMPLACE_STD_NAMESPACE::max(node_xl, bin_xl))/(node_xh - node_xl) * node_power;
   };
   // x direction
   int bin_index_xl = int((bxl - xl) / bin_size_x);
