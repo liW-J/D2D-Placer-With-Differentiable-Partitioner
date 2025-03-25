@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-03-17 18:36:28
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-03-18 13:52:47
+LastEditTime: 2025-03-20 20:46:34
 FilePath: /D2D-placer/src/Power.py
 Description: 
 '''
@@ -15,6 +15,7 @@ class Power:
         self.base_area = 3.088
         self.area_factor = 25.0
         self.noise_factor = 0.15
+        self.area_scale = 142.67
         
     def estimate_power_with_noise(self, area):
         """
@@ -34,11 +35,9 @@ class Power:
         """generate power for nodes"""    
         
         placedb.node_power = np.zeros(placedb.num_physical_nodes, dtype = placedb.dtype)
-
         areas = placedb.node_size_x * placedb.node_size_y
-        average_area = np.mean(areas)
         
-        self.area_factor = self.area_factor * (self.base_area / average_area)
+        self.area_factor = self.area_factor / (self.area_scale**2)
         
         for i in range(placedb.num_physical_nodes):
             node_key = (placedb.node_size_x[i], placedb.node_size_y[i])

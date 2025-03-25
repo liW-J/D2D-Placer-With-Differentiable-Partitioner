@@ -17,7 +17,7 @@ set(LINK_LIBS
   )
 
 add_pytorch_extension(${TARGET_NAME}_cpp 
-  src/power_map.cpp
+  src/partition.cpp
   EXTRA_INCLUDE_DIRS ${INCLUDE_DIRS}
   EXTRA_LINK_LIBRARIES ${LINK_LIBS})
 
