@@ -166,6 +166,7 @@ class WeightedAverageWirelengthMerged3DFunction(Function):
         ctx.inv_gamma = inv_gamma
         ctx.grad_intermediate = output[1]
         ctx.pos = pos
+        breakpoint()
         if pos.is_cuda:
             torch.cuda.synchronize()
         logger.debug("wirelength forward %.3f ms" %

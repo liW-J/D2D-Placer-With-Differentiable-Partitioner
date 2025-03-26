@@ -1,5 +1,6 @@
 add_subdirectory(parser_txt)  
 add_subdirectory(power_map)
+add_subdirectory(weighted_average_wirelength_3d)
 
 file(GLOB INSTALL_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/*.py")
 install(

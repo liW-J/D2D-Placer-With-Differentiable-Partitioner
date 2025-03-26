@@ -23,7 +23,7 @@ if sys.version_info[0] < 3:
     import cPickle as pickle
 else:
     import _pickle as pickle
-import PlaceObj
+import PlaceObj3D
 import NesterovAcceleratedGradientOptimizer
 import EvalMetrics
 import pdb
@@ -158,7 +158,7 @@ class ThermalAwarePlace(NonLinearPlace.NonLinearPlace):
                     # at the 2nd stage, total_movable_node_area should exclude movable macro area to enable more aggresive spreading of cells
                     placedb.total_movable_node_area = placedb.total_movable_cell_area
                 # construct placement model
-                model = PlaceObj.PlaceObj(
+                model = PlaceObj3D.PlaceObj3D(
                     density_weight,
                     params,
                     placedb,
