@@ -20,9 +20,9 @@ import ops.hmetis_partition.hmetis_partition_cpp as hmetis_partition_cpp
 class HmetisPartitionFunction(Function):
 
     @staticmethod
-    def forward(flat_netpin, netpin_start, pin2net_map, net_weights, net_mask):
+    def forward(flat_netpin, netpin_start, pin2node_map, net_weights, net_mask):
         func = hmetis_partition_cpp.hmetis_partition
-        output = func(flat_netpin, netpin_start, pin2net_map, net_weights,
+        output = func(flat_netpin, netpin_start, pin2node_map, net_weights,
                       net_mask)
         # breakpoint()
         return output
@@ -33,7 +33,7 @@ class HmetisPartition(nn.Module):
     def __init__(self,
                  flat_netpin=None,
                  netpin_start=None,
-                 pin2net_map=None,
+                 pin2node_map=None,
                  net_weights=None,
                  net_mask=None):
 
@@ -42,14 +42,14 @@ class HmetisPartition(nn.Module):
 
         self.flat_netpin = flat_netpin
         self.netpin_start = netpin_start
-        self.pin2net_map = pin2net_map
+        self.pin2node_map = pin2node_map
         self.net_weights = net_weights
         self.net_mask = net_mask
 
     def __call__(self):
         return HmetisPartitionFunction.forward(self.flat_netpin,
                                                self.netpin_start,
-                                               self.pin2net_map,
+                                               self.pin2node_map,
                                                self.net_weights, self.net_mask)
 
 

@@ -214,7 +214,7 @@ if __name__ == "__main__":
         # parser iccad txt format to aux
         parser_txt = ParserTxt(params.txt_input)
         result = parser_txt()
-        params.aux_input = "run_tmp/case2/flattened-2d/flattened-2d.aux"
+        params.aux_input = "run_tmp/case1/flattened-2d/flattened-2d.aux"
 
     # control numpy multithreading
     os.environ["OMP_NUM_THREADS"] = "%d" % (params.num_threads)
@@ -227,15 +227,15 @@ if __name__ == "__main__":
     # partitioning
     hmetis_partition = HmetisPartition(basic_data.data_collections.flat_net2pin_map, 
                                        basic_data.data_collections.flat_net2pin_start_map, 
-                                       basic_data.data_collections.pin2net_map, 
+                                       basic_data.data_collections.pin2node_map, 
                                        basic_data.data_collections.net_weights, 
                                        basic_data.data_collections.net_mask_all)
     hmetis_partition()
     
-    # dreamplace for flattened 2d placement
-    logging.info("flattened 2d placement begin")
-    params.printWelcome()
-    place(params, placedb, timer)
+    # # dreamplace for flattened 2d placement
+    # logging.info("flattened 2d placement begin")
+    # params.printWelcome()
+    # place(params, placedb, timer)
     
     
     logging.info("placement takes %.3f seconds" % (time.time() - tt))

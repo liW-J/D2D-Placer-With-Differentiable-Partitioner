@@ -2,7 +2,7 @@
  * @Author: JeanneWillis hi@jeannewillis.cn
  * @Date: 2025-03-15 14:41:38
  * @LastEditors: JeanneWillis hi@jeannewillis.cn
- * @LastEditTime: 2025-04-08 12:22:02
+ * @LastEditTime: 2025-04-08 22:05:41
  * @FilePath: /D2D-placer/placer/ops/read_txt/src/read_txt.cpp
  * @Description: 
  */
@@ -42,7 +42,6 @@ int parser_txt_forward(pybind11::list const& args)
 }
 
 PLACER_END_NAMESPACE
-
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("parser_txt", &PLACER_NAMESPACE::parser_txt_forward, "parser_txt_forward");
