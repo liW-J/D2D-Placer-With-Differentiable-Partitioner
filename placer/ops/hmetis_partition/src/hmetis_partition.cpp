@@ -2,7 +2,7 @@
  * @Author: JeanneWillis hi@jeannewillis.cn
  * @Date: 2025-04-08 12:35:48
  * @LastEditors: JeanneWillis hi@jeannewillis.cn
- * @LastEditTime: 2025-04-08 23:55:05
+ * @LastEditTime: 2025-04-09 16:16:47
  * @FilePath: /D2D-placer/placer/ops/hmetis_partition/src/hmetis_partition.cpp
  * @Description:
  */
@@ -24,15 +24,20 @@ int hmetisPartitionLauncher(const int* flat_netpin, const int* netpin_start, con
   // write hgr file
   HGR hgr("./run_tmp/case1/", "circuit");
 
-  #pragma omp parallel for num_threads(num_threads)
   for (int i = 0; i < num_nets; ++i) {
-
+    hgr.add_net(to_string(i));
     if (net_mask[i]) {
       for (int j = netpin_start[i]; j < netpin_start[i + 1]; ++j) {
         LOG(INFO, "net %d, pin %d, node %d", i, flat_netpin[j], pin2node_map[flat_netpin[j]]);
+        hgr.add_node(to_string(i), to_string(pin2node_map[flat_netpin[j]]));
       }
     }
   }
+  hgr.write_hgr();
+  // run hmetis
+  string cmd = "bin/hmetis -ufactor=0.7 ./run_tmp/case1/circuit.hgr 2 > ./run_tmp/case1/circuit-hmetis.log";
+  system(cmd.c_str());
+  LOG(INFO, "Running hmetis completed");
 
   return 0;
 }
