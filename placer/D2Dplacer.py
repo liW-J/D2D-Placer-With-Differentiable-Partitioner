@@ -7,6 +7,7 @@
 
 import configure
 import matplotlib
+
 matplotlib.use('Agg')
 import os
 import sys
@@ -30,6 +31,7 @@ import NonLinearPlace
 import BasicPlace
 import torch
 
+
 def database(params):
     """
     @brief Data collection for placement.
@@ -44,13 +46,13 @@ def database(params):
     tt = time.time()
     placedb = PlaceDB.PlaceDB()
     placedb(params)
-    
+
     # # Reference nangate generate cell power
     # power = Power()
     # power.generate_power_for_cells(placedb)
-    
+
     logging.info("reading database takes %.2f seconds" % (time.time() - tt))
-    
+
     # Read timing constraints provided in the benchmarks into out timing analysis
     # engine and then pass the timer into the placement core.
     timer = None
@@ -65,12 +67,13 @@ def database(params):
 
     return placedb, timer
 
+
 def place(params, placedb, timer):
     """
     @brief Top API to run the entire placement flow.
     @param params parameters
     """
-    
+
     # solve placement
     tt = time.time()
     placer = NonLinearPlace.NonLinearPlace(params, placedb, timer)
@@ -138,7 +141,7 @@ def place(params, placedb, timer):
                     cmd += " -cell_lef %s" % (lef)
                 benchmark_dir = os.path.dirname(lef)
             cmd += " -floorplan_def %s" % (gp_out_file)
-            if(params.verilog_input):
+            if (params.verilog_input):
                 cmd += " -verilog %s" % (params.verilog_input)
             cmd += " -out ntuplace_4dr_out"
             cmd += " -placement_constraints %s/placement.constraints" % (
@@ -174,6 +177,7 @@ def place(params, placedb, timer):
 
     return metrics
 
+
 def printWelcome():
     welcome_msg = f"""
 {Fore.BLUE}================================================================
@@ -187,6 +191,7 @@ def printWelcome():
 ================================================================{Style.RESET_ALL}
 """
     print(welcome_msg)
+
 
 if __name__ == "__main__":
     """
@@ -209,7 +214,7 @@ if __name__ == "__main__":
     # load parameters
     params.load(sys.argv[1])
     logging.info("parameters = %s" % (params))
-    
+
     if params.txt_input:
         logging.info("parsing iccad txt input......")
         # parser iccad txt format to aux
@@ -221,41 +226,63 @@ if __name__ == "__main__":
 
     # placement begin
     tt = time.time()
-    
+
     # TODO: set dir_path by case_name
     params.aux_input = "run_tmp/case1/flattened-2d/flattened-2d.aux"
     placedb_2d, timer = database(params)
-    
+    basic_data = BasicPlace.BasicPlace(params, placedb_2d, timer)
+
     placedb_tier = []
+    tier_data = []
     for i in range(params.num_tiers):
         params.aux_input = f"run_tmp/case1/flattened-2d/tier{i}.aux"
-        placedb_tier.append(database(params))
-        
-    basic_data = BasicPlace.BasicPlace(params, placedb_2d, timer)
-    
+        placedb, timer = database(params)
+        placedb_tier.append(placedb)
+        tier_data.append(BasicPlace.BasicPlace(params, placedb, timer))
+
     # partitioning
-    hmetis = Hmetis(basic_data.data_collections.flat_net2pin_map, 
-                                       basic_data.data_collections.flat_net2pin_start_map, 
-                                       basic_data.data_collections.pin2node_map, 
-                                       basic_data.data_collections.net_weights, 
-                                       basic_data.data_collections.net_mask_all,
-                                       placedb_2d.num_movable_nodes)
+    hmetis = Hmetis(basic_data.data_collections.flat_net2pin_map,
+                    basic_data.data_collections.flat_net2pin_start_map,
+                    basic_data.data_collections.pin2node_map,
+                    basic_data.data_collections.net_weights,
+                    basic_data.data_collections.net_mask_all,
+                    placedb_2d.num_movable_nodes)
     tier = hmetis(basic_data.pos[0])
-    
+
     # tier = torch.zeros(placedb_2d.num_movable_nodes)
-    partition = Partition(basic_data.data_collections.flat_net2pin_map, 
-                          basic_data.data_collections.flat_net2pin_start_map, 
-                          basic_data.data_collections.pin2node_map, 
-                          basic_data.data_collections.net_weights, 
+    partition = Partition(basic_data.data_collections.flat_net2pin_map,
+                          basic_data.data_collections.flat_net2pin_start_map,
+                          basic_data.data_collections.pin2node_map,
+                          basic_data.data_collections.net_weights,
                           basic_data.data_collections.net_mask_all,
                           placedb_2d.num_movable_nodes)
-    partition(tier)
+
+    node_size_x = torch.stack(
+        [data.data_collections.node_size_x for data in tier_data])
+    node_size_y = torch.stack(
+        [data.data_collections.node_size_y for data in tier_data])
+
+    pin_offset_x = torch.stack(
+        [data.data_collections.pin_offset_x for data in tier_data])
+    pin_offset_y = torch.stack(
+        [data.data_collections.pin_offset_y for data in tier_data])
+
+    # 3d-placer set flattened_die size as die_size*2
+    die_size_x = np.mean([placedb.xh for placedb in placedb_tier]) - np.mean(
+        [placedb.xl for placedb in placedb_tier])
+    die_size_y = np.mean([placedb.yh for placedb in placedb_tier]) - np.mean(
+        [placedb.yl for placedb in placedb_tier])
+
+    row_height = [placedb.row_height for placedb in placedb_tier]
+
+    partition(tier, node_size_x, node_size_y, pin_offset_x, pin_offset_y,
+              die_size_x, die_size_y, row_height)
+
     breakpoint()
-    
+
     # # dreamplace for flattened 2d placement
     # logging.info("flattened 2d placement begin")
     # params.printWelcome()
     # place(params, placedb, timer)
-    
-    
+
     logging.info("placement takes %.3f seconds" % (time.time() - tt))
