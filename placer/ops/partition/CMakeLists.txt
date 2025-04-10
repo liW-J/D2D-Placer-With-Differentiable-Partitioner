@@ -1,4 +1,4 @@
-set(OP_NAME power_map)
+set(OP_NAME partition)
 
 set(TARGET_NAME ${OP_NAME})
 
@@ -8,16 +8,19 @@ set(INCLUDE_DIRS
   ${LIMBO_SOURCE_DIR}
   ${Boost_INCLUDE_DIRS}
   ${ZLIB_INCLUDE_DIRS}
+  ${3DPLACER_INCLUDE_DIRS}
   )
 
 set(LINK_LIBS 
   utility_cxx
   OpenMP::OpenMP_CXX
   ${ZLIB_LIBRARIES}
+  3d_placer_lib
   )
 
 add_pytorch_extension(${TARGET_NAME}_cpp 
   src/partition.cpp
+  ../utils/log.cpp
   EXTRA_INCLUDE_DIRS ${INCLUDE_DIRS}
   EXTRA_LINK_LIBRARIES ${LINK_LIBS})
 

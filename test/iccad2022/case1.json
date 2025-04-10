@@ -1,6 +1,7 @@
 {
 "txt_input" : "benchmarks/iccad2022/case1.txt",
 "gpu" : 0,
+"num_tiers" : 2,
 "num_bins_x" : 512,
 "num_bins_y" : 512,
 "global_place_stages" : [

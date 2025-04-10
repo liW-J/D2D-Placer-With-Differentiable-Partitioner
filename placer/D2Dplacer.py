@@ -24,10 +24,11 @@ import dreamplace.Timer as Timer
 import dreamplace.NonLinearPlace as NonLinearPlace
 from colorama import Fore, Style
 from ops.parser_txt.parser_txt import ParserTxt
-from ops.hmetis_partition.hmetis_partition import HmetisPartition
-from utils.Power import Power
+from placer.ops.hmetis.hmetis import Hmetis
+from placer.ops.partition.partition import Partition
 import NonLinearPlace
 import BasicPlace
+import torch
 
 def database(params):
     """
@@ -214,23 +215,42 @@ if __name__ == "__main__":
         # parser iccad txt format to aux
         parser_txt = ParserTxt(params.txt_input)
         result = parser_txt()
-        params.aux_input = "run_tmp/case1/flattened-2d/flattened-2d.aux"
 
     # control numpy multithreading
     os.environ["OMP_NUM_THREADS"] = "%d" % (params.num_threads)
 
     # placement begin
     tt = time.time()
-    placedb, timer = database(params)
-    basic_data = BasicPlace.BasicPlace(params, placedb, timer)
+    
+    # TODO: set dir_path by case_name
+    params.aux_input = "run_tmp/case1/flattened-2d/flattened-2d.aux"
+    placedb_2d, timer = database(params)
+    
+    placedb_tier = []
+    for i in range(params.num_tiers):
+        params.aux_input = f"run_tmp/case1/flattened-2d/tier{i}.aux"
+        placedb_tier.append(database(params))
+        
+    basic_data = BasicPlace.BasicPlace(params, placedb_2d, timer)
     
     # partitioning
-    hmetis_partition = HmetisPartition(basic_data.data_collections.flat_net2pin_map, 
+    hmetis = Hmetis(basic_data.data_collections.flat_net2pin_map, 
                                        basic_data.data_collections.flat_net2pin_start_map, 
                                        basic_data.data_collections.pin2node_map, 
                                        basic_data.data_collections.net_weights, 
-                                       basic_data.data_collections.net_mask_all)
-    hmetis_partition()
+                                       basic_data.data_collections.net_mask_all,
+                                       placedb_2d.num_movable_nodes)
+    tier = hmetis(basic_data.pos[0])
+    
+    # tier = torch.zeros(placedb_2d.num_movable_nodes)
+    partition = Partition(basic_data.data_collections.flat_net2pin_map, 
+                          basic_data.data_collections.flat_net2pin_start_map, 
+                          basic_data.data_collections.pin2node_map, 
+                          basic_data.data_collections.net_weights, 
+                          basic_data.data_collections.net_mask_all,
+                          placedb_2d.num_movable_nodes)
+    partition(tier)
+    breakpoint()
     
     # # dreamplace for flattened 2d placement
     # logging.info("flattened 2d placement begin")

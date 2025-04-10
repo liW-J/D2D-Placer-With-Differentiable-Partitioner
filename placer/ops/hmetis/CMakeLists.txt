@@ -1,4 +1,4 @@
-set(OP_NAME hmetis_partition)
+set(OP_NAME hmetis)
 
 set(TARGET_NAME ${OP_NAME})
 
@@ -19,7 +19,7 @@ set(LINK_LIBS
   )
 
 add_pytorch_extension(${TARGET_NAME}_cpp 
-  src/hmetis_partition.cpp
+  src/hmetis.cpp
   ../utils/log.cpp
   EXTRA_INCLUDE_DIRS ${INCLUDE_DIRS}
   EXTRA_LINK_LIBRARIES ${LINK_LIBS})
