@@ -2,7 +2,7 @@
  * @Author: JeanneWillis hi@jeannewillis.cn
  * @Date: 2025-03-19 11:49:04
  * @LastEditors: JeanneWillis hi@jeannewillis.cn
- * @LastEditTime: 2025-04-10 22:43:10
+ * @LastEditTime: 2025-04-14 01:57:13
  * @FilePath: /D2D-placer/src/ops/partition/src/partition.cpp
  * @Description: partition
  */
@@ -19,7 +19,12 @@ PLACER_BEGIN_NAMESPACE
 
 string node2name(int node_id)
 {
-  return "C" + to_string(node_id);
+  return "C" + to_string(node_id+1);
+}
+
+string net2name(int net_id)
+{
+  return "N" + to_string(net_id+1);
 }
 
 template <typename T>
@@ -38,7 +43,6 @@ void partitionLauncher(const T *tier, const int *flat_netpin, const int *netpin_
     aux_list[tier_id] = AUX(aux_dir, tier_name);
     for (int net_id = 0; net_id < num_nets; ++net_id)
     {
-      aux_list[tier_id].add_net(to_string(net_id));
       if (net_mask[net_id])
       {
         for (int pin_id = netpin_start[net_id]; pin_id < netpin_start[net_id + 1]; ++pin_id)
@@ -46,13 +50,17 @@ void partitionLauncher(const T *tier, const int *flat_netpin, const int *netpin_
           int node_id = pin2node_map[flat_netpin[pin_id]];
           if (tier[node_id] == tier_id && !aux_list[tier_id].check_node_exist(node2name(node_id)))
           {
+            if (!aux_list[tier_id].check_net_exist(net2name(net_id)))
+            {
+              aux_list[tier_id].add_net(net2name(net_id));
+            }
             int index = num_movable_nodes * tier_id + node_id;
             LOG(DEBUG, "node %d, tier %d, node_size_index %d, node_size_x %f, node_size_y %f", node_id, tier_id, index, node_size_x[index], node_size_y[index]);
             // TODO: cell width and height
             aux_list[tier_id].add_node(node2name(node_id), node_size_x[index], node_size_y[index], 0, 0, 0);
             (pin_id == netpin_start[net_id]) ? IO_type = 'I' : IO_type = 'O';
             // unable center func type, use explicit type
-            aux_list[tier_id].add_pin(to_string(net_id), node2name(node_id), IO_type,
+            aux_list[tier_id].add_pin(net2name(net_id), node2name(node_id), IO_type,
                                       static_cast<float>(pin_offset_x[index]), static_cast<float>(pin_offset_y[index]));
           }
         }
@@ -93,8 +101,7 @@ int partition_forward(at::Tensor tier, at::Tensor flat_netpin, at::Tensor netpin
   CHECK_CONTIGUOUS(node_size_x);
   CHECK_CONTIGUOUS(node_size_y);
 
-  CHECK_FLAT_CPU(tier);
-  CHECK_EVEN(tier);
+  // CHECK_FLAT_CPU(tier);
   CHECK_CONTIGUOUS(tier);
 
   int num_nets = netpin_start.numel() - 1;

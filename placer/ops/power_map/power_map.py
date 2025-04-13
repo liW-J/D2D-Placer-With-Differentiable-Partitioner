@@ -82,7 +82,6 @@ class PowerMap(object):
                     range_end=index_range[1], 
                     deterministic_flag=self.deterministic_flag,
                     power=self.power)
-        breakpoint()
 
         return power_map
       

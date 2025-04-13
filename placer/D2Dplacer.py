@@ -27,6 +27,8 @@ from colorama import Fore, Style
 from ops.parser_txt.parser_txt import ParserTxt
 from placer.ops.hmetis.hmetis import Hmetis
 from placer.ops.partition.partition import Partition
+from placer.tools.OutfmtICCAD import OutfmtICCAD
+
 import NonLinearPlace
 import BasicPlace
 import torch
@@ -192,6 +194,25 @@ def printWelcome():
 """
     print(welcome_msg)
 
+# TODO: move to other file
+def build_func(basic_data, placedb_2d, placedb_tier, params):
+    hmetis = Hmetis(basic_data.data_collections.flat_net2pin_map,
+                    basic_data.data_collections.flat_net2pin_start_map,
+                    basic_data.data_collections.pin2node_map,
+                    basic_data.data_collections.net_weights,
+                    basic_data.data_collections.net_mask_all,
+                    placedb_2d.num_movable_nodes)
+    
+    partition = Partition(basic_data.data_collections.flat_net2pin_map,
+                          basic_data.data_collections.flat_net2pin_start_map,
+                          basic_data.data_collections.pin2node_map,
+                          basic_data.data_collections.net_weights,
+                          basic_data.data_collections.net_mask_all,
+                          placedb_2d.num_movable_nodes)
+    
+    outfmtICCAD = OutfmtICCAD(placedb_tier, params)
+    return hmetis, partition, outfmtICCAD
+
 
 if __name__ == "__main__":
     """
@@ -231,6 +252,11 @@ if __name__ == "__main__":
     params.aux_input = "run_tmp/case1/flattened-2d/flattened-2d.aux"
     placedb_2d, timer = database(params)
     basic_data = BasicPlace.BasicPlace(params, placedb_2d, timer)
+    
+    # dreamplace for flattened 2d placement
+    logging.info("flattened 2d placement begin")
+    params.printWelcome()
+    metrics_2d = place(params, placedb_2d, timer)
 
     placedb_tier = []
     tier_data = []
@@ -241,21 +267,9 @@ if __name__ == "__main__":
         tier_data.append(BasicPlace.BasicPlace(params, placedb, timer))
 
     # partitioning
-    hmetis = Hmetis(basic_data.data_collections.flat_net2pin_map,
-                    basic_data.data_collections.flat_net2pin_start_map,
-                    basic_data.data_collections.pin2node_map,
-                    basic_data.data_collections.net_weights,
-                    basic_data.data_collections.net_mask_all,
-                    placedb_2d.num_movable_nodes)
+    hmetis, partition, outfmtICCAD = build_func(basic_data, placedb_2d, placedb_tier, params)
+    
     tier = hmetis(basic_data.pos[0])
-
-    # tier = torch.zeros(placedb_2d.num_movable_nodes)
-    partition = Partition(basic_data.data_collections.flat_net2pin_map,
-                          basic_data.data_collections.flat_net2pin_start_map,
-                          basic_data.data_collections.pin2node_map,
-                          basic_data.data_collections.net_weights,
-                          basic_data.data_collections.net_mask_all,
-                          placedb_2d.num_movable_nodes)
 
     node_size_x = torch.stack(
         [data.data_collections.node_size_x for data in tier_data])
@@ -277,12 +291,20 @@ if __name__ == "__main__":
 
     partition(tier, node_size_x, node_size_y, pin_offset_x, pin_offset_y,
               die_size_x, die_size_y, row_height)
-
-    breakpoint()
-
-    # # dreamplace for flattened 2d placement
-    # logging.info("flattened 2d placement begin")
-    # params.printWelcome()
-    # place(params, placedb, timer)
+    
+    metrics_tier = []
+    for i in range(params.num_tiers):
+        params.aux_input = f"run_tmp/case1/partition/tier{i}.aux"
+        placedb_tier[i], timer = database(params)
+        params.printWelcome()
+        metrics_tier.append(place(params, placedb_tier[i], timer))
+        
+    logging.info("2d placement  HPWL:%.6f " % (metrics_2d[-1].hpwl))
+    for i in range(params.num_tiers):
+        logging.info("tier %d placement  HPWL:%.6f " % (i, metrics_tier[i][-1].hpwl))
 
     logging.info("placement takes %.3f seconds" % (time.time() - tt))
+    
+    
+    outfmtICCAD.output_iccad_fmt(params)
+    breakpoint()

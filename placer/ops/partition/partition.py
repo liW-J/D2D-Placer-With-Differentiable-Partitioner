@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-03-19 11:47:31
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-04-10 22:13:50
+LastEditTime: 2025-04-11 10:11:20
 FilePath: /D2D-placer/placer/ops/partition/partition.py
 Description: partition flattened 2D placement to 2 Die
 '''
@@ -13,7 +13,6 @@ import logging
 logger = logging.getLogger(__name__)
 
 import ops.partition.partition_cpp as partition_cpp
-
 
 class PartitionFunction(Function):
 
