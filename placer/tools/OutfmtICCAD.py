@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-04-14 01:03:42
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-04-14 02:28:45
+LastEditTime: 2025-04-14 03:57:07
 FilePath: /D2D-placer/placer/tools/OutfmtICCAD.py
 Description: 
 '''
@@ -16,7 +16,7 @@ class OutfmtICCAD:
         self.placedb_tier = placedb_tier
         self.params = params
 
-    def output_iccad_fmt(self, params):
+    def output_iccad_fmt(self, case_name):
         """
             @brief write .txt file
             @param output_file .txt file
@@ -24,8 +24,8 @@ class OutfmtICCAD:
         # read .gp.pl file
         # TODO: case_name
         content = ""
-        output_path = "%s" % (params.result_dir)
-        output_file = output_path + f"/case1/output.txt"
+        output_path = self.params.result_dir
+        output_file = output_path + f"/{case_name}/output.txt"
         num_tiers = self.params.num_tiers
         logging.info("output_file: %s" % (output_file))
 
@@ -33,12 +33,11 @@ class OutfmtICCAD:
         logging.info("writing to %s" % (output_path))
         if (num_tiers == 2):
             for i in range(num_tiers):
-                pl_file = output_path + f"/tier{i}/tier{i}.gp.pl"
-                node_x, node_y = self.placedb_tier[i].unscale_pl(params.shift_factor,
-                                                 params.scale_factor)
+
+                node_x, node_y = self.placedb_tier[i].unscale_pl(
+                    self.params.shift_factor, self.params.scale_factor)
                 dieName = "TopDiePlacement" if i == 0 else "BottomDiePlacement"
 
-                self.placedb_tier[i].read_pl(self.params, pl_file)
                 num_movable_nodes = self.placedb_tier[i].num_movable_nodes
                 rawdb = self.placedb_tier[i].rawdb
 

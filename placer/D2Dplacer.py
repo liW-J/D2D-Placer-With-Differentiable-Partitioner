@@ -28,6 +28,7 @@ from ops.parser_txt.parser_txt import ParserTxt
 from placer.ops.hmetis.hmetis import Hmetis
 from placer.ops.partition.partition import Partition
 from placer.tools.OutfmtICCAD import OutfmtICCAD
+from placer.tools.PosFlattened import PosFlattened
 
 import NonLinearPlace
 import BasicPlace
@@ -177,7 +178,7 @@ def place(params, placedb, timer):
             "External detailed placement engine %s or aux file NOT found" %
             (params.detailed_place_engine))
 
-    return metrics
+    return metrics, placer.pos[0]
 
 
 def printWelcome():
@@ -194,6 +195,7 @@ def printWelcome():
 """
     print(welcome_msg)
 
+
 # TODO: move to other file
 def build_func(basic_data, placedb_2d, placedb_tier, params):
     hmetis = Hmetis(basic_data.data_collections.flat_net2pin_map,
@@ -202,16 +204,18 @@ def build_func(basic_data, placedb_2d, placedb_tier, params):
                     basic_data.data_collections.net_weights,
                     basic_data.data_collections.net_mask_all,
                     placedb_2d.num_movable_nodes)
-    
+
     partition = Partition(basic_data.data_collections.flat_net2pin_map,
                           basic_data.data_collections.flat_net2pin_start_map,
                           basic_data.data_collections.pin2node_map,
                           basic_data.data_collections.net_weights,
-                          basic_data.data_collections.net_mask_all,
                           placedb_2d.num_movable_nodes)
-    
+
     outfmtICCAD = OutfmtICCAD(placedb_tier, params)
-    return hmetis, partition, outfmtICCAD
+
+    posFlattened = PosFlattened(params, placedb_2d, placedb_tier)
+
+    return hmetis, partition, outfmtICCAD, posFlattened
 
 
 if __name__ == "__main__":
@@ -252,11 +256,11 @@ if __name__ == "__main__":
     params.aux_input = "run_tmp/case1/flattened-2d/flattened-2d.aux"
     placedb_2d, timer = database(params)
     basic_data = BasicPlace.BasicPlace(params, placedb_2d, timer)
-    
+
     # dreamplace for flattened 2d placement
     logging.info("flattened 2d placement begin")
     params.printWelcome()
-    metrics_2d = place(params, placedb_2d, timer)
+    metrics_2d,_ = place(params, placedb_2d, timer)
 
     placedb_tier = []
     tier_data = []
@@ -267,8 +271,9 @@ if __name__ == "__main__":
         tier_data.append(BasicPlace.BasicPlace(params, placedb, timer))
 
     # partitioning
-    hmetis, partition, outfmtICCAD = build_func(basic_data, placedb_2d, placedb_tier, params)
-    
+    hmetis, partition, outfmtICCAD, posFlattened = build_func(
+        basic_data, placedb_2d, placedb_tier, params)
+
     tier = hmetis(basic_data.pos[0])
 
     node_size_x = torch.stack(
@@ -289,22 +294,34 @@ if __name__ == "__main__":
 
     row_height = [placedb.row_height for placedb in placedb_tier]
 
-    partition(tier, node_size_x, node_size_y, pin_offset_x, pin_offset_y,
+    partitioned_net_mask = partition(tier, node_size_x, node_size_y, pin_offset_x, pin_offset_y,
               die_size_x, die_size_y, row_height)
-    
+    breakpoint()
+
     metrics_tier = []
+    pos_tier = []
     for i in range(params.num_tiers):
         params.aux_input = f"run_tmp/case1/partition/tier{i}.aux"
         placedb_tier[i], timer = database(params)
         params.printWelcome()
-        metrics_tier.append(place(params, placedb_tier[i], timer))
-        
+        metrics, pos = place(params, placedb_tier[i], timer)
+        metrics_tier.append(metrics)
+        pos_tier.append(pos)
+
+        pl_file = params.result_dir + f"/tier{i}/tier{i}.gp.pl"
+        placedb_tier[i].read_pl(params, pl_file)
+    # breakpoint()
+
     logging.info("2d placement  HPWL:%.6f " % (metrics_2d[-1].hpwl))
     for i in range(params.num_tiers):
-        logging.info("tier %d placement  HPWL:%.6f " % (i, metrics_tier[i][-1].hpwl))
+        logging.info("tier %d placement  HPWL:%.6f " %
+                     (i, metrics_tier[i][-1].hpwl))
 
     logging.info("placement takes %.3f seconds" % (time.time() - tt))
+
     
+    posFlattened.pos_flattened(tier, basic_data.pos[0], pos_tier)
     
-    outfmtICCAD.output_iccad_fmt(params)
-    breakpoint()
+    outfmtICCAD.output_iccad_fmt("case1")
+    
+    # breakpoint()
