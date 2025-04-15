@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-04-14 03:21:27
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-04-14 04:52:06
+LastEditTime: 2025-04-15 14:55:11
 FilePath: /D2D-placer/placer/tools/PosFlattened.py
 Description: 
 '''
@@ -33,11 +33,9 @@ class PosFlattened:
             node_y = pos_tier[i][len(pos_tier[i]) // 2:len(pos_tier[i]) // 2 +
                                  self.placedb_tier[i].num_movable_nodes]
 
-            pos_2d[:self.placedb.num_movable_nodes][tier == i].data.copy_(
-                node_x)
+            pos_2d[:self.placedb.num_movable_nodes][tier == i] = node_x
             pos_2d[len(pos_2d) // 2:len(pos_2d) // 2 +
-                   self.placedb.num_movable_nodes][tier == i].data.copy_(
-                       node_y)
+                   self.placedb.num_movable_nodes][tier == i] = node_y
 
         logging.info("pos_flattened takes %.3f seconds" % (time.time() - tt))
 

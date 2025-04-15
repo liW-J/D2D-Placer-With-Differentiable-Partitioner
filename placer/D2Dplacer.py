@@ -29,6 +29,7 @@ from placer.ops.hmetis.hmetis import Hmetis
 from placer.ops.partition.partition import Partition
 from placer.tools.OutfmtICCAD import OutfmtICCAD
 from placer.tools.PosFlattened import PosFlattened
+from dreamplace.ops.pin_pos.pin_pos import PinPos
 
 import NonLinearPlace
 import BasicPlace
@@ -205,17 +206,37 @@ def build_func(basic_data, placedb_2d, placedb_tier, params):
                     basic_data.data_collections.net_mask_all,
                     placedb_2d.num_movable_nodes)
 
-    partition = Partition(basic_data.data_collections.flat_net2pin_map,
-                          basic_data.data_collections.flat_net2pin_start_map,
-                          basic_data.data_collections.pin2node_map,
-                          basic_data.data_collections.net_weights,
-                          placedb_2d.num_movable_nodes)
+    init_partition = Partition(
+        basic_data.data_collections.flat_net2pin_map,
+        basic_data.data_collections.flat_net2pin_start_map,
+        basic_data.data_collections.pin2node_map,
+        basic_data.data_collections.net_weights,
+        placedb_2d.num_movable_nodes,
+        terminal_instert_flag=False)
 
-    outfmtICCAD = OutfmtICCAD(placedb_tier, params)
+    out_fmt_iccad = OutfmtICCAD(placedb_tier, params)
 
-    posFlattened = PosFlattened(params, placedb_2d, placedb_tier)
+    pos_flattened = PosFlattened(params, placedb_2d, placedb_tier)
 
-    return hmetis, partition, outfmtICCAD, posFlattened
+    terminal_insert = Partition(
+        basic_data.data_collections.flat_net2pin_map,
+        basic_data.data_collections.flat_net2pin_start_map,
+        basic_data.data_collections.pin2node_map,
+        basic_data.data_collections.net_weights,
+        placedb_2d.num_movable_nodes,
+        terminal_instert_flag=True)
+
+    pin_pos_op = PinPos(
+        pin_offset_x=basic_data.data_collections.pin_offset_x,
+        pin_offset_y=basic_data.data_collections.pin_offset_y,
+        pin2node_map=basic_data.data_collections.pin2node_map,
+        flat_node2pin_map=basic_data.data_collections.flat_node2pin_map,
+        flat_node2pin_start_map=basic_data.data_collections.
+        flat_node2pin_start_map,
+        num_physical_nodes=placedb_2d.num_physical_nodes,
+        algorithm="node-by-node")
+
+    return hmetis, init_partition, out_fmt_iccad, pos_flattened, terminal_insert, pin_pos_op
 
 
 if __name__ == "__main__":
@@ -240,6 +261,7 @@ if __name__ == "__main__":
     params.load(sys.argv[1])
     logging.info("parameters = %s" % (params))
 
+    # parse input get flattened .aux
     if params.txt_input:
         logging.info("parsing iccad txt input......")
         # parser iccad txt format to aux
@@ -260,7 +282,7 @@ if __name__ == "__main__":
     # dreamplace for flattened 2d placement
     logging.info("flattened 2d placement begin")
     params.printWelcome()
-    metrics_2d,_ = place(params, placedb_2d, timer)
+    metrics_2d, pos_2d = place(params, placedb_2d, timer)
 
     placedb_tier = []
     tier_data = []
@@ -271,10 +293,10 @@ if __name__ == "__main__":
         tier_data.append(BasicPlace.BasicPlace(params, placedb, timer))
 
     # partitioning
-    hmetis, partition, outfmtICCAD, posFlattened = build_func(
+    hmetis, init_partition, out_fmt_iccad, pos_flattened, terminal_insert, pin_pos_op = build_func(
         basic_data, placedb_2d, placedb_tier, params)
 
-    tier = hmetis(basic_data.pos[0])
+    tier = hmetis(pos_2d)
 
     node_size_x = torch.stack(
         [data.data_collections.node_size_x for data in tier_data])
@@ -294,9 +316,9 @@ if __name__ == "__main__":
 
     row_height = [placedb.row_height for placedb in placedb_tier]
 
-    partitioned_net_mask = partition(tier, node_size_x, node_size_y, pin_offset_x, pin_offset_y,
-              die_size_x, die_size_y, row_height)
-    breakpoint()
+    # return partition result but not receive now
+    init_partition(tier, node_size_x, node_size_y, pin_offset_x, pin_offset_y,
+                   die_size_x, die_size_y, row_height)
 
     metrics_tier = []
     pos_tier = []
@@ -319,9 +341,28 @@ if __name__ == "__main__":
 
     logging.info("placement takes %.3f seconds" % (time.time() - tt))
 
-    
-    posFlattened.pos_flattened(tier, basic_data.pos[0], pos_tier)
-    
-    outfmtICCAD.output_iccad_fmt("case1")
-    
+    pos_flattened.pos_flattened(tier, pos_2d, pos_tier)
+
+    terminal_insert(tier, node_size_x, node_size_y, pin_offset_x, pin_offset_y,
+                    die_size_x, die_size_y, row_height, pin_pos_op(pos_2d))
+
+    for i in range(params.num_tiers):
+        params.aux_input = f"run_tmp/case1/partition/tier{i}.aux"
+        placedb_tier[i], timer = database(params)
+        params.printWelcome()
+        metrics, pos = place(params, placedb_tier[i], timer)
+        metrics_tier.append(metrics)
+        pos_tier.append(pos)
+
+        pl_file = params.result_dir + f"/tier{i}/tier{i}.gp.pl"
+        placedb_tier[i].read_pl(params, pl_file)
+
+    for i in range(params.num_tiers):
+        logging.info("tier %d placement  HPWL:%.6f " %
+                     (i, metrics_tier[i][-1].hpwl))
+
+    logging.info("placement takes %.3f seconds" % (time.time() - tt))
+
+    out_fmt_iccad.out_fmt_iccad("case1")
+
     # breakpoint()
