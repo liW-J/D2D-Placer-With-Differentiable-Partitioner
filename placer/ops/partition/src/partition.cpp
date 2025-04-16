@@ -2,7 +2,7 @@
  * @Author: JeanneWillis hi@jeannewillis.cn
  * @Date: 2025-03-19 11:49:04
  * @LastEditors: JeanneWillis hi@jeannewillis.cn
- * @LastEditTime: 2025-04-15 21:25:46
+ * @LastEditTime: 2025-04-16 23:09:20
  * @FilePath: /D2D-placer/src/ops/partition/src/partition.cpp
  * @Description: partition
  */
@@ -17,10 +17,11 @@
 
 PLACER_BEGIN_NAMESPACE
 
-enum NodeType {
-    MOVABLE,    
-    TERMINAL, 
-    TERMINAL_NI   
+enum NodeType
+{
+  MOVABLE,
+  TERMINAL,
+  TERMINAL_NI
 };
 
 string node2name(int node_id)
@@ -35,15 +36,17 @@ string net2name(int net_id)
 
 string terminal2name(int terminal_id)
 {
-  return "N" + to_string(terminal_id + 1);
+  return "N" + to_string(terminal_id);
 }
 
 template <typename T>
 void terminal_insert(const T *tier, const T *x, const T *y, const int *flat_netpin, const int *netpin_start,
                      const int *pin2node_map, int num_movable_nodes, int num_nets, int num_tiers,
-                     const T *partitioned_net_mask, bool terminal_instert_flag, vector<AUX> &auxListRef)
+                     const T *partitioned_net_mask, bool terminal_instert_flag, vector<AUX> &auxListRef,
+                     bool terminal_legalize_flag, const T *node_x, const T *node_y, int num_movable_nodes_top)
 {
   LOG(WARN, "terminal_insert");
+
   int terminal_count = 0;
   for (int net_id = 0; net_id < num_nets; net_id++)
   {
@@ -79,14 +82,23 @@ void terminal_insert(const T *tier, const T *x, const T *y, const int *flat_netp
       LOG(WARN, "inter_min_x: %f, inter_max_x: %f, inter_min_y: %f, inter_max_y: %f", inter_min_x, inter_max_x, inter_min_y, inter_max_y);
       T center_x = (inter_min_x + inter_max_x) / 2;
       T center_y = (inter_min_y + inter_max_y) / 2;
-      LOG(DEBUG, "Intersection Center: (%f, %f)", center_x, center_y);
+      
       terminal_count++;
       for (int tier_id = 0; tier_id < num_tiers; ++tier_id)
       {
+        LOG(INFO, "terminal_count: %d", terminal_count);
         // enmu Type
-        auxListRef[tier_id].add_node(terminal2name(terminal_count), 0, 0, center_x, center_y, TERMINAL_NI);
-        auxListRef[tier_id].add_pin(net2name(net_id), terminal2name(terminal_count), 'O', 0, 0);
-        LOG(DEBUG, "terminal_count: %d", terminal_count);
+        if (terminal_legalize_flag)
+        {
+          auxListRef[tier_id].add_node(net2name(net_id), 150, 150, node_x[terminal_count + num_movable_nodes_top], node_y[terminal_count + num_movable_nodes_top], TERMINAL_NI);
+          LOG(DEBUG, "Intersection Center: (%f, %f)", node_x[terminal_count + num_movable_nodes_top], node_y[terminal_count + num_movable_nodes_top]);
+        }
+        else
+        {
+          auxListRef[tier_id].add_node(net2name(net_id), 150, 150, center_x, center_y, TERMINAL_NI);
+          LOG(DEBUG, "Intersection Center: (%f, %f)", center_x, center_y);
+        }
+        auxListRef[tier_id].add_pin(net2name(net_id), net2name(net_id), 'O', 0, 0);
       }
     }
   }
@@ -97,9 +109,10 @@ void partitionLauncher(const T *tier, const int *flat_netpin, const int *netpin_
                        int num_nets, int num_tiers, int num_movable_nodes, int num_pins,
                        const T *node_size_x, const T *node_size_y, const T *pin_offset_x, const T *pin_offset_y,
                        float die_size_x, float die_size_y, pybind11::list row_height, T *partitioned_net_mask,
-                       const T *x, const T *y, bool terminal_instert_flag)
+                       const T *x, const T *y, bool terminal_instert_flag, bool terminal_legalize_flag,
+                       const T *node_x, const T *node_y, int num_movable_nodes_top)
 {
-  string aux_dir = "./run_tmp/case1/partition/";
+  string aux_dir = "./run_tmp/case2/partition/";
   char IO_type;
   vector<AUX> aux_list(num_tiers);
 
@@ -162,7 +175,7 @@ void partitionLauncher(const T *tier, const int *flat_netpin, const int *netpin_
   {
     terminal_insert(tier, x, y, flat_netpin, netpin_start, pin2node_map,
                     num_movable_nodes, num_nets, num_tiers,
-                    partitioned_net_mask, terminal_instert_flag, aux_list);
+                    partitioned_net_mask, terminal_instert_flag, aux_list, terminal_legalize_flag, node_x, node_y, num_movable_nodes_top);
   }
 
   // write aux files
@@ -187,7 +200,8 @@ at::Tensor partition_forward(at::Tensor tier, at::Tensor flat_netpin, at::Tensor
                              at::Tensor node_size_x, at::Tensor node_size_y,
                              at::Tensor pin_offset_x, at::Tensor pin_offset_y,
                              float die_size_x, float die_size_y,
-                             pybind11::list row_height, at::Tensor pos, bool terminal_instert_flag)
+                             pybind11::list row_height, at::Tensor pos, bool terminal_instert_flag,
+                             bool terminal_legalize_flag, at::Tensor pos_tier_legalized_terminal, int num_movable_nodes_top)
 {
   CHECK_FLAT_CPU(flat_netpin);
   CHECK_CONTIGUOUS(flat_netpin);
@@ -209,6 +223,10 @@ at::Tensor partition_forward(at::Tensor tier, at::Tensor flat_netpin, at::Tensor
   CHECK_FLAT_CPU(pos);
   CHECK_EVEN(pos);
   CHECK_CONTIGUOUS(pos);
+
+  CHECK_FLAT_CPU(pos_tier_legalized_terminal);
+  CHECK_EVEN(pos_tier_legalized_terminal);
+  CHECK_CONTIGUOUS(pos_tier_legalized_terminal);
 
   int num_nets = netpin_start.numel() - 1;
   int num_pins = pin2node_map.numel();
@@ -235,7 +253,10 @@ at::Tensor partition_forward(at::Tensor tier, at::Tensor flat_netpin, at::Tensor
                                            DREAMPLACE_TENSOR_DATA_PTR(partitioned_net_mask, scalar_t),
                                            DREAMPLACE_TENSOR_DATA_PTR(pos, scalar_t),
                                            DREAMPLACE_TENSOR_DATA_PTR(pos, scalar_t) + pos.numel() / 2,
-                                           terminal_instert_flag); });
+                                           terminal_instert_flag, terminal_legalize_flag,
+                                           DREAMPLACE_TENSOR_DATA_PTR(pos_tier_legalized_terminal, scalar_t),
+                                           DREAMPLACE_TENSOR_DATA_PTR(pos_tier_legalized_terminal, scalar_t) + pos_tier_legalized_terminal.numel() / 2,
+                                           num_movable_nodes_top); });
 
   return partitioned_net_mask;
 }

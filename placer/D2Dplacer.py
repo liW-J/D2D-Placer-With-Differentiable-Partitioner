@@ -30,6 +30,7 @@ from placer.ops.partition.partition import Partition
 from placer.tools.OutfmtICCAD import OutfmtICCAD
 from placer.tools.PosFlattened import PosFlattened
 from dreamplace.ops.pin_pos.pin_pos import PinPos
+import dreamplace.ops.greedy_legalize.greedy_legalize as greedy_legalize
 
 import NonLinearPlace
 import BasicPlace
@@ -72,7 +73,11 @@ def database(params):
     return placedb, timer
 
 
-def place(params, placedb, timer):
+def place(params,
+          placedb,
+          timer,
+          terminal_legalize_flag=False,
+          terminal_legalize_op=None):
     """
     @brief Top API to run the entire placement flow.
     @param params parameters
@@ -95,6 +100,41 @@ def place(params, placedb, timer):
         path,
         "%s.gp.%s" % (params.design_name(), params.solution_file_suffix()))
     placedb.write(params, gp_out_file)
+
+    if terminal_legalize_flag:
+        # placedb.read_pl(params, gp_out_file)
+        # a trick
+        # num_terminal, placedb.num_terminals = placedb.num_terminals, -placedb.num_terminal_NIs
+       
+        # placer.op_collections.terminal_legalize_op = placer.build_terminal_legalization(
+        #     params, placedb, placer.data_collections, placer.device)
+        placer.pos[0].data.copy_(placer.op_collections.terminal_legalize_op(placer.pos[0]))
+
+        # placedb.num_terminals = num_terminal
+        
+        terminal_legalize_op(tier, node_size_x, node_size_y, pin_offset_x,
+                             pin_offset_y, die_size_x, die_size_y, row_height,
+                             pin_pos_op(pos_2d), placer.pos[0],
+                             placedb.num_movable_nodes)
+        
+        legalize_pos = placer.pos[0].data.clone().cpu().numpy()
+
+        placedb.node_x[:placedb.num_physical_nodes] = legalize_pos[0 : placedb.num_physical_nodes]
+        placedb.node_y[:placedb.num_physical_nodes] = legalize_pos[placedb.num_nodes : placedb.num_nodes + placedb.num_physical_nodes]
+
+        pos = placer.init_pos
+        iteration = len(metrics)
+        pos[0:placedb.num_physical_nodes] = placedb.node_x
+        pos[placedb.num_nodes:placedb.num_nodes +
+            placedb.num_physical_nodes] = placedb.node_y
+        hpwl, density_overflow, max_density = placer.validate(
+            placedb, pos, iteration)
+        logging.info(
+            "iteration %4d, HPWL %.3E, overflow %.3E, max density %.3E" %
+            (iteration, hpwl, density_overflow, max_density))
+        placer.plot(params, placedb, iteration, pos)
+
+        breakpoint()
 
     # call external detailed placement
     # TODO: support more external placers, currently only support
@@ -212,19 +252,25 @@ def build_func(basic_data, placedb_2d, placedb_tier, params):
         basic_data.data_collections.pin2node_map,
         basic_data.data_collections.net_weights,
         placedb_2d.num_movable_nodes,
-        terminal_instert_flag=False)
+        node_names=placedb_2d.node_names,
+        net_names=placedb_2d.net_names,
+        terminal_instert_flag=False,
+        terminal_legalize_flag=False)
 
     out_fmt_iccad = OutfmtICCAD(placedb_tier, params)
 
     pos_flattened = PosFlattened(params, placedb_2d, placedb_tier)
 
-    terminal_insert = Partition(
+    terminal_insert_op = Partition(
         basic_data.data_collections.flat_net2pin_map,
         basic_data.data_collections.flat_net2pin_start_map,
         basic_data.data_collections.pin2node_map,
         basic_data.data_collections.net_weights,
         placedb_2d.num_movable_nodes,
-        terminal_instert_flag=True)
+        node_names=placedb_2d.node_names,
+        net_names=placedb_2d.net_names,
+        terminal_instert_flag=True,
+        terminal_legalize_flag=False)
 
     pin_pos_op = PinPos(
         pin_offset_x=basic_data.data_collections.pin_offset_x,
@@ -236,7 +282,18 @@ def build_func(basic_data, placedb_2d, placedb_tier, params):
         num_physical_nodes=placedb_2d.num_physical_nodes,
         algorithm="node-by-node")
 
-    return hmetis, init_partition, out_fmt_iccad, pos_flattened, terminal_insert, pin_pos_op
+    terminal_legalize_op = Partition(
+        basic_data.data_collections.flat_net2pin_map,
+        basic_data.data_collections.flat_net2pin_start_map,
+        basic_data.data_collections.pin2node_map,
+        basic_data.data_collections.net_weights,
+        placedb_2d.num_movable_nodes,
+        node_names=placedb_2d.node_names,
+        net_names=placedb_2d.net_names,
+        terminal_instert_flag=True,
+        terminal_legalize_flag=True)
+
+    return hmetis, init_partition, out_fmt_iccad, pos_flattened, terminal_insert_op, pin_pos_op, terminal_legalize_op
 
 
 if __name__ == "__main__":
@@ -249,13 +306,6 @@ if __name__ == "__main__":
                         stream=sys.stdout)
     params = Params.Params()
     printWelcome()
-    # if len(sys.argv) == 1 or '-h' in sys.argv[1:] or '--help' in sys.argv[1:]:
-    #     params.printHelp()
-    #     exit()
-    # elif len(sys.argv) != 2:
-    #     logging.error("One input parameters in json format in required")
-    #     params.printHelp()
-    #     exit()
 
     # load parameters
     params.load(sys.argv[1])
@@ -275,7 +325,7 @@ if __name__ == "__main__":
     tt = time.time()
 
     # TODO: set dir_path by case_name
-    params.aux_input = "run_tmp/case1/flattened-2d/flattened-2d.aux"
+    params.aux_input = "run_tmp/case2/flattened-2d/flattened-2d.aux"
     placedb_2d, timer = database(params)
     basic_data = BasicPlace.BasicPlace(params, placedb_2d, timer)
 
@@ -287,21 +337,25 @@ if __name__ == "__main__":
     placedb_tier = []
     tier_data = []
     for i in range(params.num_tiers):
-        params.aux_input = f"run_tmp/case1/flattened-2d/tier{i}.aux"
+        params.aux_input = f"run_tmp/case2/flattened-2d/tier{i}.aux"
         placedb, timer = database(params)
         placedb_tier.append(placedb)
         tier_data.append(BasicPlace.BasicPlace(params, placedb, timer))
 
     # partitioning
-    hmetis, init_partition, out_fmt_iccad, pos_flattened, terminal_insert, pin_pos_op = build_func(
+    hmetis, init_partition, out_fmt_iccad, pos_flattened, terminal_insert_op, pin_pos_op, terminal_legalize_op = build_func(
         basic_data, placedb_2d, placedb_tier, params)
 
     tier = hmetis(pos_2d)
 
-    node_size_x = torch.stack(
-        [data.data_collections.node_size_x for data in tier_data])
-    node_size_y = torch.stack(
-        [data.data_collections.node_size_y for data in tier_data])
+    node_size_x = torch.stack([
+        data.data_collections.node_size_x[:placedb_2d.num_movable_nodes]
+        for data in tier_data
+    ])
+    node_size_y = torch.stack([
+        data.data_collections.node_size_y[:placedb_2d.num_movable_nodes]
+        for data in tier_data
+    ])
 
     pin_offset_x = torch.stack(
         [data.data_collections.pin_offset_x for data in tier_data])
@@ -317,13 +371,16 @@ if __name__ == "__main__":
     row_height = [placedb.row_height for placedb in placedb_tier]
 
     # return partition result but not receive now
-    init_partition(tier, node_size_x, node_size_y, pin_offset_x, pin_offset_y,
-                   die_size_x, die_size_y, row_height)
+    partitioned_net_mask = init_partition(tier, node_size_x, node_size_y,
+                                          pin_offset_x, pin_offset_y,
+                                          die_size_x, die_size_y, row_height)
+
+    # num_terminal_NIs = int(partitioned_net_mask.sum().item())
 
     metrics_tier = []
     pos_tier = []
     for i in range(params.num_tiers):
-        params.aux_input = f"run_tmp/case1/partition/tier{i}.aux"
+        params.aux_input = f"run_tmp/case2/partition/tier{i}.aux"
         placedb_tier[i], timer = database(params)
         params.printWelcome()
         metrics, pos = place(params, placedb_tier[i], timer)
@@ -343,16 +400,20 @@ if __name__ == "__main__":
 
     pos_flattened.pos_flattened(tier, pos_2d, pos_tier)
 
-    terminal_insert(tier, node_size_x, node_size_y, pin_offset_x, pin_offset_y,
-                    die_size_x, die_size_y, row_height, pin_pos_op(pos_2d))
+    terminal_insert_op(tier, node_size_x, node_size_y, pin_offset_x,
+                       pin_offset_y, die_size_x, die_size_y, row_height,
+                       pin_pos_op(pos_2d))
 
+    terminal_legalize_flag = True
     for i in range(params.num_tiers):
-        params.aux_input = f"run_tmp/case1/partition/tier{i}.aux"
+        params.aux_input = f"run_tmp/case2/partition/tier{i}.aux"
         placedb_tier[i], timer = database(params)
         params.printWelcome()
-        metrics, pos = place(params, placedb_tier[i], timer)
-        metrics_tier.append(metrics)
-        pos_tier.append(pos)
+        metrics, pos = place(params, placedb_tier[i], timer,
+                             terminal_legalize_flag, terminal_legalize_op)
+        metrics_tier[i] = metrics
+        pos_tier[i] = pos
+        terminal_legalize_flag = False
 
         pl_file = params.result_dir + f"/tier{i}/tier{i}.gp.pl"
         placedb_tier[i].read_pl(params, pl_file)
@@ -363,6 +424,6 @@ if __name__ == "__main__":
 
     logging.info("placement takes %.3f seconds" % (time.time() - tt))
 
-    out_fmt_iccad.out_fmt_iccad("case1")
+    out_fmt_iccad.out_fmt_iccad("case2")
 
     # breakpoint()

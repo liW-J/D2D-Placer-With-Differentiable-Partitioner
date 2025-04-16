@@ -2,7 +2,7 @@
  * @Author: JeanneWillis hi@jeannewillis.cn
  * @Date: 2025-04-08 12:35:48
  * @LastEditors: JeanneWillis hi@jeannewillis.cn
- * @LastEditTime: 2025-04-14 20:10:30
+ * @LastEditTime: 2025-04-16 17:55:30
  * @FilePath: /D2D-placer/placer/ops/hmetis/src/hmetis.cpp
  * @Description:
  */
@@ -23,7 +23,7 @@ int hmetisPartitionLauncher(T *tier, const int *flat_netpin, const int *netpin_s
 {
 
   // write hgr file
-  HGR hgr("./run_tmp/case1/", "circuit");
+  HGR hgr("./run_tmp/case2/", "circuit");
 
   for (int net_id = 0; net_id < num_nets; ++net_id)
   {
@@ -40,14 +40,14 @@ int hmetisPartitionLauncher(T *tier, const int *flat_netpin, const int *netpin_s
   hgr.write_hgr();
 
   // run hmetis
-  string cmd = "bin/hmetis -ufactor=0.7 ./run_tmp/case1/circuit.hgr 2 > ./run_tmp/case1/circuit-hmetis.log";
+  string cmd = "bin/hmetis -ufactor=0.7 ./run_tmp/case2/circuit.hgr 2 > ./run_tmp/case2/circuit-hmetis.log";
   system(cmd.c_str());
   hgr.read_part_result(2);
 
   assert(hgr.get_part_size(0) + hgr.get_part_size(1) == num_movable_nodes);
   LOG(INFO, "hmetis partition result: %d : %d", hgr.get_part_size(0), hgr.get_part_size(1));
 
-  // partiton result save to ./run_tmp/case1/circuit.part.2
+  // partiton result save to ./run_tmp/case2/circuit.part.2
   for (int i = 0; i < num_movable_nodes; ++i)
   {
     tier[i] = hgr.get_part_result(to_string(i));

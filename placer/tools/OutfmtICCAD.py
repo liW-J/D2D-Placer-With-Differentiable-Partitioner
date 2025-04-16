@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-04-14 01:03:42
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-04-15 14:10:13
+LastEditTime: 2025-04-15 22:56:45
 FilePath: /D2D-placer/placer/tools/OutfmtICCAD.py
 Description: 
 '''
@@ -31,21 +31,36 @@ class OutfmtICCAD:
 
         tt = time.time()
         logging.info("writing to %s" % (output_path))
+
         if (num_tiers == 2):
-            for i in range(num_tiers):
+            # write movable nodes in each tier
+            for tier_id in range(num_tiers):
 
-                node_x, node_y = self.placedb_tier[i].unscale_pl(
+                node_x, node_y = self.placedb_tier[tier_id].unscale_pl(
                     self.params.shift_factor, self.params.scale_factor)
-                dieName = "TopDiePlacement" if i == 0 else "BottomDiePlacement"
+                dieName = "TopDiePlacement" if tier_id == 0 else "BottomDiePlacement"
 
-                num_movable_nodes = self.placedb_tier[i].num_movable_nodes
-                rawdb = self.placedb_tier[i].rawdb
+                num_movable_nodes = self.placedb_tier[
+                    tier_id].num_movable_nodes
+                rawdb = self.placedb_tier[tier_id].rawdb
 
                 content += f"{dieName} {num_movable_nodes}\n"
 
                 for node_id in range(num_movable_nodes):
-                    content += f"Inst {rawdb.nodeName(node_id)} {node_x[node_id]} {node_y[node_id]}\n"
+                    content += f"Inst {rawdb.nodeName(node_id)} {int(node_x[node_id])} {int(node_y[node_id])}\n"
 
+            # write terminal nodes
+            content += f"NumTerminals {self.placedb_tier[0].num_terminal_NIs}\n"
+            
+            for fixed_pin_id in range(
+                    self.placedb_tier[-1].num_movable_nodes +
+                    self.placedb_tier[-1].num_terminals,
+                    self.placedb_tier[-1].num_movable_nodes +
+                    self.placedb_tier[-1].num_terminals +
+                    self.placedb_tier[-1].num_terminal_NIs):
+                # node_x, node_y of terminal must be same in each tier
+                # rawdb here is tier[-1] for easier
+                content += f"Terminal {rawdb.nodeName(fixed_pin_id)} {int(node_x[fixed_pin_id])} {int(node_y[fixed_pin_id])}\n"
         else:
             logging.info("unsupported num_tiers: %d for iccad format" %
                          (num_tiers))
