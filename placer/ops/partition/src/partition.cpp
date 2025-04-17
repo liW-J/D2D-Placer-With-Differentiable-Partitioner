@@ -2,7 +2,7 @@
  * @Author: JeanneWillis hi@jeannewillis.cn
  * @Date: 2025-03-19 11:49:04
  * @LastEditors: JeanneWillis hi@jeannewillis.cn
- * @LastEditTime: 2025-04-16 23:09:20
+ * @LastEditTime: 2025-04-17 00:02:01
  * @FilePath: /D2D-placer/src/ops/partition/src/partition.cpp
  * @Description: partition
  */
@@ -43,7 +43,8 @@ template <typename T>
 void terminal_insert(const T *tier, const T *x, const T *y, const int *flat_netpin, const int *netpin_start,
                      const int *pin2node_map, int num_movable_nodes, int num_nets, int num_tiers,
                      const T *partitioned_net_mask, bool terminal_instert_flag, vector<AUX> &auxListRef,
-                     bool terminal_legalize_flag, const T *node_x, const T *node_y, int num_movable_nodes_top)
+                     bool terminal_legalize_flag, const T *node_x, const T *node_y, int num_movable_nodes_top,
+                     const std::vector<std::string> &node_names, const std::vector<std::string> &net_names)
 {
   LOG(WARN, "terminal_insert");
 
@@ -82,7 +83,7 @@ void terminal_insert(const T *tier, const T *x, const T *y, const int *flat_netp
       LOG(WARN, "inter_min_x: %f, inter_max_x: %f, inter_min_y: %f, inter_max_y: %f", inter_min_x, inter_max_x, inter_min_y, inter_max_y);
       T center_x = (inter_min_x + inter_max_x) / 2;
       T center_y = (inter_min_y + inter_max_y) / 2;
-      
+
       terminal_count++;
       for (int tier_id = 0; tier_id < num_tiers; ++tier_id)
       {
@@ -90,15 +91,15 @@ void terminal_insert(const T *tier, const T *x, const T *y, const int *flat_netp
         // enmu Type
         if (terminal_legalize_flag)
         {
-          auxListRef[tier_id].add_node(net2name(net_id), 150, 150, node_x[terminal_count + num_movable_nodes_top], node_y[terminal_count + num_movable_nodes_top], TERMINAL_NI);
+          auxListRef[tier_id].add_node(net_names[net_id], 200, 200, node_x[terminal_count + num_movable_nodes_top], node_y[terminal_count + num_movable_nodes_top], TERMINAL_NI);
           LOG(DEBUG, "Intersection Center: (%f, %f)", node_x[terminal_count + num_movable_nodes_top], node_y[terminal_count + num_movable_nodes_top]);
         }
         else
         {
-          auxListRef[tier_id].add_node(net2name(net_id), 150, 150, center_x, center_y, TERMINAL_NI);
+          auxListRef[tier_id].add_node(net_names[net_id], 200, 200, center_x, center_y, TERMINAL_NI);
           LOG(DEBUG, "Intersection Center: (%f, %f)", center_x, center_y);
         }
-        auxListRef[tier_id].add_pin(net2name(net_id), net2name(net_id), 'O', 0, 0);
+        auxListRef[tier_id].add_pin(net_names[net_id], net_names[net_id], 'O', 0, 0);
       }
     }
   }
@@ -110,7 +111,8 @@ void partitionLauncher(const T *tier, const int *flat_netpin, const int *netpin_
                        const T *node_size_x, const T *node_size_y, const T *pin_offset_x, const T *pin_offset_y,
                        float die_size_x, float die_size_y, pybind11::list row_height, T *partitioned_net_mask,
                        const T *x, const T *y, bool terminal_instert_flag, bool terminal_legalize_flag,
-                       const T *node_x, const T *node_y, int num_movable_nodes_top)
+                       const T *node_x, const T *node_y, int num_movable_nodes_top,
+                       const std::vector<std::string> &node_names, const std::vector<std::string> &net_names)
 {
   string aux_dir = "./run_tmp/case2/partition/";
   char IO_type;
@@ -138,25 +140,25 @@ void partitionLauncher(const T *tier, const int *flat_netpin, const int *netpin_
           int index_node = num_movable_nodes * tier_id + node_id;
           node_count[tier_id]++;
           num_nodes_in_net++;
-          if (!aux_list[tier_id].check_net_exist(net2name(net_id)))
+          if (!aux_list[tier_id].check_net_exist(net_names[net_id]))
           {
-            aux_list[tier_id].add_net(net2name(net_id));
+            aux_list[tier_id].add_net(net_names[net_id]);
           }
-          if (!aux_list[tier_id].check_node_exist(node2name(node_id)))
+          if (!aux_list[tier_id].check_node_exist(node_names[node_id]))
           {
 
             // LOG(DEBUG, "node %d, tier %d, node_size_x %f, node_size_y %f", node_id, tier_id, node_size_x[index], node_size_y[index]);
             // TODO: cell width and height
-            aux_list[tier_id].add_node(node2name(node_id), node_size_x[index_node], node_size_y[index_node], 0, 0, MOVABLE);
+            aux_list[tier_id].add_node(node_names[node_id], node_size_x[index_node], node_size_y[index_node], 0, 0, MOVABLE);
           }
-          if (!aux_list[tier_id].check_pin_exist(net2name(net_id), node2name(node_id)))
+          if (!aux_list[tier_id].check_pin_exist(net_names[net_id], node_names[node_id]))
           {
             int index_pin = num_pins * tier_id + pin_id;
             (pin_id == netpin_start[net_id]) ? IO_type = 'I' : IO_type = 'O';
             // unable center func type, use explicit type
             // because pin_offset_x and pin_offset_y are relative to the node center in dreamplace
             // so we need to subtract the node_size / 2 when add pin to aux file
-            aux_list[tier_id].add_pin(net2name(net_id), node2name(node_id), IO_type,
+            aux_list[tier_id].add_pin(net_names[net_id], node_names[node_id], IO_type,
                                       static_cast<float>(pin_offset_x[index_pin] - ceil(node_size_x[index_node] / 2)),
                                       static_cast<float>(pin_offset_y[index_pin] - ceil(node_size_y[index_node] / 2)));
           }
@@ -175,7 +177,8 @@ void partitionLauncher(const T *tier, const int *flat_netpin, const int *netpin_
   {
     terminal_insert(tier, x, y, flat_netpin, netpin_start, pin2node_map,
                     num_movable_nodes, num_nets, num_tiers,
-                    partitioned_net_mask, terminal_instert_flag, aux_list, terminal_legalize_flag, node_x, node_y, num_movable_nodes_top);
+                    partitioned_net_mask, terminal_instert_flag, aux_list, terminal_legalize_flag, node_x, node_y, num_movable_nodes_top,
+                    node_names, net_names);
   }
 
   // write aux files
@@ -201,7 +204,8 @@ at::Tensor partition_forward(at::Tensor tier, at::Tensor flat_netpin, at::Tensor
                              at::Tensor pin_offset_x, at::Tensor pin_offset_y,
                              float die_size_x, float die_size_y,
                              pybind11::list row_height, at::Tensor pos, bool terminal_instert_flag,
-                             bool terminal_legalize_flag, at::Tensor pos_tier_legalized_terminal, int num_movable_nodes_top)
+                             bool terminal_legalize_flag, at::Tensor pos_tier_legalized_terminal,
+                             int num_movable_nodes_top, const std::vector<std::string> &node_names, const std::vector<std::string> &net_names)
 {
   CHECK_FLAT_CPU(flat_netpin);
   CHECK_CONTIGUOUS(flat_netpin);
@@ -256,7 +260,7 @@ at::Tensor partition_forward(at::Tensor tier, at::Tensor flat_netpin, at::Tensor
                                            terminal_instert_flag, terminal_legalize_flag,
                                            DREAMPLACE_TENSOR_DATA_PTR(pos_tier_legalized_terminal, scalar_t),
                                            DREAMPLACE_TENSOR_DATA_PTR(pos_tier_legalized_terminal, scalar_t) + pos_tier_legalized_terminal.numel() / 2,
-                                           num_movable_nodes_top); });
+                                           num_movable_nodes_top, node_names, net_names); });
 
   return partitioned_net_mask;
 }

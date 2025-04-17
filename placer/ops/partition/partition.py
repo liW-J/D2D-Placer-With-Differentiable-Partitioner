@@ -23,14 +23,15 @@ class PartitionFunction(Function):
                 num_movable_nodes, node_size_x, node_size_y, pin_offset_x,
                 pin_offset_y, die_size_x, die_size_y, row_height, pos,
                 terminal_instert_flag, terminal_legalize_flag,
-                pos_tier_legalized_terminal, num_movable_nodes_top):
+                pos_tier_legalized_terminal, num_movable_nodes_top, node_names,
+                net_names):
         func = partition_cpp.partition
         output = func(tier, flat_netpin, netpin_start, pin2node_map,
                       net_weights, num_movable_nodes, node_size_x, node_size_y,
                       pin_offset_x, pin_offset_y, die_size_x, die_size_y,
                       row_height, pos, terminal_instert_flag,
                       terminal_legalize_flag, pos_tier_legalized_terminal,
-                      num_movable_nodes_top)
+                      num_movable_nodes_top, node_names, net_names)
 
         return output
 
@@ -70,7 +71,8 @@ class Partition(object):
             self.net_weights, self.num_movable_nodes, node_size_x, node_size_y,
             pin_offset_x, pin_offset_y, die_size_x, die_size_y, row_height,
             pos, self.terminal_instert_flag, self.terminal_legalize_flag,
-            pos_tier_legalized_terminal, num_movable_nodes_top)
+            pos_tier_legalized_terminal, num_movable_nodes_top, self.node_names,
+            self.net_names)
 
 
 if __name__ == "__main__":
