@@ -2,7 +2,7 @@
  * @Author: JeanneWillis hi@jeannewillis.cn
  * @Date: 2025-04-08 12:35:48
  * @LastEditors: JeanneWillis hi@jeannewillis.cn
- * @LastEditTime: 2025-04-16 17:55:30
+ * @LastEditTime: 2025-04-23 18:57:48
  * @FilePath: /D2D-placer/placer/ops/hmetis/src/hmetis.cpp
  * @Description:
  */
@@ -32,7 +32,7 @@ int hmetisPartitionLauncher(T *tier, const int *flat_netpin, const int *netpin_s
     {
       for (int pin_id = netpin_start[net_id]; pin_id < netpin_start[net_id + 1]; ++pin_id)
       {
-        LOG(DEBUG, "net %d, pin %d, node %d", net_id, pin_id, pin2node_map[flat_netpin[pin_id]]);
+        // LOG(DEBUG, "net %d, pin %d, node %d", net_id, pin_id, pin2node_map[flat_netpin[pin_id]]);
         hgr.add_node(to_string(net_id), to_string(pin2node_map[flat_netpin[pin_id]]));
       }
     }

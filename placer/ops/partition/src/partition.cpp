@@ -2,7 +2,7 @@
  * @Author: JeanneWillis hi@jeannewillis.cn
  * @Date: 2025-03-19 11:49:04
  * @LastEditors: JeanneWillis hi@jeannewillis.cn
- * @LastEditTime: 2025-04-17 00:02:01
+ * @LastEditTime: 2025-04-23 20:02:03
  * @FilePath: /D2D-placer/src/ops/partition/src/partition.cpp
  * @Description: partition
  */
@@ -23,21 +23,6 @@ enum NodeType
   TERMINAL,
   TERMINAL_NI
 };
-
-string node2name(int node_id)
-{
-  return "C" + to_string(node_id + 1);
-}
-
-string net2name(int net_id)
-{
-  return "N" + to_string(net_id + 1);
-}
-
-string terminal2name(int terminal_id)
-{
-  return "N" + to_string(terminal_id);
-}
 
 template <typename T>
 void terminal_insert(const T *tier, const T *x, const T *y, const int *flat_netpin, const int *netpin_start,
@@ -72,23 +57,23 @@ void terminal_insert(const T *tier, const T *x, const T *y, const int *flat_netp
         }
       }
       // get inster bonding
-      auto inter_min_x_it = max_element(min_x.begin(), min_x.end());
-      auto inter_max_x_it = min_element(max_x.begin(), max_x.end());
-      auto inter_min_y_it = max_element(min_y.begin(), min_y.end());
-      auto inter_max_y_it = min_element(max_y.begin(), max_y.end());
-      T inter_min_x = *inter_min_x_it;
-      T inter_max_x = *inter_max_x_it;
-      T inter_min_y = *inter_min_y_it;
-      T inter_max_y = *inter_max_y_it;
-      LOG(WARN, "inter_min_x: %f, inter_max_x: %f, inter_min_y: %f, inter_max_y: %f", inter_min_x, inter_max_x, inter_min_y, inter_max_y);
-      T center_x = (inter_min_x + inter_max_x) / 2;
-      T center_y = (inter_min_y + inter_max_y) / 2;
+      auto inner_min_x_it = max_element(min_x.begin(), min_x.end());
+      auto inner_max_x_it = min_element(max_x.begin(), max_x.end());
+      auto inner_min_y_it = max_element(min_y.begin(), min_y.end());
+      auto inner_max_y_it = min_element(max_y.begin(), max_y.end());
+      T inner_min_x = *inner_min_x_it;
+      T inner_max_x = *inner_max_x_it;
+      T inner_min_y = *inner_min_y_it;
+      T inner_max_y = *inner_max_y_it;
+      LOG(WARN, "inner_min_x: %f, inner_max_x: %f, inner_min_y: %f, inner_max_y: %f", inner_min_x, inner_max_x, inner_min_y, inner_max_y);
+      T center_x = (inner_min_x + inner_max_x) / 2;
+      T center_y = (inner_min_y + inner_max_y) / 2;
 
       terminal_count++;
       for (int tier_id = 0; tier_id < num_tiers; ++tier_id)
       {
         LOG(INFO, "terminal_count: %d", terminal_count);
-        // enmu Type
+
         if (terminal_legalize_flag)
         {
           auxListRef[tier_id].add_node(net_names[net_id], 200, 200, node_x[terminal_count + num_movable_nodes_top], node_y[terminal_count + num_movable_nodes_top], TERMINAL_NI);
@@ -146,15 +131,13 @@ void partitionLauncher(const T *tier, const int *flat_netpin, const int *netpin_
           }
           if (!aux_list[tier_id].check_node_exist(node_names[node_id]))
           {
-
             // LOG(DEBUG, "node %d, tier %d, node_size_x %f, node_size_y %f", node_id, tier_id, node_size_x[index], node_size_y[index]);
-            // TODO: cell width and height
             aux_list[tier_id].add_node(node_names[node_id], node_size_x[index_node], node_size_y[index_node], 0, 0, MOVABLE);
           }
           if (!aux_list[tier_id].check_pin_exist(net_names[net_id], node_names[node_id]))
           {
             int index_pin = num_pins * tier_id + pin_id;
-            (pin_id == netpin_start[net_id]) ? IO_type = 'I' : IO_type = 'O';
+            (pin_id == netpin_start[net_id]) ? IO_type = 'I' : IO_type = 'O';            
             // unable center func type, use explicit type
             // because pin_offset_x and pin_offset_y are relative to the node center in dreamplace
             // so we need to subtract the node_size / 2 when add pin to aux file
@@ -234,6 +217,8 @@ at::Tensor partition_forward(at::Tensor tier, at::Tensor flat_netpin, at::Tensor
 
   int num_nets = netpin_start.numel() - 1;
   int num_pins = pin2node_map.numel();
+
+  // TODO: get num_tiers from param.json
   int num_tiers = 2;
   at::Tensor partitioned_net_mask = at::zeros(num_nets, tier.options());
 
