@@ -2,7 +2,7 @@
  * @Author: JeanneWillis hi@jeannewillis.cn
  * @Date: 2025-03-19 11:49:04
  * @LastEditors: JeanneWillis hi@jeannewillis.cn
- * @LastEditTime: 2025-04-23 20:02:03
+ * @LastEditTime: 2025-05-01 14:45:11
  * @FilePath: /D2D-placer/src/ops/partition/src/partition.cpp
  * @Description: partition
  */
@@ -76,12 +76,12 @@ void terminal_insert(const T *tier, const T *x, const T *y, const int *flat_netp
 
         if (terminal_legalize_flag)
         {
-          auxListRef[tier_id].add_node(net_names[net_id], 200, 200, node_x[terminal_count + num_movable_nodes_top], node_y[terminal_count + num_movable_nodes_top], TERMINAL_NI);
+          auxListRef[tier_id].add_node(net_names[net_id], 228, 228, node_x[terminal_count + num_movable_nodes_top], node_y[terminal_count + num_movable_nodes_top], TERMINAL_NI);
           LOG(DEBUG, "Intersection Center: (%f, %f)", node_x[terminal_count + num_movable_nodes_top], node_y[terminal_count + num_movable_nodes_top]);
         }
         else
         {
-          auxListRef[tier_id].add_node(net_names[net_id], 200, 200, center_x, center_y, TERMINAL_NI);
+          auxListRef[tier_id].add_node(net_names[net_id], 228, 228, center_x, center_y, TERMINAL_NI);
           LOG(DEBUG, "Intersection Center: (%f, %f)", center_x, center_y);
         }
         auxListRef[tier_id].add_pin(net_names[net_id], net_names[net_id], 'O', 0, 0);
@@ -99,7 +99,7 @@ void partitionLauncher(const T *tier, const int *flat_netpin, const int *netpin_
                        const T *node_x, const T *node_y, int num_movable_nodes_top,
                        const std::vector<std::string> &node_names, const std::vector<std::string> &net_names)
 {
-  string aux_dir = "./run_tmp/case2/partition/";
+  string aux_dir = "./run_tmp/case2_hidden/partition/";
   char IO_type;
   vector<AUX> aux_list(num_tiers);
 

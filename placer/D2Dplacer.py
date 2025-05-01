@@ -139,7 +139,7 @@ def place(params,
             (iteration, hpwl, density_overflow, max_density))
         placer.plot(params, placedb, iteration, pos)
 
-        breakpoint()
+        # breakpoint()
 
     # call external detailed placement
     # TODO: support more external placers, currently only support
@@ -336,7 +336,7 @@ if __name__ == "__main__":
     tt = time.time()
 
     # TODO: set dir_path by case_name
-    params.aux_input = "run_tmp/case2/flattened-2d/flattened-2d.aux"
+    params.aux_input = "run_tmp/case2_hidden/flattened-2d/flattened-2d.aux"
     placedb_2d, timer = database(params)
     basic_data = BasicPlace.BasicPlace(params, placedb_2d, timer)
 
@@ -348,7 +348,7 @@ if __name__ == "__main__":
     placedb_tier = []
     tier_data = []
     for i in range(params.num_tiers):
-        params.aux_input = f"run_tmp/case2/flattened-2d/tier{i}.aux"
+        params.aux_input = f"run_tmp/case2_hidden/flattened-2d/tier{i}.aux"
         placedb, timer = database(params)
         placedb_tier.append(placedb)
         tier_data.append(BasicPlace.BasicPlace(params, placedb, timer))
@@ -357,10 +357,6 @@ if __name__ == "__main__":
     hmetis, init_partition, out_fmt_iccad, pos_flattened, terminal_insert_op, pin_pos_op, terminal_legalize_op, avg_cut = build_func(
         basic_data, placedb_2d, placedb_tier, params)
 
-    tier = hmetis(pos_2d)
-    # tier = avg_cut(pin_pos_op(pos_2d))
-    breakpoint()
-    
     node_size_x = torch.stack([
         data.data_collections.node_size_x[:placedb_2d.num_movable_nodes]
         for data in tier_data
@@ -382,6 +378,10 @@ if __name__ == "__main__":
         [placedb.yl for placedb in placedb_tier])
 
     row_height = [placedb.row_height for placedb in placedb_tier]
+    
+    tier = hmetis(pos_2d)
+    # tier = avg_cut(pin_pos_op(pos_2d), node_size_x, node_size_y)
+    # breakpoint()
 
     # return partition result but not receive now
     partitioned_net_mask = init_partition(tier, node_size_x, node_size_y,
@@ -393,7 +393,7 @@ if __name__ == "__main__":
     metrics_tier = []
     pos_tier = []
     for i in range(params.num_tiers):
-        params.aux_input = f"run_tmp/case2/partition/tier{i}.aux"
+        params.aux_input = f"run_tmp/case2_hidden/partition/tier{i}.aux"
         placedb_tier[i], timer = database(params)
         params.printWelcome()
         metrics, pos = place(params, placedb_tier[i], timer)
@@ -408,6 +408,7 @@ if __name__ == "__main__":
     for i in range(params.num_tiers):
         logging.info("tier %d placement  HPWL:%.6f " %
                      (i, metrics_tier[i][-1].hpwl))
+    # breakpoint()
 
     logging.info("placement takes %.3f seconds" % (time.time() - tt))
 
@@ -419,7 +420,7 @@ if __name__ == "__main__":
 
     terminal_legalize_flag = True
     for i in range(params.num_tiers):
-        params.aux_input = f"run_tmp/case2/partition/tier{i}.aux"
+        params.aux_input = f"run_tmp/case2_hidden/partition/tier{i}.aux"
         placedb_tier[i], timer = database(params)
         params.printWelcome()
         metrics, pos = place(params, placedb_tier[i], timer,
@@ -437,6 +438,6 @@ if __name__ == "__main__":
 
     logging.info("placement takes %.3f seconds" % (time.time() - tt))
 
-    out_fmt_iccad.out_fmt_iccad("case2")
+    out_fmt_iccad.out_fmt_iccad("case2_hidden")
 
     # breakpoint()

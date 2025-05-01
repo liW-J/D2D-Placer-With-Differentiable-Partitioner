@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-03-19 11:47:31
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-04-23 14:35:34
+LastEditTime: 2025-04-23 21:41:42
 FilePath: /D2D-placer/placer/ops/partition/partition.py
 Description: partition flattened 2D placement to 2 Die
 '''
@@ -21,10 +21,10 @@ class AvgCutFunction(Function):
 
     @staticmethod
     def forward(flat_netpin, netpin_start, pin2node_map, net_weights,
-                num_movable_nodes, pos):
+                num_movable_nodes, pos, node_size_x, node_size_y):
         func = avg_cut_cpp.avg_cut
         output = func(flat_netpin, netpin_start, pin2node_map,
-                      net_weights, num_movable_nodes, pos)
+                      net_weights, num_movable_nodes, pos, node_size_x, node_size_y)
         return output
 
 
@@ -42,10 +42,13 @@ class AvgCut(nn.Module):
         self.num_movable_nodes = num_movable_nodes
 
     def __call__(self,
-                 pos=torch.empty(0)):
+                 pos,
+                 node_size_x,
+                 node_size_y):
         return AvgCutFunction.forward(self.flat_netpin, self.netpin_start,
                                       self.pin2node_map, self.net_weights,
-                                      self.num_movable_nodes, pos)
+                                      self.num_movable_nodes, pos,
+                                      node_size_x, node_size_y)
 
 
 if __name__ == "__main__":
