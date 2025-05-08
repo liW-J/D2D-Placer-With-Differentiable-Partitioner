@@ -2,7 +2,7 @@
  * @Author: JeanneWillis hi@jeannewillis.cn
  * @Date: 2025-03-19 11:49:04
  * @LastEditors: JeanneWillis hi@jeannewillis.cn
- * @LastEditTime: 2025-05-01 14:45:11
+ * @LastEditTime: 2025-05-08 03:50:31
  * @FilePath: /D2D-placer/src/ops/partition/src/partition.cpp
  * @Description: partition
  */
@@ -25,7 +25,7 @@ enum NodeType
 };
 
 template <typename T>
-void terminal_insert(const T *tier, const T *x, const T *y, const int *flat_netpin, const int *netpin_start,
+void terminal_insert(const T *tier, const T *pin_pos_x, const T *pin_pos_y, const int *flat_netpin, const int *netpin_start,
                      const int *pin2node_map, int num_movable_nodes, int num_nets, int num_tiers,
                      const T *partitioned_net_mask, bool terminal_instert_flag, vector<AUX> &auxListRef,
                      bool terminal_legalize_flag, const T *node_x, const T *node_y, int num_movable_nodes_top,
@@ -49,10 +49,10 @@ void terminal_insert(const T *tier, const T *x, const T *y, const int *flat_netp
           int node_id = pin2node_map[flat_netpin[pin_id]];
           if (tier[node_id] == tier_id)
           {
-            max_x[tier_id] = std::max(max_x[tier_id], x[pin_id]);
-            min_x[tier_id] = std::min(min_x[tier_id], x[pin_id]);
-            max_y[tier_id] = std::max(max_y[tier_id], y[pin_id]);
-            min_y[tier_id] = std::min(min_y[tier_id], y[pin_id]);
+            max_x[tier_id] = std::max(max_x[tier_id], pin_pos_x[pin_id]);
+            min_x[tier_id] = std::min(min_x[tier_id], pin_pos_x[pin_id]);
+            max_y[tier_id] = std::max(max_y[tier_id], pin_pos_y[pin_id]);
+            min_y[tier_id] = std::min(min_y[tier_id], pin_pos_y[pin_id]);
           }
         }
       }
@@ -76,12 +76,12 @@ void terminal_insert(const T *tier, const T *x, const T *y, const int *flat_netp
 
         if (terminal_legalize_flag)
         {
-          auxListRef[tier_id].add_node(net_names[net_id], 228, 228, node_x[terminal_count + num_movable_nodes_top], node_y[terminal_count + num_movable_nodes_top], TERMINAL_NI);
+          auxListRef[tier_id].add_node(net_names[net_id], 200, 200, node_x[terminal_count + num_movable_nodes_top], node_y[terminal_count + num_movable_nodes_top], TERMINAL_NI);
           LOG(DEBUG, "Intersection Center: (%f, %f)", node_x[terminal_count + num_movable_nodes_top], node_y[terminal_count + num_movable_nodes_top]);
         }
         else
         {
-          auxListRef[tier_id].add_node(net_names[net_id], 228, 228, center_x, center_y, TERMINAL_NI);
+          auxListRef[tier_id].add_node(net_names[net_id], 200, 200, center_x, center_y, TERMINAL_NI);
           LOG(DEBUG, "Intersection Center: (%f, %f)", center_x, center_y);
         }
         auxListRef[tier_id].add_pin(net_names[net_id], net_names[net_id], 'O', 0, 0);
@@ -95,11 +95,12 @@ void partitionLauncher(const T *tier, const int *flat_netpin, const int *netpin_
                        int num_nets, int num_tiers, int num_movable_nodes, int num_pins,
                        const T *node_size_x, const T *node_size_y, const T *pin_offset_x, const T *pin_offset_y,
                        float die_size_x, float die_size_y, pybind11::list row_height, T *partitioned_net_mask,
-                       const T *x, const T *y, bool terminal_instert_flag, bool terminal_legalize_flag,
+                       const T *pin_pos_x, const T *pin_pos_y, bool terminal_instert_flag, bool terminal_legalize_flag,
                        const T *node_x, const T *node_y, int num_movable_nodes_top,
-                       const std::vector<std::string> &node_names, const std::vector<std::string> &net_names)
+                       const std::vector<std::string> &node_names, const std::vector<std::string> &net_names,
+                       const T *pos_2d_x, const T *pos_2d_y)
 {
-  string aux_dir = "./run_tmp/case2_hidden/partition/";
+  string aux_dir = "./run_tmp/case2/partition/";
   char IO_type;
   vector<AUX> aux_list(num_tiers);
 
@@ -132,7 +133,9 @@ void partitionLauncher(const T *tier, const int *flat_netpin, const int *netpin_
           if (!aux_list[tier_id].check_node_exist(node_names[node_id]))
           {
             // LOG(DEBUG, "node %d, tier %d, node_size_x %f, node_size_y %f", node_id, tier_id, node_size_x[index], node_size_y[index]);
-            aux_list[tier_id].add_node(node_names[node_id], node_size_x[index_node], node_size_y[index_node], 0, 0, MOVABLE);
+            int node_pos_x = (pos_2d_x == nullptr) ? 0 : pos_2d_x[node_id];
+            int node_pos_y = (pos_2d_y == nullptr) ? 0 : pos_2d_y[node_id];
+            aux_list[tier_id].add_node(node_names[node_id], node_size_x[index_node], node_size_y[index_node], node_pos_x, node_pos_y, MOVABLE);
           }
           if (!aux_list[tier_id].check_pin_exist(net_names[net_id], node_names[node_id]))
           {
@@ -158,7 +161,7 @@ void partitionLauncher(const T *tier, const int *flat_netpin, const int *netpin_
 
   if (terminal_instert_flag)
   {
-    terminal_insert(tier, x, y, flat_netpin, netpin_start, pin2node_map,
+    terminal_insert(tier, pin_pos_x, pin_pos_y, flat_netpin, netpin_start, pin2node_map,
                     num_movable_nodes, num_nets, num_tiers,
                     partitioned_net_mask, terminal_instert_flag, aux_list, terminal_legalize_flag, node_x, node_y, num_movable_nodes_top,
                     node_names, net_names);
@@ -186,9 +189,10 @@ at::Tensor partition_forward(at::Tensor tier, at::Tensor flat_netpin, at::Tensor
                              at::Tensor node_size_x, at::Tensor node_size_y,
                              at::Tensor pin_offset_x, at::Tensor pin_offset_y,
                              float die_size_x, float die_size_y,
-                             pybind11::list row_height, at::Tensor pos, bool terminal_instert_flag,
+                             pybind11::list row_height, at::Tensor pin_pos, bool terminal_instert_flag,
                              bool terminal_legalize_flag, at::Tensor pos_tier_legalized_terminal,
-                             int num_movable_nodes_top, const std::vector<std::string> &node_names, const std::vector<std::string> &net_names)
+                             int num_movable_nodes_top, const std::vector<std::string> &node_names, 
+                              const std::vector<std::string> &net_names, at::Tensor pos_2d)
 {
   CHECK_FLAT_CPU(flat_netpin);
   CHECK_CONTIGUOUS(flat_netpin);
@@ -207,9 +211,12 @@ at::Tensor partition_forward(at::Tensor tier, at::Tensor flat_netpin, at::Tensor
   // CHECK_FLAT_CPU(tier);
   CHECK_CONTIGUOUS(tier);
 
-  CHECK_FLAT_CPU(pos);
-  CHECK_EVEN(pos);
-  CHECK_CONTIGUOUS(pos);
+  CHECK_FLAT_CPU(pin_pos);
+  CHECK_EVEN(pin_pos);
+  CHECK_CONTIGUOUS(pin_pos);
+  CHECK_FLAT_CPU(pos_2d);
+  CHECK_EVEN(pos_2d);
+  CHECK_CONTIGUOUS(pos_2d);
 
   CHECK_FLAT_CPU(pos_tier_legalized_terminal);
   CHECK_EVEN(pos_tier_legalized_terminal);
@@ -240,12 +247,14 @@ at::Tensor partition_forward(at::Tensor tier, at::Tensor flat_netpin, at::Tensor
                                            die_size_y,
                                            row_height,
                                            DREAMPLACE_TENSOR_DATA_PTR(partitioned_net_mask, scalar_t),
-                                           DREAMPLACE_TENSOR_DATA_PTR(pos, scalar_t),
-                                           DREAMPLACE_TENSOR_DATA_PTR(pos, scalar_t) + pos.numel() / 2,
+                                           DREAMPLACE_TENSOR_DATA_PTR(pin_pos, scalar_t),
+                                           DREAMPLACE_TENSOR_DATA_PTR(pin_pos, scalar_t) + pin_pos.numel() / 2,
                                            terminal_instert_flag, terminal_legalize_flag,
                                            DREAMPLACE_TENSOR_DATA_PTR(pos_tier_legalized_terminal, scalar_t),
                                            DREAMPLACE_TENSOR_DATA_PTR(pos_tier_legalized_terminal, scalar_t) + pos_tier_legalized_terminal.numel() / 2,
-                                           num_movable_nodes_top, node_names, net_names); });
+                                           num_movable_nodes_top, node_names, net_names,
+                                           DREAMPLACE_TENSOR_DATA_PTR(pos_2d, scalar_t),
+                                           DREAMPLACE_TENSOR_DATA_PTR(pos_2d, scalar_t) + pos_2d.numel() / 2); });
 
   return partitioned_net_mask;
 }

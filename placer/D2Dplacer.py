@@ -118,7 +118,7 @@ def place(params,
         terminal_legalize_op(tier, node_size_x, node_size_y, pin_offset_x,
                              pin_offset_y, die_size_x, die_size_y, row_height,
                              pin_pos_op(pos_2d), placer.pos[0],
-                             placedb.num_movable_nodes)
+                             placedb.num_movable_nodes, pos_2d)
 
         legalize_pos = placer.pos[0].data.clone().cpu().numpy()
 
@@ -336,7 +336,7 @@ if __name__ == "__main__":
     tt = time.time()
 
     # TODO: set dir_path by case_name
-    params.aux_input = "run_tmp/case2_hidden/flattened-2d/flattened-2d.aux"
+    params.aux_input = "run_tmp/case2/flattened-2d/flattened-2d.aux"
     placedb_2d, timer = database(params)
     basic_data = BasicPlace.BasicPlace(params, placedb_2d, timer)
 
@@ -345,15 +345,16 @@ if __name__ == "__main__":
     params.printWelcome()
     metrics_2d, pos_2d = place(params, placedb_2d, timer)
 
+    # save each tier's placedb for backup
     placedb_tier = []
     tier_data = []
     for i in range(params.num_tiers):
-        params.aux_input = f"run_tmp/case2_hidden/flattened-2d/tier{i}.aux"
+        params.aux_input = f"run_tmp/case2/flattened-2d/tier{i}.aux"
         placedb, timer = database(params)
         placedb_tier.append(placedb)
         tier_data.append(BasicPlace.BasicPlace(params, placedb, timer))
 
-    # partitioning
+    # prepare for partitioning
     hmetis, init_partition, out_fmt_iccad, pos_flattened, terminal_insert_op, pin_pos_op, terminal_legalize_op, avg_cut = build_func(
         basic_data, placedb_2d, placedb_tier, params)
 
@@ -378,22 +379,27 @@ if __name__ == "__main__":
         [placedb.yl for placedb in placedb_tier])
 
     row_height = [placedb.row_height for placedb in placedb_tier]
-    
+
+    # partition
     tier = hmetis(pos_2d)
     # tier = avg_cut(pin_pos_op(pos_2d), node_size_x, node_size_y)
     # breakpoint()
 
     # return partition result but not receive now
-    partitioned_net_mask = init_partition(tier, node_size_x, node_size_y,
-                                          pin_offset_x, pin_offset_y,
-                                          die_size_x, die_size_y, row_height)
-
+    # partitioned_net_mask = init_partition(tier, node_size_x, node_size_y,
+    #                                       pin_offset_x, pin_offset_y,
+    #                                       die_size_x, die_size_y, row_height, pos_2d=pos_2d/2)
+    # pos_2d/2 beceuse of 3d-placer set flattened_die size as die_size*2
+    terminal_insert_op(tier, node_size_x, node_size_y, pin_offset_x,
+                       pin_offset_y, die_size_x, die_size_y, row_height,
+                       pin_pos_op(pos_2d)/2, pos_2d=pos_2d/2)
+    
     # num_terminal_NIs = int(partitioned_net_mask.sum().item())
-
+    params.random_center_init_flag = 0
     metrics_tier = []
     pos_tier = []
     for i in range(params.num_tiers):
-        params.aux_input = f"run_tmp/case2_hidden/partition/tier{i}.aux"
+        params.aux_input = f"run_tmp/case2/partition/tier{i}.aux"
         placedb_tier[i], timer = database(params)
         params.printWelcome()
         metrics, pos = place(params, placedb_tier[i], timer)
@@ -402,25 +408,23 @@ if __name__ == "__main__":
 
         pl_file = params.result_dir + f"/tier{i}/tier{i}.gp.pl"
         placedb_tier[i].read_pl(params, pl_file)
-    # breakpoint()
 
     logging.info("2d placement  HPWL:%.6f " % (metrics_2d[-1].hpwl))
     for i in range(params.num_tiers):
         logging.info("tier %d placement  HPWL:%.6f " %
                      (i, metrics_tier[i][-1].hpwl))
-    # breakpoint()
 
     logging.info("placement takes %.3f seconds" % (time.time() - tt))
-
+    # breakpoint()
     pos_flattened.pos_flattened(tier, pos_2d, pos_tier)
 
     terminal_insert_op(tier, node_size_x, node_size_y, pin_offset_x,
                        pin_offset_y, die_size_x, die_size_y, row_height,
-                       pin_pos_op(pos_2d))
+                       pin_pos_op(pos_2d), pos_2d=pos_2d)
 
     terminal_legalize_flag = True
     for i in range(params.num_tiers):
-        params.aux_input = f"run_tmp/case2_hidden/partition/tier{i}.aux"
+        params.aux_input = f"run_tmp/case2/partition/tier{i}.aux"
         placedb_tier[i], timer = database(params)
         params.printWelcome()
         metrics, pos = place(params, placedb_tier[i], timer,
@@ -431,6 +435,7 @@ if __name__ == "__main__":
 
         pl_file = params.result_dir + f"/tier{i}/tier{i}.gp.pl"
         placedb_tier[i].read_pl(params, pl_file)
+        # breakpoint()
 
     for i in range(params.num_tiers):
         logging.info("tier %d placement  HPWL:%.6f " %
@@ -438,6 +443,6 @@ if __name__ == "__main__":
 
     logging.info("placement takes %.3f seconds" % (time.time() - tt))
 
-    out_fmt_iccad.out_fmt_iccad("case2_hidden")
+    out_fmt_iccad.out_fmt_iccad("case2")
 
     # breakpoint()

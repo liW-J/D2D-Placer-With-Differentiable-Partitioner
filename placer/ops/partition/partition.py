@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-03-19 11:47:31
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-04-16 23:31:20
+LastEditTime: 2025-05-07 22:23:16
 FilePath: /D2D-placer/placer/ops/partition/partition.py
 Description: partition flattened 2D placement to 2 Die
 '''
@@ -24,14 +24,14 @@ class PartitionFunction(Function):
                 pin_offset_y, die_size_x, die_size_y, row_height, pos,
                 terminal_instert_flag, terminal_legalize_flag,
                 pos_tier_legalized_terminal, num_movable_nodes_top, node_names,
-                net_names):
+                net_names, pos_2d):
         func = partition_cpp.partition
         output = func(tier, flat_netpin, netpin_start, pin2node_map,
                       net_weights, num_movable_nodes, node_size_x, node_size_y,
                       pin_offset_x, pin_offset_y, die_size_x, die_size_y,
                       row_height, pos, terminal_instert_flag,
                       terminal_legalize_flag, pos_tier_legalized_terminal,
-                      num_movable_nodes_top, node_names, net_names)
+                      num_movable_nodes_top, node_names, net_names, pos_2d)
 
         return output
 
@@ -63,16 +63,17 @@ class Partition(object):
                  die_size_x,
                  die_size_y,
                  row_height,
-                 pos=torch.empty(0),
+                 pin_pos=torch.empty(0),
                  pos_tier_legalized_terminal=torch.empty(0),
-                 num_movable_nodes_top=0):
+                 num_movable_nodes_top=0,
+                 pos_2d=torch.empty(0)):
         return PartitionFunction.forward(
             tier, self.flat_netpin, self.netpin_start, self.pin2node_map,
             self.net_weights, self.num_movable_nodes, node_size_x, node_size_y,
             pin_offset_x, pin_offset_y, die_size_x, die_size_y, row_height,
-            pos, self.terminal_instert_flag, self.terminal_legalize_flag,
+            pin_pos, self.terminal_instert_flag, self.terminal_legalize_flag,
             pos_tier_legalized_terminal, num_movable_nodes_top, self.node_names,
-            self.net_names)
+            self.net_names, pos_2d)
 
 
 if __name__ == "__main__":
