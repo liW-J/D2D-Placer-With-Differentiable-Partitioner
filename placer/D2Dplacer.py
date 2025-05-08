@@ -27,6 +27,8 @@ from colorama import Fore, Style
 from ops.parser_txt.parser_txt import ParserTxt
 from placer.ops.hmetis.hmetis import Hmetis
 from placer.ops.partition.partition import Partition
+from placer.ops.avg_cut.avg_cut import AvgCut
+
 from placer.tools.OutfmtICCAD import OutfmtICCAD
 from placer.tools.PosFlattened import PosFlattened
 from dreamplace.ops.pin_pos.pin_pos import PinPos
@@ -105,22 +107,25 @@ def place(params,
         # placedb.read_pl(params, gp_out_file)
         # a trick
         # num_terminal, placedb.num_terminals = placedb.num_terminals, -placedb.num_terminal_NIs
-       
+
         # placer.op_collections.terminal_legalize_op = placer.build_terminal_legalization(
         #     params, placedb, placer.data_collections, placer.device)
-        placer.pos[0].data.copy_(placer.op_collections.terminal_legalize_op(placer.pos[0]))
+        placer.pos[0].data.copy_(
+            placer.op_collections.terminal_legalize_op(placer.pos[0]))
 
         # placedb.num_terminals = num_terminal
-        
+
         terminal_legalize_op(tier, node_size_x, node_size_y, pin_offset_x,
                              pin_offset_y, die_size_x, die_size_y, row_height,
                              pin_pos_op(pos_2d), placer.pos[0],
-                             placedb.num_movable_nodes)
-        
+                             placedb.num_movable_nodes, pos_2d)
+
         legalize_pos = placer.pos[0].data.clone().cpu().numpy()
 
-        placedb.node_x[:placedb.num_physical_nodes] = legalize_pos[0 : placedb.num_physical_nodes]
-        placedb.node_y[:placedb.num_physical_nodes] = legalize_pos[placedb.num_nodes : placedb.num_nodes + placedb.num_physical_nodes]
+        placedb.node_x[:placedb.num_physical_nodes] = legalize_pos[
+            0:placedb.num_physical_nodes]
+        placedb.node_y[:placedb.num_physical_nodes] = legalize_pos[
+            placedb.num_nodes:placedb.num_nodes + placedb.num_physical_nodes]
 
         pos = placer.init_pos
         iteration = len(metrics)
@@ -134,7 +139,7 @@ def place(params,
             (iteration, hpwl, density_overflow, max_density))
         placer.plot(params, placedb, iteration, pos)
 
-        breakpoint()
+        # breakpoint()
 
     # call external detailed placement
     # TODO: support more external placers, currently only support
@@ -293,7 +298,13 @@ def build_func(basic_data, placedb_2d, placedb_tier, params):
         terminal_instert_flag=True,
         terminal_legalize_flag=True)
 
-    return hmetis, init_partition, out_fmt_iccad, pos_flattened, terminal_insert_op, pin_pos_op, terminal_legalize_op
+    avg_cut = AvgCut(basic_data.data_collections.flat_net2pin_map,
+                     basic_data.data_collections.flat_net2pin_start_map,
+                     basic_data.data_collections.pin2node_map,
+                     basic_data.data_collections.net_weights,
+                     placedb_2d.num_movable_nodes)
+
+    return hmetis, init_partition, out_fmt_iccad, pos_flattened, terminal_insert_op, pin_pos_op, terminal_legalize_op, avg_cut
 
 
 if __name__ == "__main__":
@@ -334,6 +345,7 @@ if __name__ == "__main__":
     params.printWelcome()
     metrics_2d, pos_2d = place(params, placedb_2d, timer)
 
+    # save each tier's placedb for backup
     placedb_tier = []
     tier_data = []
     for i in range(params.num_tiers):
@@ -342,11 +354,9 @@ if __name__ == "__main__":
         placedb_tier.append(placedb)
         tier_data.append(BasicPlace.BasicPlace(params, placedb, timer))
 
-    # partitioning
-    hmetis, init_partition, out_fmt_iccad, pos_flattened, terminal_insert_op, pin_pos_op, terminal_legalize_op = build_func(
+    # prepare for partitioning
+    hmetis, init_partition, out_fmt_iccad, pos_flattened, terminal_insert_op, pin_pos_op, terminal_legalize_op, avg_cut = build_func(
         basic_data, placedb_2d, placedb_tier, params)
-
-    tier = hmetis(pos_2d)
 
     node_size_x = torch.stack([
         data.data_collections.node_size_x[:placedb_2d.num_movable_nodes]
@@ -370,13 +380,22 @@ if __name__ == "__main__":
 
     row_height = [placedb.row_height for placedb in placedb_tier]
 
+    # partition
+    tier = hmetis(pos_2d)
+    # tier = avg_cut(pin_pos_op(pos_2d), node_size_x, node_size_y)
+    # breakpoint()
+
     # return partition result but not receive now
-    partitioned_net_mask = init_partition(tier, node_size_x, node_size_y,
-                                          pin_offset_x, pin_offset_y,
-                                          die_size_x, die_size_y, row_height)
-
+    # partitioned_net_mask = init_partition(tier, node_size_x, node_size_y,
+    #                                       pin_offset_x, pin_offset_y,
+    #                                       die_size_x, die_size_y, row_height, pos_2d=pos_2d/2)
+    # pos_2d/2 beceuse of 3d-placer set flattened_die size as die_size*2
+    terminal_insert_op(tier, node_size_x, node_size_y, pin_offset_x,
+                       pin_offset_y, die_size_x, die_size_y, row_height,
+                       pin_pos_op(pos_2d)/2, pos_2d=pos_2d/2)
+    
     # num_terminal_NIs = int(partitioned_net_mask.sum().item())
-
+    params.random_center_init_flag = 0
     metrics_tier = []
     pos_tier = []
     for i in range(params.num_tiers):
@@ -389,7 +408,6 @@ if __name__ == "__main__":
 
         pl_file = params.result_dir + f"/tier{i}/tier{i}.gp.pl"
         placedb_tier[i].read_pl(params, pl_file)
-    # breakpoint()
 
     logging.info("2d placement  HPWL:%.6f " % (metrics_2d[-1].hpwl))
     for i in range(params.num_tiers):
@@ -397,12 +415,12 @@ if __name__ == "__main__":
                      (i, metrics_tier[i][-1].hpwl))
 
     logging.info("placement takes %.3f seconds" % (time.time() - tt))
-
+    # breakpoint()
     pos_flattened.pos_flattened(tier, pos_2d, pos_tier)
 
     terminal_insert_op(tier, node_size_x, node_size_y, pin_offset_x,
                        pin_offset_y, die_size_x, die_size_y, row_height,
-                       pin_pos_op(pos_2d))
+                       pin_pos_op(pos_2d), pos_2d=pos_2d)
 
     terminal_legalize_flag = True
     for i in range(params.num_tiers):
@@ -417,6 +435,7 @@ if __name__ == "__main__":
 
         pl_file = params.result_dir + f"/tier{i}/tier{i}.gp.pl"
         placedb_tier[i].read_pl(params, pl_file)
+        # breakpoint()
 
     for i in range(params.num_tiers):
         logging.info("tier %d placement  HPWL:%.6f " %
