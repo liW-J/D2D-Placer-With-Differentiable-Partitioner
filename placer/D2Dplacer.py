@@ -336,7 +336,7 @@ if __name__ == "__main__":
     tt = time.time()
 
     # TODO: set dir_path by case_name
-    params.aux_input = "run_tmp/case2/flattened-2d/flattened-2d.aux"
+    params.aux_input = "run_tmp/case2_hidden/flattened-2d/flattened-2d.aux"
     placedb_2d, timer = database(params)
     basic_data = BasicPlace.BasicPlace(params, placedb_2d, timer)
 
@@ -349,7 +349,7 @@ if __name__ == "__main__":
     placedb_tier = []
     tier_data = []
     for i in range(params.num_tiers):
-        params.aux_input = f"run_tmp/case2/flattened-2d/tier{i}.aux"
+        params.aux_input = f"run_tmp/case2_hidden/flattened-2d/tier{i}.aux"
         placedb, timer = database(params)
         placedb_tier.append(placedb)
         tier_data.append(BasicPlace.BasicPlace(params, placedb, timer))
@@ -399,7 +399,7 @@ if __name__ == "__main__":
     metrics_tier = []
     pos_tier = []
     for i in range(params.num_tiers):
-        params.aux_input = f"run_tmp/case2/partition/tier{i}.aux"
+        params.aux_input = f"run_tmp/case2_hidden/partition/tier{i}.aux"
         placedb_tier[i], timer = database(params)
         params.printWelcome()
         metrics, pos = place(params, placedb_tier[i], timer)
@@ -424,7 +424,7 @@ if __name__ == "__main__":
 
     terminal_legalize_flag = True
     for i in range(params.num_tiers):
-        params.aux_input = f"run_tmp/case2/partition/tier{i}.aux"
+        params.aux_input = f"run_tmp/case2_hidden/partition/tier{i}.aux"
         placedb_tier[i], timer = database(params)
         params.printWelcome()
         metrics, pos = place(params, placedb_tier[i], timer,
@@ -443,6 +443,6 @@ if __name__ == "__main__":
 
     logging.info("placement takes %.3f seconds" % (time.time() - tt))
 
-    out_fmt_iccad.out_fmt_iccad("case2")
+    out_fmt_iccad.out_fmt_iccad("case2_hidden")
 
     # breakpoint()

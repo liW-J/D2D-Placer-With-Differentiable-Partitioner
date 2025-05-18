@@ -2,7 +2,7 @@
  * @Author: JeanneWillis hi@jeannewillis.cn
  * @Date: 2025-03-19 11:49:04
  * @LastEditors: JeanneWillis hi@jeannewillis.cn
- * @LastEditTime: 2025-05-08 03:50:31
+ * @LastEditTime: 2025-05-18 17:52:08
  * @FilePath: /D2D-placer/src/ops/partition/src/partition.cpp
  * @Description: partition
  */
@@ -76,12 +76,12 @@ void terminal_insert(const T *tier, const T *pin_pos_x, const T *pin_pos_y, cons
 
         if (terminal_legalize_flag)
         {
-          auxListRef[tier_id].add_node(net_names[net_id], 200, 200, node_x[terminal_count + num_movable_nodes_top], node_y[terminal_count + num_movable_nodes_top], TERMINAL_NI);
+          auxListRef[tier_id].add_node(net_names[net_id], 228, 228, node_x[terminal_count + num_movable_nodes_top], node_y[terminal_count + num_movable_nodes_top], TERMINAL_NI);
           LOG(DEBUG, "Intersection Center: (%f, %f)", node_x[terminal_count + num_movable_nodes_top], node_y[terminal_count + num_movable_nodes_top]);
         }
         else
         {
-          auxListRef[tier_id].add_node(net_names[net_id], 200, 200, center_x, center_y, TERMINAL_NI);
+          auxListRef[tier_id].add_node(net_names[net_id], 228, 228, center_x, center_y, TERMINAL_NI);
           LOG(DEBUG, "Intersection Center: (%f, %f)", center_x, center_y);
         }
         auxListRef[tier_id].add_pin(net_names[net_id], net_names[net_id], 'O', 0, 0);
@@ -100,7 +100,7 @@ void partitionLauncher(const T *tier, const int *flat_netpin, const int *netpin_
                        const std::vector<std::string> &node_names, const std::vector<std::string> &net_names,
                        const T *pos_2d_x, const T *pos_2d_y)
 {
-  string aux_dir = "./run_tmp/case2/partition/";
+  string aux_dir = "./run_tmp/case2_hidden/partition/";
   char IO_type;
   vector<AUX> aux_list(num_tiers);
 
@@ -117,7 +117,6 @@ void partitionLauncher(const T *tier, const int *flat_netpin, const int *netpin_
     vector<int> node_count(num_tiers, 0);
     for (int tier_id = 0; tier_id < num_tiers; ++tier_id)
     {
-
       for (int pin_id = netpin_start[net_id]; pin_id < netpin_start[net_id + 1]; ++pin_id)
       {
         int node_id = pin2node_map[flat_netpin[pin_id]];
@@ -145,8 +144,8 @@ void partitionLauncher(const T *tier, const int *flat_netpin, const int *netpin_
             // because pin_offset_x and pin_offset_y are relative to the node center in dreamplace
             // so we need to subtract the node_size / 2 when add pin to aux file
             aux_list[tier_id].add_pin(net_names[net_id], node_names[node_id], IO_type,
-                                      static_cast<float>(pin_offset_x[index_pin] - ceil(node_size_x[index_node] / 2)),
-                                      static_cast<float>(pin_offset_y[index_pin] - ceil(node_size_y[index_node] / 2)));
+                                      static_cast<float>(pin_offset_x[index_pin] - ceil(node_size_x[index_node])),
+                                      static_cast<float>(pin_offset_y[index_pin] - ceil(node_size_y[index_node])));
           }
         }
       }
