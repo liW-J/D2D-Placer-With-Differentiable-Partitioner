@@ -26,8 +26,9 @@ import dreamplace.NonLinearPlace as NonLinearPlace
 from colorama import Fore, Style
 from ops.parser_txt.parser_txt import ParserTxt
 from placer.ops.hmetis.hmetis import Hmetis
-from placer.ops.partition.partition import Partition
+from placer.ops.partition_aux.partition_aux import PartitionAux
 from placer.ops.avg_cut.avg_cut import AvgCut
+from placer.ops.terminal_aux.terminal_aux import TerminalAux
 
 from placer.tools.OutfmtICCAD import OutfmtICCAD
 from placer.tools.PosFlattened import PosFlattened
@@ -75,11 +76,7 @@ def database(params):
     return placedb, timer
 
 
-def place(params,
-          placedb,
-          timer,
-          terminal_legalize_flag=False,
-          terminal_legalize_op=None):
+def place(params, placedb, timer):
     """
     @brief Top API to run the entire placement flow.
     @param params parameters
@@ -102,44 +99,6 @@ def place(params,
         path,
         "%s.gp.%s" % (params.design_name(), params.solution_file_suffix()))
     placedb.write(params, gp_out_file)
-
-    if terminal_legalize_flag:
-        # placedb.read_pl(params, gp_out_file)
-        # a trick
-        # num_terminal, placedb.num_terminals = placedb.num_terminals, -placedb.num_terminal_NIs
-
-        # placer.op_collections.terminal_legalize_op = placer.build_terminal_legalization(
-        #     params, placedb, placer.data_collections, placer.device)
-        placer.pos[0].data.copy_(
-            placer.op_collections.terminal_legalize_op(placer.pos[0]))
-
-        # placedb.num_terminals = num_terminal
-
-        terminal_legalize_op(tier, node_size_x, node_size_y, pin_offset_x,
-                             pin_offset_y, die_size_x, die_size_y, row_height,
-                             pin_pos_op(pos_2d), placer.pos[0],
-                             placedb.num_movable_nodes, pos_2d)
-
-        legalize_pos = placer.pos[0].data.clone().cpu().numpy()
-
-        placedb.node_x[:placedb.num_physical_nodes] = legalize_pos[
-            0:placedb.num_physical_nodes]
-        placedb.node_y[:placedb.num_physical_nodes] = legalize_pos[
-            placedb.num_nodes:placedb.num_nodes + placedb.num_physical_nodes]
-
-        pos = placer.init_pos
-        iteration = len(metrics)
-        pos[0:placedb.num_physical_nodes] = placedb.node_x
-        pos[placedb.num_nodes:placedb.num_nodes +
-            placedb.num_physical_nodes] = placedb.node_y
-        hpwl, density_overflow, max_density = placer.validate(
-            placedb, pos, iteration)
-        logging.info(
-            "iteration %4d, HPWL %.3E, overflow %.3E, max density %.3E" %
-            (iteration, hpwl, density_overflow, max_density))
-        placer.plot(params, placedb, iteration, pos)
-
-        # breakpoint()
 
     # call external detailed placement
     # TODO: support more external placers, currently only support
@@ -251,7 +210,7 @@ def build_func(basic_data, placedb_2d, placedb_tier, params):
                     basic_data.data_collections.net_mask_all,
                     placedb_2d.num_movable_nodes)
 
-    init_partition = Partition(
+    init_partition = PartitionAux(
         basic_data.data_collections.flat_net2pin_map,
         basic_data.data_collections.flat_net2pin_start_map,
         basic_data.data_collections.pin2node_map,
@@ -266,7 +225,7 @@ def build_func(basic_data, placedb_2d, placedb_tier, params):
 
     pos_flattened = PosFlattened(params, placedb_2d, placedb_tier)
 
-    terminal_insert_op = Partition(
+    terminal_insert_op = PartitionAux(
         basic_data.data_collections.flat_net2pin_map,
         basic_data.data_collections.flat_net2pin_start_map,
         basic_data.data_collections.pin2node_map,
@@ -287,7 +246,7 @@ def build_func(basic_data, placedb_2d, placedb_tier, params):
         num_physical_nodes=placedb_2d.num_physical_nodes,
         algorithm="node-by-node")
 
-    terminal_legalize_op = Partition(
+    terminal_legalize_op = PartitionAux(
         basic_data.data_collections.flat_net2pin_map,
         basic_data.data_collections.flat_net2pin_start_map,
         basic_data.data_collections.pin2node_map,
@@ -304,7 +263,16 @@ def build_func(basic_data, placedb_2d, placedb_tier, params):
                      basic_data.data_collections.net_weights,
                      placedb_2d.num_movable_nodes)
 
-    return hmetis, init_partition, out_fmt_iccad, pos_flattened, terminal_insert_op, pin_pos_op, terminal_legalize_op, avg_cut
+    terminal_aux_op = TerminalAux(
+        basic_data.data_collections.flat_net2pin_map,
+        basic_data.data_collections.flat_net2pin_start_map,
+        basic_data.data_collections.pin2node_map,
+        basic_data.data_collections.net_weights,
+        placedb_2d.num_movable_nodes,
+        node_names=placedb_2d.node_names,
+        net_names=placedb_2d.net_names)
+
+    return hmetis, init_partition, out_fmt_iccad, pos_flattened, terminal_insert_op, pin_pos_op, terminal_legalize_op, avg_cut, terminal_aux_op
 
 
 if __name__ == "__main__":
@@ -355,7 +323,7 @@ if __name__ == "__main__":
         tier_data.append(BasicPlace.BasicPlace(params, placedb, timer))
 
     # prepare for partitioning
-    hmetis, init_partition, out_fmt_iccad, pos_flattened, terminal_insert_op, pin_pos_op, terminal_legalize_op, avg_cut = build_func(
+    hmetis, init_partition, out_fmt_iccad, pos_flattened, terminal_insert_op, pin_pos_op, terminal_legalize_op, avg_cut, terminal_aux_op = build_func(
         basic_data, placedb_2d, placedb_tier, params)
 
     node_size_x = torch.stack([
@@ -381,7 +349,12 @@ if __name__ == "__main__":
     row_height = [placedb.row_height for placedb in placedb_tier]
 
     # partition
-    tier = hmetis(pos_2d)
+    # tier = hmetis(pos_2d)
+
+    # bin-based partition
+    # temporarily call tier result from file
+    tier = torch.load('placer/die_tensor.pt')
+    tier = tier.to(torch.float32)
     # tier = avg_cut(pin_pos_op(pos_2d), node_size_x, node_size_y)
     # breakpoint()
 
@@ -390,12 +363,19 @@ if __name__ == "__main__":
     #                                       pin_offset_x, pin_offset_y,
     #                                       die_size_x, die_size_y, row_height, pos_2d=pos_2d/2)
     # pos_2d/2 beceuse of 3d-placer set flattened_die size as die_size*2
-    terminal_insert_op(tier, node_size_x, node_size_y, pin_offset_x,
-                       pin_offset_y, die_size_x, die_size_y, row_height,
-                       pin_pos_op(pos_2d)/2, pos_2d=pos_2d/2)
-    
-    # num_terminal_NIs = int(partitioned_net_mask.sum().item())
-    params.random_center_init_flag = 0
+    partitioned_net_mask = terminal_insert_op(tier,
+                                              node_size_x,
+                                              node_size_y,
+                                              pin_offset_x,
+                                              pin_offset_y,
+                                              die_size_x,
+                                              die_size_y,
+                                              row_height,
+                                              pin_pos_op(pos_2d) / 2,
+                                              pos_2d=pos_2d / 2)
+    num_terminal_NIs = int(partitioned_net_mask.sum().item())
+
+    params.random_center_init_flag = 0  # 2D pos gives initial placement result
     metrics_tier = []
     pos_tier = []
     for i in range(params.num_tiers):
@@ -406,9 +386,6 @@ if __name__ == "__main__":
         metrics_tier.append(metrics)
         pos_tier.append(pos)
 
-        pl_file = params.result_dir + f"/tier{i}/tier{i}.gp.pl"
-        placedb_tier[i].read_pl(params, pl_file)
-
     logging.info("2d placement  HPWL:%.6f " % (metrics_2d[-1].hpwl))
     for i in range(params.num_tiers):
         logging.info("tier %d placement  HPWL:%.6f " %
@@ -418,24 +395,42 @@ if __name__ == "__main__":
     # breakpoint()
     pos_flattened.pos_flattened(tier, pos_2d, pos_tier)
 
-    terminal_insert_op(tier, node_size_x, node_size_y, pin_offset_x,
-                       pin_offset_y, die_size_x, die_size_y, row_height,
-                       pin_pos_op(pos_2d), pos_2d=pos_2d)
+    terminal_insert_op(tier,
+                       node_size_x,
+                       node_size_y,
+                       pin_offset_x,
+                       pin_offset_y,
+                       die_size_x,
+                       die_size_y,
+                       row_height,
+                       pin_pos_op(pos_2d),
+                       pos_2d=pos_2d)
 
-    terminal_legalize_flag = True
+    # update placedb_tier & tier_data using new terminal_insert result
+    for i in range(params.num_tiers):
+        params.aux_input = f"run_tmp/case2_hidden/partition/tier{i}.aux"
+        placedb_tier[i], timer = database(params)
+        tier_data[i] = BasicPlace.BasicPlace(params, placedb_tier[i], timer)
+
+    # create terminal aux for collaborative optimization by tier[0]
+    terminal_aux_op(tier, node_size_x, node_size_y, pin_offset_x,
+                    pin_offset_y, die_size_x, die_size_y, row_height,
+                    pin_pos_op(pos_2d), pos_2d)
+
+    # terminal_legalize_op(tier, node_size_x, node_size_y, pin_offset_x,
+    #                          pin_offset_y, die_size_x, die_size_y, row_height,
+    #                          pin_pos_op(pos_2d), placer.pos[0],
+    #                          placedb.num_movable_nodes, pos_2d)
+    breakpoint()
+
     for i in range(params.num_tiers):
         params.aux_input = f"run_tmp/case2_hidden/partition/tier{i}.aux"
         placedb_tier[i], timer = database(params)
         params.printWelcome()
-        metrics, pos = place(params, placedb_tier[i], timer,
-                             terminal_legalize_flag, terminal_legalize_op)
+        metrics, pos = place(params, placedb_tier[i], timer)
         metrics_tier[i] = metrics
         pos_tier[i] = pos
         terminal_legalize_flag = False
-
-        pl_file = params.result_dir + f"/tier{i}/tier{i}.gp.pl"
-        placedb_tier[i].read_pl(params, pl_file)
-        # breakpoint()
 
     for i in range(params.num_tiers):
         logging.info("tier %d placement  HPWL:%.6f " %

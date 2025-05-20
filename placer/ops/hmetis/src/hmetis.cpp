@@ -2,7 +2,7 @@
  * @Author: JeanneWillis hi@jeannewillis.cn
  * @Date: 2025-04-08 12:35:48
  * @LastEditors: JeanneWillis hi@jeannewillis.cn
- * @LastEditTime: 2025-05-18 17:52:05
+ * @LastEditTime: 2025-05-18 22:18:51
  * @FilePath: /D2D-placer/placer/ops/hmetis/src/hmetis.cpp
  * @Description:
  */
@@ -56,6 +56,56 @@ int hmetisPartitionLauncher(T *tier, const int *flat_netpin, const int *netpin_s
   LOG(INFO, "Running hmetis completed");
   return 0;
 }
+
+
+// template <typename T>
+// int binBasedPartitionLauncher(T *tier, const int *flat_netpin, const int *netpin_start, const int *pin2node_map,
+//                             const unsigned char *net_mask, int num_nets, int num_movable_nodes, int num_threads)
+// {
+//   double cutline = 0.5;
+//   double width_avg0 = 0;
+//   double width_avg1 = 0;
+//   int bins_per_row = 1;
+//   int bins_per_col = 1;
+//   bool _multiLevel = false;
+//   int bin_width = 1000 / bins_per_row;
+//   int bin_height = 1000 / bins_per_col;
+//   int bin_num = bins_per_row * bins_per_col;
+//   vector <vector <vector <Cell_C*>>> bins(bins_per_row, vector< vector <Cell_C*>> (bins_per_col, vector <Cell_C*> ()));   
+
+
+//   double used_area[2] = {0.0, 0.0};
+//   double maxArea[2];
+//   double totalArea[2];
+//   for (int ind=0; ind<bin_num; ind++) {
+//     int i = bins_size[ind].second.first;
+//     int j = bins_size[ind].second.second;
+//     Partitioner* partitioner = new Partitioner();
+//     totalArea[0] = (double) _pChip->get_die(0)->get_width() * (double) _pChip->get_die(0)->get_height() * _pChip->get_die(0)->get_max_util();
+//     totalArea[1] = (double) _pChip->get_die(1)->get_width() * (double) _pChip->get_die(1)->get_height() * _pChip->get_die(1)->get_max_util();
+//     maxArea[0] = totalArea[0] - used_area[0];
+//     maxArea[1] = totalArea[1] - used_area[1];
+//     partitioner->parseInput(_vCell, _pChip, bins[i][j], maxArea, cutline, false);
+//     partitioner->initial_partition();
+//     partitioner->partition(2,2,3, true);
+//     vector<vector<int> >& cellPart = partitioner->get_part_result();
+//     for (int k=0; k<2; ++k){
+//       for(int cellId : cellPart[k]){ 
+//         Cell_C* cell = _vCell[cellId];
+//         used_area[k] += cell->get_width(_pChip->get_die(k)->get_techId()) * cell->get_height(_pChip->get_die(k)->get_techId());
+//         if (used_area[k] <= totalArea[k]) {
+//           tier[cellId] = k;
+//         } else {
+//           used_area[k] -= cell->get_width(_pChip->get_die(k)->get_techId()) * cell->get_height(_pChip->get_die(k)->get_techId());
+//           tier[cellId] = 1 - k;
+//           used_area[1 - k] += cell->get_width() * cell->get_height();
+//         }
+//       }
+//     }
+//   }
+
+//   return 0;
+// }
 
 at::Tensor hmetis_forward(at::Tensor pos, at::Tensor flat_netpin, at::Tensor netpin_start,
                                     at::Tensor pin2node_map, at::Tensor net_weights,
