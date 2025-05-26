@@ -349,12 +349,12 @@ if __name__ == "__main__":
     row_height = [placedb.row_height for placedb in placedb_tier]
 
     # partition
-    # tier = hmetis(pos_2d)
+    tier = hmetis(pos_2d)
 
     # bin-based partition
     # temporarily call tier result from file
-    tier = torch.load('placer/die_tensor.pt')
-    tier = tier.to(torch.float32)
+    # tier = torch.load('placer/die_tensor.pt')
+    # tier = tier.to(torch.float32)
     # tier = avg_cut(pin_pos_op(pos_2d), node_size_x, node_size_y)
     # breakpoint()
 
@@ -375,7 +375,8 @@ if __name__ == "__main__":
                                               pos_2d=pos_2d / 2)
     num_terminal_NIs = int(partitioned_net_mask.sum().item())
 
-    params.random_center_init_flag = 0  # 2D pos gives initial placement result
+    # 2D result for init pos may casued no convergence
+    # params.random_center_init_flag = 0  # 2D pos gives initial placement result
     metrics_tier = []
     pos_tier = []
     for i in range(params.num_tiers):
@@ -416,11 +417,19 @@ if __name__ == "__main__":
     terminal_aux_op(tier, node_size_x, node_size_y, pin_offset_x,
                     pin_offset_y, die_size_x, die_size_y, row_height,
                     pin_pos_op(pos_2d), pos_2d)
+    
+    params.random_center_init_flag = 0 
+    params.aux_input = f"run_tmp/case2_hidden/terminal/terminal.aux"
+    placedb_terminal, timer = database(params)
+    params.printWelcome()
+    terminal_metrics, terminal_pos = place(params, placedb_terminal, timer)
+    breakpoint()
 
-    # terminal_legalize_op(tier, node_size_x, node_size_y, pin_offset_x,
-    #                          pin_offset_y, die_size_x, die_size_y, row_height,
-    #                          pin_pos_op(pos_2d), placer.pos[0],
-    #                          placedb.num_movable_nodes, pos_2d)
+    terminal_legalize_op(tier, node_size_x, node_size_y, pin_offset_x,
+                             pin_offset_y, die_size_x, die_size_y, row_height,
+                             pin_pos_op(pos_2d), terminal_pos,
+                             num_terminal_NIs, pos_2d, placedb_terminal.node_names)
+    
     breakpoint()
 
     for i in range(params.num_tiers):

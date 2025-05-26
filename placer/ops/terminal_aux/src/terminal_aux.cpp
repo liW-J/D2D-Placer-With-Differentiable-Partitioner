@@ -2,7 +2,7 @@
  * @Author: JeanneWillis hi@jeannewillis.cn
  * @Date: 2025-03-19 11:49:04
  * @LastEditors: JeanneWillis hi@jeannewillis.cn
- * @LastEditTime: 2025-05-20 23:26:21
+ * @LastEditTime: 2025-05-21 00:21:46
  * @FilePath: /D2D-placer/src/ops/partition/src/partition.cpp
  * @Description: partition
  */
@@ -64,15 +64,16 @@ void terminal_insert(const T *tier, const T *pin_pos_x, const T *pin_pos_y,
       T center_y = (inner_min_y + inner_max_y) / 2;
 
       terminal_count++;
+      LOG(INFO, "terminal_count: %d", terminal_count);
+
+      terminalAuxRef.add_node(net_names[net_id], 228, 228, center_x, center_y,
+                              MOVABLE);
       for (int tier_id = 0; tier_id < num_tiers; ++tier_id) {
         string tier_net_name = net_names[net_id] + "_" + to_string(tier_id);
-        LOG(INFO, "terminal_count: %d", terminal_count);
 
-        terminalAuxRef.add_node(tier_net_name, 114, 114, center_x, center_y,
-                                MOVABLE);
         LOG(DEBUG, "Intersection Center: (%f, %f)", center_x, center_y);
 
-        terminalAuxRef.add_pin(tier_net_name, tier_net_name, 'O', 0, 0);
+        terminalAuxRef.add_pin(tier_net_name, net_names[net_id], 'O', 0, 0);
       }
     }
   }
@@ -160,7 +161,7 @@ void terminalAuxLauncher(const T *tier, const int *flat_netpin,
                   partitioned_net_mask, terminal_aux, node_names, net_names);
 
   // write aux files
-  int tier_row_height = 114;
+  int tier_row_height = 228;
   terminal_aux.set_default_rows(die_size_x, tier_row_height,
                                 die_size_y / tier_row_height);
   // sort node by name
