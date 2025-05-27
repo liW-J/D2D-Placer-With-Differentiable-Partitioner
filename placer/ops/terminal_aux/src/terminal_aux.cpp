@@ -2,7 +2,7 @@
  * @Author: JeanneWillis hi@jeannewillis.cn
  * @Date: 2025-03-19 11:49:04
  * @LastEditors: JeanneWillis hi@jeannewillis.cn
- * @LastEditTime: 2025-05-21 00:21:46
+ * @LastEditTime: 2025-05-26 20:49:35
  * @FilePath: /D2D-placer/src/ops/partition/src/partition.cpp
  * @Description: partition
  */
@@ -20,10 +20,10 @@ PLACER_BEGIN_NAMESPACE
 enum NodeType { MOVABLE, TERMINAL, TERMINAL_NI };
 
 template <typename T>
-void terminal_insert(const T *tier, const T *pin_pos_x, const T *pin_pos_y,
+void terminal_insert(const int *tier, const T *pin_pos_x, const T *pin_pos_y,
                      const int *flat_netpin, const int *netpin_start,
                      const int *pin2node_map, int num_movable_nodes,
-                     int num_nets, int num_tiers, const T *partitioned_net_mask,
+                     int num_nets, int num_tiers, const int *cut_net_mask,
                      AUX &terminalAuxRef,
                      const std::vector<std::string> &node_names,
                      const std::vector<std::string> &net_names) {
@@ -35,7 +35,7 @@ void terminal_insert(const T *tier, const T *pin_pos_x, const T *pin_pos_y,
     vector<T> min_x(num_tiers, std::numeric_limits<T>::max());
     vector<T> max_y(num_tiers, -std::numeric_limits<T>::max());
     vector<T> min_y(num_tiers, std::numeric_limits<T>::max());
-    if (partitioned_net_mask[net_id]) {
+    if (cut_net_mask[net_id]) {
       for (int tier_id = 0; tier_id < num_tiers; ++tier_id) {
         for (int pin_id = netpin_start[net_id];
              pin_id < netpin_start[net_id + 1]; pin_id++) {
@@ -80,14 +80,14 @@ void terminal_insert(const T *tier, const T *pin_pos_x, const T *pin_pos_y,
 }
 
 template <typename T>
-void terminalAuxLauncher(const T *tier, const int *flat_netpin,
+void terminalAuxLauncher(const int *tier, const int *flat_netpin,
                          const int *netpin_start, const int *pin2node_map,
                          int num_nets, int num_tiers, int num_movable_nodes,
                          int num_pins, const T *node_size_x,
                          const T *node_size_y, const T *pin_offset_x,
                          const T *pin_offset_y, float die_size_x,
                          float die_size_y, pybind11::list row_height,
-                         T *partitioned_net_mask, const T *pin_pos_x,
+                         int *cut_net_mask, const T *pin_pos_x,
                          const T *pin_pos_y,
                          const std::vector<std::string> &node_names,
                          const std::vector<std::string> &net_names,
@@ -117,7 +117,7 @@ void terminalAuxLauncher(const T *tier, const int *flat_netpin,
     // if all nodes are in the same tier, not cut
     if (std::find(node_count.begin(), node_count.end(), num_nodes_in_net) ==
         node_count.end()) {
-      partitioned_net_mask[net_id] = 1;
+      cut_net_mask[net_id] = 1;
 
       for (int tier_id = 0; tier_id < num_tiers; ++tier_id) {
         string tier_net_name = net_names[net_id] + "_" + to_string(tier_id);
@@ -158,7 +158,7 @@ void terminalAuxLauncher(const T *tier, const int *flat_netpin,
 
   terminal_insert(tier, pin_pos_x, pin_pos_y, flat_netpin, netpin_start,
                   pin2node_map, num_movable_nodes, num_nets, num_tiers,
-                  partitioned_net_mask, terminal_aux, node_names, net_names);
+                  cut_net_mask, terminal_aux, node_names, net_names);
 
   // write aux files
   int tier_row_height = 228;
@@ -206,11 +206,11 @@ at::Tensor terminal_aux_forward(
 
   // TODO: get num_tiers from param.json
   int num_tiers = 2;
-  at::Tensor partitioned_net_mask = at::zeros(num_nets, tier.options());
+  at::Tensor cut_net_mask = at::zeros(num_nets, tier.options());
 
-  DREAMPLACE_DISPATCH_FLOATING_TYPES(tier, "terminalAuxLauncher", [&] {
+  DREAMPLACE_DISPATCH_FLOATING_TYPES(node_size_x, "terminalAuxLauncher", [&] {
     terminalAuxLauncher<scalar_t>(
-        DREAMPLACE_TENSOR_DATA_PTR(tier, scalar_t),
+        DREAMPLACE_TENSOR_DATA_PTR(tier, int),
         DREAMPLACE_TENSOR_DATA_PTR(flat_netpin, int),
         DREAMPLACE_TENSOR_DATA_PTR(netpin_start, int),
         DREAMPLACE_TENSOR_DATA_PTR(pin2node_map, int), num_nets, num_tiers,
@@ -220,14 +220,14 @@ at::Tensor terminal_aux_forward(
         DREAMPLACE_TENSOR_DATA_PTR(pin_offset_x, scalar_t),
         DREAMPLACE_TENSOR_DATA_PTR(pin_offset_y, scalar_t), die_size_x,
         die_size_y, row_height,
-        DREAMPLACE_TENSOR_DATA_PTR(partitioned_net_mask, scalar_t),
+        DREAMPLACE_TENSOR_DATA_PTR(cut_net_mask, int),
         DREAMPLACE_TENSOR_DATA_PTR(pin_pos, scalar_t),
         DREAMPLACE_TENSOR_DATA_PTR(pin_pos, scalar_t) + pin_pos.numel() / 2,
         node_names, net_names, DREAMPLACE_TENSOR_DATA_PTR(pos_2d, scalar_t),
         DREAMPLACE_TENSOR_DATA_PTR(pos_2d, scalar_t) + pos_2d.numel() / 2);
   });
 
-  return partitioned_net_mask;
+  return cut_net_mask;
 }
 
 PLACER_END_NAMESPACE

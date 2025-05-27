@@ -26,6 +26,7 @@ import dreamplace.NonLinearPlace as NonLinearPlace
 from colorama import Fore, Style
 from ops.parser_txt.parser_txt import ParserTxt
 from placer.ops.hmetis.hmetis import Hmetis
+from placer.ops.multi_bipartition.multi_bipartition import MultiBipartition
 from placer.ops.partition_aux.partition_aux import PartitionAux
 from placer.ops.avg_cut.avg_cut import AvgCut
 from placer.ops.terminal_aux.terminal_aux import TerminalAux
@@ -210,6 +211,16 @@ def build_func(basic_data, placedb_2d, placedb_tier, params):
                     basic_data.data_collections.net_mask_all,
                     placedb_2d.num_movable_nodes)
 
+    multi_bipartition = MultiBipartition(
+        basic_data.data_collections.flat_net2pin_map,
+        basic_data.data_collections.flat_net2pin_start_map,
+        basic_data.data_collections.pin2node_map,
+        basic_data.data_collections.net_weights,
+        basic_data.data_collections.net_mask_all, placedb_2d.num_movable_nodes,
+        basic_data.data_collections.flat_node2pin_map,
+        basic_data.data_collections.flat_node2pin_start_map,
+        basic_data.data_collections.pin2net_map)
+
     init_partition = PartitionAux(
         basic_data.data_collections.flat_net2pin_map,
         basic_data.data_collections.flat_net2pin_start_map,
@@ -272,7 +283,7 @@ def build_func(basic_data, placedb_2d, placedb_tier, params):
         node_names=placedb_2d.node_names,
         net_names=placedb_2d.net_names)
 
-    return hmetis, init_partition, out_fmt_iccad, pos_flattened, terminal_insert_op, pin_pos_op, terminal_legalize_op, avg_cut, terminal_aux_op
+    return hmetis, multi_bipartition, init_partition, out_fmt_iccad, pos_flattened, terminal_insert_op, pin_pos_op, terminal_legalize_op, avg_cut, terminal_aux_op
 
 
 if __name__ == "__main__":
@@ -323,7 +334,7 @@ if __name__ == "__main__":
         tier_data.append(BasicPlace.BasicPlace(params, placedb, timer))
 
     # prepare for partitioning
-    hmetis, init_partition, out_fmt_iccad, pos_flattened, terminal_insert_op, pin_pos_op, terminal_legalize_op, avg_cut, terminal_aux_op = build_func(
+    hmetis, multi_bipartition, init_partition, out_fmt_iccad, pos_flattened, terminal_insert_op, pin_pos_op, terminal_legalize_op, avg_cut, terminal_aux_op = build_func(
         basic_data, placedb_2d, placedb_tier, params)
 
     node_size_x = torch.stack([
@@ -349,32 +360,39 @@ if __name__ == "__main__":
     row_height = [placedb.row_height for placedb in placedb_tier]
 
     # partition
-    tier = hmetis(pos_2d)
+    # tier = hmetis(pos_2d)
+    # tier = avg_cut(pin_pos_op(pos_2d), node_size_x, node_size_y)
+    tier = multi_bipartition(pos_2d)
+    # breakpoint()
 
     # bin-based partition
     # temporarily call tier result from file
     # tier = torch.load('placer/die_tensor.pt')
-    # tier = tier.to(torch.float32)
-    # tier = avg_cut(pin_pos_op(pos_2d), node_size_x, node_size_y)
-    # breakpoint()
+    tier = tier.to(torch.int32)
 
     # return partition result but not receive now
-    # partitioned_net_mask = init_partition(tier, node_size_x, node_size_y,
-    #                                       pin_offset_x, pin_offset_y,
-    #                                       die_size_x, die_size_y, row_height, pos_2d=pos_2d/2)
+    # cut_net_mask = init_partition(tier,
+    #                               node_size_x,
+    #                               node_size_y,
+    #                               pin_offset_x,
+    #                               pin_offset_y,
+    #                               die_size_x,
+    #                               die_size_y,
+    #                               row_height,
+    #                               pos_2d=pos_2d / 2)
     # pos_2d/2 beceuse of 3d-placer set flattened_die size as die_size*2
-    partitioned_net_mask = terminal_insert_op(tier,
-                                              node_size_x,
-                                              node_size_y,
-                                              pin_offset_x,
-                                              pin_offset_y,
-                                              die_size_x,
-                                              die_size_y,
-                                              row_height,
-                                              pin_pos_op(pos_2d) / 2,
-                                              pos_2d=pos_2d / 2)
-    num_terminal_NIs = int(partitioned_net_mask.sum().item())
-
+    cut_net_mask = terminal_insert_op(tier,
+                                      node_size_x,
+                                      node_size_y,
+                                      pin_offset_x,
+                                      pin_offset_y,
+                                      die_size_x,
+                                      die_size_y,
+                                      row_height,
+                                      pin_pos_op(pos_2d) / 2,
+                                      pos_2d=pos_2d / 2)
+    num_terminal_NIs = int(cut_net_mask.sum().item())
+    breakpoint()
     # 2D result for init pos may casued no convergence
     # params.random_center_init_flag = 0  # 2D pos gives initial placement result
     metrics_tier = []
@@ -393,7 +411,7 @@ if __name__ == "__main__":
                      (i, metrics_tier[i][-1].hpwl))
 
     logging.info("placement takes %.3f seconds" % (time.time() - tt))
-    # breakpoint()
+    breakpoint()
     pos_flattened.pos_flattened(tier, pos_2d, pos_tier)
 
     terminal_insert_op(tier,
@@ -417,20 +435,20 @@ if __name__ == "__main__":
     terminal_aux_op(tier, node_size_x, node_size_y, pin_offset_x,
                     pin_offset_y, die_size_x, die_size_y, row_height,
                     pin_pos_op(pos_2d), pos_2d)
-    
-    params.random_center_init_flag = 0 
+
+    params.random_center_init_flag = 0
     params.aux_input = f"run_tmp/case2_hidden/terminal/terminal.aux"
     placedb_terminal, timer = database(params)
     params.printWelcome()
     terminal_metrics, terminal_pos = place(params, placedb_terminal, timer)
-    breakpoint()
+    # breakpoint()
 
     terminal_legalize_op(tier, node_size_x, node_size_y, pin_offset_x,
-                             pin_offset_y, die_size_x, die_size_y, row_height,
-                             pin_pos_op(pos_2d), terminal_pos,
-                             num_terminal_NIs, pos_2d, placedb_terminal.node_names)
-    
-    breakpoint()
+                         pin_offset_y, die_size_x, die_size_y, row_height,
+                         pin_pos_op(pos_2d), terminal_pos, num_terminal_NIs,
+                         pos_2d, placedb_terminal.node_names)
+
+    # breakpoint()
 
     for i in range(params.num_tiers):
         params.aux_input = f"run_tmp/case2_hidden/partition/tier{i}.aux"

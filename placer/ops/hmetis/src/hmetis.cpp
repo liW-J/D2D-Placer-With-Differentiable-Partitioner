@@ -2,7 +2,7 @@
  * @Author: JeanneWillis hi@jeannewillis.cn
  * @Date: 2025-04-08 12:35:48
  * @LastEditors: JeanneWillis hi@jeannewillis.cn
- * @LastEditTime: 2025-05-26 14:35:43
+ * @LastEditTime: 2025-05-26 23:35:34
  * @FilePath: /D2D-placer/placer/ops/hmetis/src/hmetis.cpp
  * @Description:
  */
@@ -17,8 +17,7 @@
 
 PLACER_BEGIN_NAMESPACE
 
-template <typename T>
-int hmetisPartitionLauncher(T *tier, const int *flat_netpin,
+int hmetisPartitionLauncher(int *tier, const int *flat_netpin,
                             const int *netpin_start, const int *pin2node_map,
                             const unsigned char *net_mask, int num_nets,
                             int num_movable_nodes, int num_threads) {
@@ -78,18 +77,16 @@ at::Tensor hmetis_forward(at::Tensor pos, at::Tensor flat_netpin,
   CHECK_EVEN(pos);
   CHECK_CONTIGUOUS(pos);
 
-  at::Tensor tier = at::zeros(num_movable_nodes, pos.options());
+  at::Tensor tier = at::zeros(num_movable_nodes, pos.options()).to(at::kInt);
   int num_nets = netpin_start.numel() - 1;
 
-  DREAMPLACE_DISPATCH_FLOATING_TYPES(pos, "hmetisPartitionLauncher", [&] {
-    hmetisPartitionLauncher<scalar_t>(
-        DREAMPLACE_TENSOR_DATA_PTR(tier, scalar_t),
-        DREAMPLACE_TENSOR_DATA_PTR(flat_netpin, int),
-        DREAMPLACE_TENSOR_DATA_PTR(netpin_start, int),
-        DREAMPLACE_TENSOR_DATA_PTR(pin2node_map, int),
-        DREAMPLACE_TENSOR_DATA_PTR(net_mask, unsigned char), num_nets,
-        num_movable_nodes, at::get_num_threads());
-  });
+  hmetisPartitionLauncher(DREAMPLACE_TENSOR_DATA_PTR(tier, int),
+                          DREAMPLACE_TENSOR_DATA_PTR(flat_netpin, int),
+                          DREAMPLACE_TENSOR_DATA_PTR(netpin_start, int),
+                          DREAMPLACE_TENSOR_DATA_PTR(pin2node_map, int),
+                          DREAMPLACE_TENSOR_DATA_PTR(net_mask, unsigned char),
+                          num_nets, num_movable_nodes, at::get_num_threads());
+
   return tier;
 }
 

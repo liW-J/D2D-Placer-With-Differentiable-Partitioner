@@ -13,6 +13,7 @@ set(INCLUDE_DIRS
 
 set(LINK_LIBS 
   utility_cxx
+  utils_3d_cxx
   OpenMP::OpenMP_CXX
   ${ZLIB_LIBRARIES}
   3d_placer_lib
@@ -20,7 +21,6 @@ set(LINK_LIBS
 
 add_pytorch_extension(${TARGET_NAME}_cpp 
   src/partition_aux.cpp
-  ../utils/log.cpp
   EXTRA_INCLUDE_DIRS ${INCLUDE_DIRS}
   EXTRA_LINK_LIBRARIES ${LINK_LIBS})
 

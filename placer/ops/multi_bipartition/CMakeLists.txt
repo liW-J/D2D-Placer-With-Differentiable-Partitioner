@@ -1,4 +1,4 @@
-set(OP_NAME terminal_aux)
+set(OP_NAME multi_bipartition)
 
 set(TARGET_NAME ${OP_NAME})
 
@@ -20,7 +20,7 @@ set(LINK_LIBS
   )
 
 add_pytorch_extension(${TARGET_NAME}_cpp 
-  src/terminal_aux.cpp
+  src/multi_bipartition.cpp
   EXTRA_INCLUDE_DIRS ${INCLUDE_DIRS}
   EXTRA_LINK_LIBRARIES ${LINK_LIBS})
 
