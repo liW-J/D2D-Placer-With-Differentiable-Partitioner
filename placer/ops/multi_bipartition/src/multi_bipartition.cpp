@@ -2,7 +2,7 @@
  * @Author: JeanneWillis hi@jeannewillis.cn
  * @Date: 2025-04-08 12:35:48
  * @LastEditors: JeanneWillis hi@jeannewillis.cn
- * @LastEditTime: 2025-05-27 19:38:28
+ * @LastEditTime: 2025-05-27 23:18:28
  * @FilePath: /D2D-placer/placer/ops/hmetis/src/hmetis.cpp
  * @Description:
  */
@@ -67,33 +67,34 @@ int multiBipartitionLauncher(int *tier, const int *flat_netpin,
         tier, flat_netpin, netpin_start, pin2node_map, num_movable_nodes,
         num_nets, num_tiers, net_id);
     cut_net_mask[net_id] = net_status.is_cut_net;
-    if (net_status.is_cut_net) {
-      for (int pin_id = netpin_start[net_id]; pin_id < netpin_start[net_id + 1];
-           ++pin_id) {
-        int node_id = pin2node_map[flat_netpin[pin_id]];
-        for (int all_pin_id = nodepin_start[node_id];
-             all_pin_id < nodepin_start[node_id + 1]; ++all_pin_id) {
-          int all_net_id = pin2net_map[flat_nodepin[all_pin_id]];
-          related_cut_tier_nets.push_back(all_net_id);
-        }
-      }
-    }
-
-    // if (!net_status.is_cut_net) {
-    //   tier_nets[net_status.tier_id].push_back(i);
+    // if (net_status.is_cut_net) {
+    //   for (int pin_id = netpin_start[net_id]; pin_id < netpin_start[net_id +
+    //   1];
+    //        ++pin_id) {
+    //     int node_id = pin2node_map[flat_netpin[pin_id]];
+    //     for (int all_pin_id = nodepin_start[node_id];
+    //          all_pin_id < nodepin_start[node_id + 1]; ++all_pin_id) {
+    //       int all_net_id = pin2net_map[flat_nodepin[all_pin_id]];
+    //       related_cut_tier_nets.push_back(all_net_id);
+    //     }
+    //   }
     // }
-  }
 
-  for (int i = 0; i < num_nets; i++) {
-    NetStatus net_status = Partitioner::check_net_cut(
-        tier, flat_netpin, netpin_start, pin2node_map, num_movable_nodes,
-        num_nets, num_tiers, i);
-    // LOG(WARN, "net_status.tier_id = %d", net_status.tier_id);
-    if (std::find(related_cut_tier_nets.begin(), related_cut_tier_nets.end(),
-                  i) == related_cut_tier_nets.end()) {
-      tier_nets[net_status.tier_id].push_back(i);
+    if (!net_status.is_cut_net) {
+      tier_nets[net_status.tier_id].push_back(net_id);
     }
   }
+
+  // for (int i = 0; i < num_nets; i++) {
+  //   NetStatus net_status = Partitioner::check_net_cut(
+  //       tier, flat_netpin, netpin_start, pin2node_map, num_movable_nodes,
+  //       num_nets, num_tiers, i);
+  //   // LOG(WARN, "net_status.tier_id = %d", net_status.tier_id);
+  //   if (std::find(related_cut_tier_nets.begin(), related_cut_tier_nets.end(),
+  //                 i) == related_cut_tier_nets.end()) {
+  //     tier_nets[net_status.tier_id].push_back(i);
+  //   }
+  // }
 
   for (int i = 0; i < num_tiers; i++) {
     LOG(INFO, "tier_nets[%d] = %d", i, tier_nets[i].size());
@@ -140,32 +141,33 @@ int multiBipartitionLauncher(int *tier, const int *flat_netpin,
           tier, flat_netpin, netpin_start, pin2node_map, num_movable_nodes,
           num_nets, num_tiers, net_id);
       cut_net_mask[net_id] = net_status.is_cut_net;
-      if (net_status.is_cut_net) {
-        for (int pin_id = netpin_start[net_id];
-             pin_id < netpin_start[net_id + 1]; ++pin_id) {
-          int node_id = pin2node_map[flat_netpin[pin_id]];
-          for (int all_pin_id = nodepin_start[node_id];
-               all_pin_id < nodepin_start[node_id + 1]; ++all_pin_id) {
-            int all_net_id = pin2net_map[flat_nodepin[all_pin_id]];
+      // if (net_status.is_cut_net) {
+      //   for (int pin_id = netpin_start[net_id];
+      //        pin_id < netpin_start[net_id + 1]; ++pin_id) {
+      //     int node_id = pin2node_map[flat_netpin[pin_id]];
+      //     for (int all_pin_id = nodepin_start[node_id];
+      //          all_pin_id < nodepin_start[node_id + 1]; ++all_pin_id) {
+      //       int all_net_id = pin2net_map[flat_nodepin[all_pin_id]];
 
-            related_cut_tier_nets_2.push_back(all_net_id);
-          }
-        }
-      }
-      // if (!net_status.is_cut_net) {
-      //   tier_nets_2[net_status.tier_id].push_back(net_id);
-    }
-
-    for (int net_id : tier_nets[i]) {
-      NetStatus net_status = Partitioner::check_net_cut(
-          tier, flat_netpin, netpin_start, pin2node_map, num_movable_nodes,
-          num_nets, num_tiers, net_id);
-      if (std::find(related_cut_tier_nets_2.begin(),
-                    related_cut_tier_nets_2.end(),
-                    net_id) == related_cut_tier_nets_2.end()) {
+      //       related_cut_tier_nets_2.push_back(all_net_id);
+      //     }
+      //   }
+      // }
+      if (!net_status.is_cut_net) {
         tier_nets_2[net_status.tier_id].push_back(net_id);
       }
     }
+
+    // for (int net_id : tier_nets[i]) {
+    //   NetStatus net_status = Partitioner::check_net_cut(
+    //       tier, flat_netpin, netpin_start, pin2node_map, num_movable_nodes,
+    //       num_nets, num_tiers, net_id);
+    //   if (std::find(related_cut_tier_nets_2.begin(),
+    //                 related_cut_tier_nets_2.end(),
+    //                 net_id) == related_cut_tier_nets_2.end()) {
+    //     tier_nets_2[net_status.tier_id].push_back(net_id);
+    //   }
+    // }
 
     for (int j = 0; j < num_tiers; j++) {
       LOG(INFO, "tier_nets[%d] = %d", j, tier_nets_2[j].size());
@@ -214,31 +216,31 @@ int multiBipartitionLauncher(int *tier, const int *flat_netpin,
             tier, flat_netpin, netpin_start, pin2node_map, num_movable_nodes,
             num_nets, num_tiers, net_id);
         cut_net_mask[net_id] = net_status.is_cut_net;
-        if (net_status.is_cut_net) {
-          for (int pin_id = netpin_start[net_id];
-               pin_id < netpin_start[net_id + 1]; ++pin_id) {
-            int node_id = pin2node_map[flat_netpin[pin_id]];
-            for (int all_pin_id = nodepin_start[node_id];
-                 all_pin_id < nodepin_start[node_id + 1]; ++all_pin_id) {
-              int all_net_id = pin2net_map[flat_nodepin[all_pin_id]];
-              related_cut_tier_nets_3.push_back(all_net_id);
-            }
-          }
-        }
-        // if (!net_status.is_cut_net) {
-        //   tier_nets_3[net_status.tier_id].push_back(net_id);
+        // if (net_status.is_cut_net) {
+        //   for (int pin_id = netpin_start[net_id];
+        //        pin_id < netpin_start[net_id + 1]; ++pin_id) {
+        //     int node_id = pin2node_map[flat_netpin[pin_id]];
+        //     for (int all_pin_id = nodepin_start[node_id];
+        //          all_pin_id < nodepin_start[node_id + 1]; ++all_pin_id) {
+        //       int all_net_id = pin2net_map[flat_nodepin[all_pin_id]];
+        //       related_cut_tier_nets_3.push_back(all_net_id);
+        //     }
+        //   }
         // }
-      }
-      for (int net_id : tier_nets_2[j]) {
-        NetStatus net_status = Partitioner::check_net_cut(
-            tier, flat_netpin, netpin_start, pin2node_map, num_movable_nodes,
-            num_nets, num_tiers, net_id);
-        if (std::find(related_cut_tier_nets_3.begin(),
-                      related_cut_tier_nets_3.end(),
-                      net_id) == related_cut_tier_nets_3.end()) {
+        if (!net_status.is_cut_net) {
           tier_nets_3[net_status.tier_id].push_back(net_id);
         }
       }
+      // for (int net_id : tier_nets_2[j]) {
+      //   NetStatus net_status = Partitioner::check_net_cut(
+      //       tier, flat_netpin, netpin_start, pin2node_map, num_movable_nodes,
+      //       num_nets, num_tiers, net_id);
+      //   if (std::find(related_cut_tier_nets_3.begin(),
+      //                 related_cut_tier_nets_3.end(),
+      //                 net_id) == related_cut_tier_nets_3.end()) {
+      //     tier_nets_3[net_status.tier_id].push_back(net_id);
+      //   }
+      // }
 
       for (int k = 0; k < num_tiers; k++) {
         LOG(INFO, "tier_nets[%d] = %d", k, tier_nets_3[k].size());
@@ -290,20 +292,20 @@ int multiBipartitionLauncher(int *tier, const int *flat_netpin,
               tier, flat_netpin, netpin_start, pin2node_map, num_movable_nodes,
               num_nets, num_tiers, net_id);
           cut_net_mask[net_id] = net_status.is_cut_net;
-          if (net_status.is_cut_net) {
-            for (int pin_id = netpin_start[net_id];
-                 pin_id < netpin_start[net_id + 1]; ++pin_id) {
-              int node_id = pin2node_map[flat_netpin[pin_id]];
-              for (int all_pin_id = nodepin_start[node_id];
-                   all_pin_id < nodepin_start[node_id + 1]; ++all_pin_id) {
-                int all_net_id = pin2net_map[flat_nodepin[all_pin_id]];
-                related_cut_tier_nets_4.push_back(all_net_id);
-              }
-            }
-          }
-          // if (!net_status.is_cut_net) {
-          //   tier_nets_3[net_status.tier_id].push_back(net_id);
+          // if (net_status.is_cut_net) {
+          //   for (int pin_id = netpin_start[net_id];
+          //        pin_id < netpin_start[net_id + 1]; ++pin_id) {
+          //     int node_id = pin2node_map[flat_netpin[pin_id]];
+          //     for (int all_pin_id = nodepin_start[node_id];
+          //          all_pin_id < nodepin_start[node_id + 1]; ++all_pin_id) {
+          //       int all_net_id = pin2net_map[flat_nodepin[all_pin_id]];
+          //       related_cut_tier_nets_4.push_back(all_net_id);
+          //     }
+          //   }
           // }
+          if (!net_status.is_cut_net) {
+            tier_nets_4[net_status.tier_id].push_back(net_id);
+          }
         }
       }
     }

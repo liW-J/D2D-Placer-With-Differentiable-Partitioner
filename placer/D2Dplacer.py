@@ -360,9 +360,9 @@ if __name__ == "__main__":
     row_height = [placedb.row_height for placedb in placedb_tier]
 
     # partition
-    # tier = hmetis(pos_2d)
+    tier = hmetis(pos_2d)
     # tier = avg_cut(pin_pos_op(pos_2d), node_size_x, node_size_y)
-    tier = multi_bipartition(pos_2d)
+    # tier = multi_bipartition(pos_2d)
     # breakpoint()
 
     # bin-based partition
