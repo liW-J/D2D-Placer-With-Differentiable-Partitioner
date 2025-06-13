@@ -1,0 +1,247 @@
+'''
+Author: JeanneWillis hi@jeannewillis.cn
+Date: 2025-06-13 15:35:55
+LastEditors: JeanneWillis hi@jeannewillis.cn
+LastEditTime: 2025-06-13 18:27:19
+FilePath: /D2D-placer/placer/OpWapper.py
+Description:
+'''
+from placer.ops.hmetis.hmetis import Hmetis
+from placer.ops.multi_bipartition.multi_bipartition import MultiBipartition
+from placer.ops.partition_aux.partition_aux import PartitionAux
+from placer.ops.avg_cut.avg_cut import AvgCut
+from placer.ops.terminal_aux.terminal_aux import TerminalAux
+
+from placer.tools.OutfmtICCAD import OutfmtICCAD
+from placer.tools.PosFlattened import PosFlattened
+from dreamplace.ops.pin_pos.pin_pos import PinPos
+
+import torch
+import numpy as np
+
+
+class D2DOpCollection(object):
+
+    def __init__(self, hmetis_op, multi_bipartition_op, init_partition_op,
+                 out_fmt_iccad_op, pos_flattened_op, terminal_insert_op,
+                 pin_pos_op, terminal_legalize_op, avg_cut_op,
+                 terminal_aux_op):
+        self.hmetis_op = hmetis_op
+        self.multi_bipartition_op = multi_bipartition_op
+        self.init_partition_op = init_partition_op
+        self.out_fmt_iccad_op = out_fmt_iccad_op
+        self.pos_flattened_op = pos_flattened_op
+        self.terminal_insert_op = terminal_insert_op
+        self.pin_pos_op = pin_pos_op
+        self.terminal_legalize_op = terminal_legalize_op
+        self.avg_cut_op = avg_cut_op
+        self.terminal_aux_op = terminal_aux_op
+
+
+class D2DOpWapper(object):
+
+    def __init__(self, basic_data, placedb_2d, placedb_tier, params, tier_data):
+        self.basic_data = basic_data
+        self.placedb_2d = placedb_2d
+        self.placedb_tier = placedb_tier
+        self.params = params
+
+        self.node_size_x = torch.stack([
+            data.data_collections.node_size_x[:placedb_2d.num_movable_nodes]
+            for data in tier_data
+        ])
+        self.node_size_y = torch.stack([
+            data.data_collections.node_size_y[:placedb_2d.num_movable_nodes]
+            for data in tier_data
+        ])
+
+        self.pin_offset_x = torch.stack(
+            [data.data_collections.pin_offset_x for data in tier_data])
+        self.pin_offset_y = torch.stack(
+            [data.data_collections.pin_offset_y for data in tier_data])
+
+        # 3d-placer set flattened_die size as die_size*2
+        self.die_size_x = np.mean([placedb.xh
+                              for placedb in placedb_tier]) - np.mean(
+                                  [placedb.xl for placedb in placedb_tier])
+        self.die_size_y = np.mean([placedb.yh
+                              for placedb in placedb_tier]) - np.mean(
+                                  [placedb.yl for placedb in placedb_tier])
+
+        self.row_height = [placedb.row_height for placedb in placedb_tier]
+
+        self.hmetis_op = self.build_hmetis()
+        self.multi_bipartition_op = self.build_multi_bipartition()
+        self.init_partition_op = self.build_init_partition()
+        self.out_fmt_iccad_op = self.build_out_fmt_iccad()
+        self.pos_flattened_op = self.build_pos_flattened()
+        self.terminal_insert_op = self.build_terminal_insert()
+        self.pin_pos_op = self.build_pin_pos()
+        self.terminal_legalize_op = self.build_terminal_legalize()
+        self.avg_cut_op = self.build_avg_cut()
+        self.terminal_aux_op = self.build_terminal_aux()
+
+        self.d2d_op_collections = D2DOpCollection(
+            hmetis_op=self.hmetis_op,
+            multi_bipartition_op=self.multi_bipartition_op,
+            init_partition_op=self.init_partition_op,
+            out_fmt_iccad_op=self.out_fmt_iccad_op,
+            pos_flattened_op=self.pos_flattened_op,
+            terminal_insert_op=self.terminal_insert_op,
+            pin_pos_op=self.pin_pos_op,
+            terminal_legalize_op=self.terminal_legalize_op,
+            avg_cut_op=self.avg_cut_op,
+            terminal_aux_op=self.terminal_aux_op,
+        )
+
+    def build_hmetis(self):
+
+        hmetis_op = Hmetis(
+            self.basic_data.data_collections.flat_net2pin_map,
+            self.basic_data.data_collections.flat_net2pin_start_map,
+            self.basic_data.data_collections.pin2node_map,
+            self.basic_data.data_collections.net_weights,
+            self.basic_data.data_collections.net_mask_all,
+            self.placedb_2d.num_movable_nodes)
+
+        return hmetis_op
+
+    def build_multi_bipartition(self):
+
+        multi_bipartition_op = MultiBipartition(
+            self.basic_data.data_collections.flat_net2pin_map,
+            self.basic_data.data_collections.flat_net2pin_start_map,
+            self.basic_data.data_collections.pin2node_map,
+            self.basic_data.data_collections.net_weights,
+            self.basic_data.data_collections.net_mask_all,
+            self.placedb_2d.num_movable_nodes,
+            self.basic_data.data_collections.flat_node2pin_map,
+            self.basic_data.data_collections.flat_node2pin_start_map,
+            self.basic_data.data_collections.pin2net_map)
+
+        return multi_bipartition_op
+
+    def build_init_partition(self):
+
+        init_partition_op = PartitionAux(
+            self.basic_data.data_collections.flat_net2pin_map,
+            self.basic_data.data_collections.flat_net2pin_start_map,
+            self.basic_data.data_collections.pin2node_map,
+            self.basic_data.data_collections.net_weights,
+            self.placedb_2d.num_movable_nodes,
+            self.placedb_2d.node_names,
+            self.placedb_2d.net_names,
+            self.node_size_x,
+            self.node_size_y,
+            self.pin_offset_x,
+            self.pin_offset_y,
+            self.die_size_x,
+            self.die_size_y,
+            self.row_height,
+            terminal_instert_flag=False,
+            terminal_legalize_flag=False)
+
+        return init_partition_op
+
+    def build_out_fmt_iccad(self):
+
+        out_fmt_iccad_op = OutfmtICCAD(self.placedb_tier, self.params)
+
+        return out_fmt_iccad_op
+
+    def build_pos_flattened(self):
+
+        pos_flattened_op = PosFlattened(self.params, self.placedb_2d,
+                                        self.placedb_tier)
+
+        return pos_flattened_op
+
+    def build_terminal_insert(self):
+
+        terminal_insert_op = PartitionAux(
+            self.basic_data.data_collections.flat_net2pin_map,
+            self.basic_data.data_collections.flat_net2pin_start_map,
+            self.basic_data.data_collections.pin2node_map,
+            self.basic_data.data_collections.net_weights,
+            self.placedb_2d.num_movable_nodes,
+            self.placedb_2d.node_names,
+            self.placedb_2d.net_names,
+            self.node_size_x,
+            self.node_size_y,
+            self.pin_offset_x,
+            self.pin_offset_y,
+            self.die_size_x,
+            self.die_size_y,
+            self.row_height,
+            terminal_instert_flag=True,
+            terminal_legalize_flag=False)
+
+        return terminal_insert_op
+
+    def build_pin_pos(self):
+
+        pin_pos_op = PinPos(
+            pin_offset_x=self.basic_data.data_collections.pin_offset_x,
+            pin_offset_y=self.basic_data.data_collections.pin_offset_y,
+            pin2node_map=self.basic_data.data_collections.pin2node_map,
+            flat_node2pin_map=self.basic_data.data_collections.
+            flat_node2pin_map,
+            flat_node2pin_start_map=self.basic_data.data_collections.
+            flat_node2pin_start_map,
+            num_physical_nodes=self.placedb_2d.num_physical_nodes,
+            algorithm="node-by-node")
+
+        return pin_pos_op
+
+    def build_terminal_legalize(self):
+
+        terminal_legalize_op = PartitionAux(
+            self.basic_data.data_collections.flat_net2pin_map,
+            self.basic_data.data_collections.flat_net2pin_start_map,
+            self.basic_data.data_collections.pin2node_map,
+            self.basic_data.data_collections.net_weights,
+            self.placedb_2d.num_movable_nodes,
+            self.placedb_2d.node_names,
+            self.placedb_2d.net_names,
+            self.node_size_x,
+            self.node_size_y,
+            self.pin_offset_x,
+            self.pin_offset_y,
+            self.die_size_x,
+            self.die_size_y,
+            self.row_height,
+            terminal_instert_flag=True,
+            terminal_legalize_flag=True)
+
+        return terminal_legalize_op
+
+    def build_avg_cut(self):
+
+        avg_cut_op = AvgCut(
+            self.basic_data.data_collections.flat_net2pin_map,
+            self.basic_data.data_collections.flat_net2pin_start_map,
+            self.basic_data.data_collections.pin2node_map,
+            self.basic_data.data_collections.net_weights,
+            self.placedb_2d.num_movable_nodes)
+
+        return avg_cut_op
+
+    def build_terminal_aux(self):
+
+        terminal_aux_op = TerminalAux(
+            self.basic_data.data_collections.flat_net2pin_map,
+            self.basic_data.data_collections.flat_net2pin_start_map,
+            self.basic_data.data_collections.pin2node_map,
+            self.basic_data.data_collections.net_weights,
+            self.placedb_2d.num_movable_nodes,
+            self.placedb_2d.node_names,
+            self.placedb_2d.net_names,
+            self.node_size_x,
+            self.node_size_y,
+            self.pin_offset_x,
+            self.pin_offset_y,
+            self.die_size_x,
+            self.die_size_y,
+            self.row_height)
+
+        return terminal_aux_op

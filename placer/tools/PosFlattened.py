@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-04-14 03:21:27
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-05-08 13:54:34
+LastEditTime: 2025-06-13 18:26:52
 FilePath: /D2D-placer/placer/tools/PosFlattened.py
 Description: 
 '''
@@ -45,8 +45,7 @@ class PosFlattened:
         # index start from 0
         return c_numbers-1
 
-
-    def pos_flattened(self, tier, pos_2d, pos_tier):
+    def __call__(self, tier, pos_2d, pos_tier):
         """
             @brief 
             @param 

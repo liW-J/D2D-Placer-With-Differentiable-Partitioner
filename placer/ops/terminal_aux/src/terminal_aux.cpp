@@ -2,7 +2,7 @@
  * @Author: JeanneWillis hi@jeannewillis.cn
  * @Date: 2025-03-19 11:49:04
  * @LastEditors: JeanneWillis hi@jeannewillis.cn
- * @LastEditTime: 2025-05-26 20:49:35
+ * @LastEditTime: 2025-06-12 12:13:57
  * @FilePath: /D2D-placer/src/ops/partition/src/partition.cpp
  * @Description: partition
  */
@@ -66,7 +66,7 @@ void terminal_insert(const int *tier, const T *pin_pos_x, const T *pin_pos_y,
       terminal_count++;
       LOG(INFO, "terminal_count: %d", terminal_count);
 
-      terminalAuxRef.add_node(net_names[net_id], 228, 228, center_x, center_y,
+      terminalAuxRef.add_node(net_names[net_id], 10, 10, center_x, center_y,
                               MOVABLE);
       for (int tier_id = 0; tier_id < num_tiers; ++tier_id) {
         string tier_net_name = net_names[net_id] + "_" + to_string(tier_id);
@@ -92,7 +92,7 @@ void terminalAuxLauncher(const int *tier, const int *flat_netpin,
                          const std::vector<std::string> &node_names,
                          const std::vector<std::string> &net_names,
                          const T *pos_2d_x, const T *pos_2d_y) {
-  string aux_dir = "./run_tmp/case2_hidden/terminal/";
+  string aux_dir = "./run_tmp/case_demo/terminal/";
   char IO_type;
 
   AUX terminal_aux = AUX(aux_dir, "terminal");
@@ -161,7 +161,7 @@ void terminalAuxLauncher(const int *tier, const int *flat_netpin,
                   cut_net_mask, terminal_aux, node_names, net_names);
 
   // write aux files
-  int tier_row_height = 228;
+  int tier_row_height = 10;
   terminal_aux.set_default_rows(die_size_x, tier_row_height,
                                 die_size_y / tier_row_height);
   // sort node by name

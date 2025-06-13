@@ -1,0 +1,183 @@
+NumTechnologies 1
+Tech TA 3
+LibCell MC1 7 10 1
+Pin P1 5 7
+LibCell MC2 14 10 2
+Pin P1 10 3
+Pin P2 3 6
+LibCell MC3 16 10 3
+Pin P1 5 3
+Pin P2 3 6
+Pin P3 10 8
+
+DieSize 0 0 150 150
+
+TopDieMaxUtil 80
+BottomDieMaxUtil 90
+
+TopDieRows 0 0 150 10 15
+BottomDieRows 0 0 150 10 15
+
+TopDieTech TA
+BottomDieTech TA
+
+TerminalSize 6 6
+TerminalSpacing 5
+
+NumInstances 51
+Inst C1 MC2
+Inst C2 MC3
+Inst C3 MC3
+Inst C4 MC2
+Inst C5 MC2
+Inst C6 MC3
+Inst C7 MC3
+Inst C8 MC2
+Inst C9 MC2
+Inst C10 MC2
+Inst C11 MC2
+Inst C12 MC2
+Inst C13 MC2
+Inst C14 MC2
+Inst C15 MC2
+Inst C16 MC2
+Inst C17 MC2
+Inst C18 MC2
+Inst C19 MC2
+Inst C20 MC2
+Inst C21 MC2
+Inst C22 MC2
+Inst C23 MC2
+Inst C24 MC2
+Inst C25 MC2
+Inst C26 MC2
+Inst C27 MC1
+Inst C28 MC1
+Inst C29 MC1
+Inst C30 MC1
+Inst C31 MC1
+Inst C32 MC1
+Inst C33 MC1
+Inst C34 MC1
+Inst C35 MC1
+Inst C36 MC1
+Inst C37 MC1
+Inst C38 MC1
+Inst C39 MC1
+Inst C40 MC1
+Inst C41 MC1
+Inst C42 MC1
+Inst C43 MC1
+Inst C44 MC1
+Inst C45 MC1
+Inst C46 MC1
+Inst C47 MC1
+Inst C48 MC1
+Inst C49 MC1
+Inst C50 MC1
+Inst C51 MC2
+
+NumNets 26
+Net N1 2
+Pin C1/P2
+Pin C2/P1
+Net N2 2
+Pin C2/P2
+Pin C3/P1
+Net N3 2
+Pin C3/P2
+Pin C4/P1
+Net N4 2
+Pin C4/P2
+Pin C5/P1
+Net N5 2
+Pin C5/P2
+Pin C6/P1
+Net N6 2
+Pin C6/P2
+Pin C7/P1
+Net N7 2
+Pin C7/P2
+Pin C8/P1
+Net N8 2
+Pin C8/P2
+Pin C9/P1
+Net N9 2
+Pin C9/P2
+Pin C10/P1
+Net N10 2
+Pin C10/P2
+Pin C11/P1
+Net N11 2
+Pin C11/P2
+Pin C12/P1
+Net N12 2
+Pin C12/P2
+Pin C13/P1
+Net N13 2
+Pin C13/P2
+Pin C14/P1
+Net N14 2
+Pin C14/P2
+Pin C15/P1
+Net N15 2
+Pin C15/P2
+Pin C16/P1
+Net N16 2
+Pin C16/P2
+Pin C17/P1
+Net N17 2
+Pin C17/P2
+Pin C18/P1
+Net N18 2
+Pin C18/P2
+Pin C19/P1
+Net N19 2
+Pin C19/P2
+Pin C20/P1
+Net N20 2
+Pin C20/P2
+Pin C21/P1
+Net N21 2
+Pin C21/P2
+Pin C22/P1
+Net N22 2
+Pin C22/P2
+Pin C23/P1
+Net N23 2
+Pin C23/P2
+Pin C24/P1
+Net N24 2
+Pin C24/P2
+Pin C25/P1
+Net N25 2
+Pin C1/P1
+Pin C51/P2
+Net N26 27
+Pin C25/P2
+Pin C26/P1
+Pin C27/P1
+Pin C28/P1
+Pin C29/P1
+Pin C30/P1
+Pin C31/P1
+Pin C32/P1
+Pin C33/P1
+Pin C34/P1
+Pin C35/P1
+Pin C36/P1
+Pin C37/P1
+Pin C38/P1
+Pin C39/P1
+Pin C40/P1
+Pin C41/P1
+Pin C42/P1
+Pin C43/P1
+Pin C44/P1
+Pin C45/P1
+Pin C46/P1
+Pin C47/P1
+Pin C48/P1
+Pin C49/P1
+Pin C50/P1
+Pin C51/P1

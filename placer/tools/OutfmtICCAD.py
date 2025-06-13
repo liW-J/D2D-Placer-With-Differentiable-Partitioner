@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-04-14 01:03:42
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-04-15 22:56:45
+LastEditTime: 2025-06-13 18:27:25
 FilePath: /D2D-placer/placer/tools/OutfmtICCAD.py
 Description: 
 '''
@@ -15,8 +15,8 @@ class OutfmtICCAD:
     def __init__(self, placedb_tier, params):
         self.placedb_tier = placedb_tier
         self.params = params
-
-    def out_fmt_iccad(self, case_name):
+    
+    def __call__(self, case_name):
         """
             @brief write .txt file
             @param output_file .txt file

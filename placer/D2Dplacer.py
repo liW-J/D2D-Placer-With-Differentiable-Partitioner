@@ -23,21 +23,11 @@ import dreamplace.PlaceDB as PlaceDB
 import dreamplace.Params as Params
 import dreamplace.Timer as Timer
 import dreamplace.NonLinearPlace as NonLinearPlace
+import dreamplace.BasicPlace as BasicPlace
 from colorama import Fore, Style
 from ops.parser_txt.parser_txt import ParserTxt
-from placer.ops.hmetis.hmetis import Hmetis
-from placer.ops.multi_bipartition.multi_bipartition import MultiBipartition
-from placer.ops.partition_aux.partition_aux import PartitionAux
-from placer.ops.avg_cut.avg_cut import AvgCut
-from placer.ops.terminal_aux.terminal_aux import TerminalAux
+from placer.D2DOpWapper import D2DOpWapper
 
-from placer.tools.OutfmtICCAD import OutfmtICCAD
-from placer.tools.PosFlattened import PosFlattened
-from dreamplace.ops.pin_pos.pin_pos import PinPos
-import dreamplace.ops.greedy_legalize.greedy_legalize as greedy_legalize
-
-import NonLinearPlace
-import BasicPlace
 import torch
 
 
@@ -202,90 +192,6 @@ def printWelcome():
     print(welcome_msg)
 
 
-# TODO: move to other file
-def build_func(basic_data, placedb_2d, placedb_tier, params):
-    hmetis = Hmetis(basic_data.data_collections.flat_net2pin_map,
-                    basic_data.data_collections.flat_net2pin_start_map,
-                    basic_data.data_collections.pin2node_map,
-                    basic_data.data_collections.net_weights,
-                    basic_data.data_collections.net_mask_all,
-                    placedb_2d.num_movable_nodes)
-
-    multi_bipartition = MultiBipartition(
-        basic_data.data_collections.flat_net2pin_map,
-        basic_data.data_collections.flat_net2pin_start_map,
-        basic_data.data_collections.pin2node_map,
-        basic_data.data_collections.net_weights,
-        basic_data.data_collections.net_mask_all, placedb_2d.num_movable_nodes,
-        basic_data.data_collections.flat_node2pin_map,
-        basic_data.data_collections.flat_node2pin_start_map,
-        basic_data.data_collections.pin2net_map)
-
-    init_partition = PartitionAux(
-        basic_data.data_collections.flat_net2pin_map,
-        basic_data.data_collections.flat_net2pin_start_map,
-        basic_data.data_collections.pin2node_map,
-        basic_data.data_collections.net_weights,
-        placedb_2d.num_movable_nodes,
-        node_names=placedb_2d.node_names,
-        net_names=placedb_2d.net_names,
-        terminal_instert_flag=False,
-        terminal_legalize_flag=False)
-
-    out_fmt_iccad = OutfmtICCAD(placedb_tier, params)
-
-    pos_flattened = PosFlattened(params, placedb_2d, placedb_tier)
-
-    terminal_insert_op = PartitionAux(
-        basic_data.data_collections.flat_net2pin_map,
-        basic_data.data_collections.flat_net2pin_start_map,
-        basic_data.data_collections.pin2node_map,
-        basic_data.data_collections.net_weights,
-        placedb_2d.num_movable_nodes,
-        node_names=placedb_2d.node_names,
-        net_names=placedb_2d.net_names,
-        terminal_instert_flag=True,
-        terminal_legalize_flag=False)
-
-    pin_pos_op = PinPos(
-        pin_offset_x=basic_data.data_collections.pin_offset_x,
-        pin_offset_y=basic_data.data_collections.pin_offset_y,
-        pin2node_map=basic_data.data_collections.pin2node_map,
-        flat_node2pin_map=basic_data.data_collections.flat_node2pin_map,
-        flat_node2pin_start_map=basic_data.data_collections.
-        flat_node2pin_start_map,
-        num_physical_nodes=placedb_2d.num_physical_nodes,
-        algorithm="node-by-node")
-
-    terminal_legalize_op = PartitionAux(
-        basic_data.data_collections.flat_net2pin_map,
-        basic_data.data_collections.flat_net2pin_start_map,
-        basic_data.data_collections.pin2node_map,
-        basic_data.data_collections.net_weights,
-        placedb_2d.num_movable_nodes,
-        node_names=placedb_2d.node_names,
-        net_names=placedb_2d.net_names,
-        terminal_instert_flag=True,
-        terminal_legalize_flag=True)
-
-    avg_cut = AvgCut(basic_data.data_collections.flat_net2pin_map,
-                     basic_data.data_collections.flat_net2pin_start_map,
-                     basic_data.data_collections.pin2node_map,
-                     basic_data.data_collections.net_weights,
-                     placedb_2d.num_movable_nodes)
-
-    terminal_aux_op = TerminalAux(
-        basic_data.data_collections.flat_net2pin_map,
-        basic_data.data_collections.flat_net2pin_start_map,
-        basic_data.data_collections.pin2node_map,
-        basic_data.data_collections.net_weights,
-        placedb_2d.num_movable_nodes,
-        node_names=placedb_2d.node_names,
-        net_names=placedb_2d.net_names)
-
-    return hmetis, multi_bipartition, init_partition, out_fmt_iccad, pos_flattened, terminal_insert_op, pin_pos_op, terminal_legalize_op, avg_cut, terminal_aux_op
-
-
 if __name__ == "__main__":
     """
     @brief main function to invoke the entire placement flow.
@@ -315,7 +221,7 @@ if __name__ == "__main__":
     tt = time.time()
 
     # TODO: set dir_path by case_name
-    params.aux_input = "run_tmp/case2_hidden/flattened-2d/flattened-2d.aux"
+    params.aux_input = "run_tmp/case_demo/flattened-2d/flattened-2d.aux"
     placedb_2d, timer = database(params)
     basic_data = BasicPlace.BasicPlace(params, placedb_2d, timer)
 
@@ -328,39 +234,17 @@ if __name__ == "__main__":
     placedb_tier = []
     tier_data = []
     for i in range(params.num_tiers):
-        params.aux_input = f"run_tmp/case2_hidden/flattened-2d/tier{i}.aux"
+        params.aux_input = f"run_tmp/case_demo/flattened-2d/tier{i}.aux"
         placedb, timer = database(params)
         placedb_tier.append(placedb)
         tier_data.append(BasicPlace.BasicPlace(params, placedb, timer))
 
     # prepare for partitioning
-    hmetis, multi_bipartition, init_partition, out_fmt_iccad, pos_flattened, terminal_insert_op, pin_pos_op, terminal_legalize_op, avg_cut, terminal_aux_op = build_func(
-        basic_data, placedb_2d, placedb_tier, params)
-
-    node_size_x = torch.stack([
-        data.data_collections.node_size_x[:placedb_2d.num_movable_nodes]
-        for data in tier_data
-    ])
-    node_size_y = torch.stack([
-        data.data_collections.node_size_y[:placedb_2d.num_movable_nodes]
-        for data in tier_data
-    ])
-
-    pin_offset_x = torch.stack(
-        [data.data_collections.pin_offset_x for data in tier_data])
-    pin_offset_y = torch.stack(
-        [data.data_collections.pin_offset_y for data in tier_data])
-
-    # 3d-placer set flattened_die size as die_size*2
-    die_size_x = np.mean([placedb.xh for placedb in placedb_tier]) - np.mean(
-        [placedb.xl for placedb in placedb_tier])
-    die_size_y = np.mean([placedb.yh for placedb in placedb_tier]) - np.mean(
-        [placedb.yl for placedb in placedb_tier])
-
-    row_height = [placedb.row_height for placedb in placedb_tier]
+    d2d_op_wapper = D2DOpWapper(basic_data, placedb_2d, placedb_tier, params,
+                                tier_data)
 
     # partition
-    tier = hmetis(pos_2d)
+    tier = d2d_op_wapper.d2d_op_collections.hmetis_op(pos_2d)
     # tier = avg_cut(pin_pos_op(pos_2d), node_size_x, node_size_y)
     # tier = multi_bipartition(pos_2d)
     # breakpoint()
@@ -372,25 +256,12 @@ if __name__ == "__main__":
 
     # return partition result but not receive now
     # cut_net_mask = init_partition(tier,
-    #                               node_size_x,
-    #                               node_size_y,
-    #                               pin_offset_x,
-    #                               pin_offset_y,
-    #                               die_size_x,
-    #                               die_size_y,
-    #                               row_height,
     #                               pos_2d=pos_2d / 2)
     # pos_2d/2 beceuse of 3d-placer set flattened_die size as die_size*2
-    cut_net_mask = terminal_insert_op(tier,
-                                      node_size_x,
-                                      node_size_y,
-                                      pin_offset_x,
-                                      pin_offset_y,
-                                      die_size_x,
-                                      die_size_y,
-                                      row_height,
-                                      pin_pos_op(pos_2d) / 2,
-                                      pos_2d=pos_2d / 2)
+    cut_net_mask = d2d_op_wapper.d2d_op_collections.terminal_insert_op(
+        tier,
+        d2d_op_wapper.d2d_op_collections.pin_pos_op(pos_2d) / 2,
+        pos_2d=pos_2d / 2)
     num_terminal_NIs = int(cut_net_mask.sum().item())
     breakpoint()
     # 2D result for init pos may casued no convergence
@@ -398,7 +269,7 @@ if __name__ == "__main__":
     metrics_tier = []
     pos_tier = []
     for i in range(params.num_tiers):
-        params.aux_input = f"run_tmp/case2_hidden/partition/tier{i}.aux"
+        params.aux_input = f"run_tmp/case_demo/partition/tier{i}.aux"
         placedb_tier[i], timer = database(params)
         params.printWelcome()
         metrics, pos = place(params, placedb_tier[i], timer)
@@ -412,46 +283,38 @@ if __name__ == "__main__":
 
     logging.info("placement takes %.3f seconds" % (time.time() - tt))
     breakpoint()
-    pos_flattened.pos_flattened(tier, pos_2d, pos_tier)
+    d2d_op_wapper.d2d_op_collections.pos_flattened_op(tier, pos_2d, pos_tier)
 
-    terminal_insert_op(tier,
-                       node_size_x,
-                       node_size_y,
-                       pin_offset_x,
-                       pin_offset_y,
-                       die_size_x,
-                       die_size_y,
-                       row_height,
-                       pin_pos_op(pos_2d),
-                       pos_2d=pos_2d)
+    d2d_op_wapper.d2d_op_collections.terminal_insert_op(
+        tier,
+        d2d_op_wapper.d2d_op_collections.pin_pos_op(pos_2d),
+        pos_2d=pos_2d)
 
     # update placedb_tier & tier_data using new terminal_insert result
     for i in range(params.num_tiers):
-        params.aux_input = f"run_tmp/case2_hidden/partition/tier{i}.aux"
+        params.aux_input = f"run_tmp/case_demo/partition/tier{i}.aux"
         placedb_tier[i], timer = database(params)
         tier_data[i] = BasicPlace.BasicPlace(params, placedb_tier[i], timer)
 
     # create terminal aux for collaborative optimization by tier[0]
-    terminal_aux_op(tier, node_size_x, node_size_y, pin_offset_x,
-                    pin_offset_y, die_size_x, die_size_y, row_height,
-                    pin_pos_op(pos_2d), pos_2d)
+    d2d_op_wapper.d2d_op_collections.terminal_aux_op(
+        tier, d2d_op_wapper.d2d_op_collections.pin_pos_op(pos_2d), pos_2d)
 
     params.random_center_init_flag = 0
-    params.aux_input = f"run_tmp/case2_hidden/terminal/terminal.aux"
+    params.aux_input = f"run_tmp/case_demo/terminal/terminal.aux"
     placedb_terminal, timer = database(params)
     params.printWelcome()
     terminal_metrics, terminal_pos = place(params, placedb_terminal, timer)
     # breakpoint()
 
-    terminal_legalize_op(tier, node_size_x, node_size_y, pin_offset_x,
-                         pin_offset_y, die_size_x, die_size_y, row_height,
-                         pin_pos_op(pos_2d), terminal_pos, num_terminal_NIs,
-                         pos_2d, placedb_terminal.node_names)
+    d2d_op_wapper.d2d_op_collections.terminal_legalize_op(
+        tier, d2d_op_wapper.d2d_op_collections.pin_pos_op(pos_2d),
+        terminal_pos, num_terminal_NIs, pos_2d, placedb_terminal.node_names)
 
     # breakpoint()
 
     for i in range(params.num_tiers):
-        params.aux_input = f"run_tmp/case2_hidden/partition/tier{i}.aux"
+        params.aux_input = f"run_tmp/case_demo/partition/tier{i}.aux"
         placedb_tier[i], timer = database(params)
         params.printWelcome()
         metrics, pos = place(params, placedb_tier[i], timer)
@@ -465,6 +328,6 @@ if __name__ == "__main__":
 
     logging.info("placement takes %.3f seconds" % (time.time() - tt))
 
-    out_fmt_iccad.out_fmt_iccad("case2_hidden")
+    d2d_op_wapper.d2d_op_collections.out_fmt_iccad_op("case_demo")
 
     # breakpoint()

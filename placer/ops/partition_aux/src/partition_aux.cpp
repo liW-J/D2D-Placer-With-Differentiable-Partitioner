@@ -2,7 +2,7 @@
  * @Author: JeanneWillis hi@jeannewillis.cn
  * @Date: 2025-03-19 11:49:04
  * @LastEditors: JeanneWillis hi@jeannewillis.cn
- * @LastEditTime: 2025-05-27 18:30:08
+ * @LastEditTime: 2025-06-11 18:56:42
  * @FilePath: /D2D-placer/src/ops/partition/src/partition.cpp
  * @Description: partition
  */
@@ -84,10 +84,10 @@ void terminal_insert(const int *tier, const T *pin_pos_x, const T *pin_pos_y,
               break;
             }
           }
-          auxListRef[tier_id].add_node(net_names[net_id], 114, 114, x, y,
+          auxListRef[tier_id].add_node(net_names[net_id], 6, 6, x, y,
                                        TERMINAL_NI);
         } else {
-          auxListRef[tier_id].add_node(net_names[net_id], 114, 114, center_x,
+          auxListRef[tier_id].add_node(net_names[net_id], 6, 6, center_x,
                                        center_y, TERMINAL_NI);
           // LOG(DEBUG, "Intersection Center: (%f, %f)", center_x, center_y);
         }
@@ -111,7 +111,7 @@ void partitionAuxLauncher(
     const std::vector<std::string> &net_names,
     const std::vector<std::string> &terminal_names, const T *pos_2d_x,
     const T *pos_2d_y) {
-  string aux_dir = "./run_tmp/case2_hidden/partition/";
+  string aux_dir = "./run_tmp/case_demo/partition/";
   char IO_type;
   vector<AUX> aux_list(num_tiers);
 
