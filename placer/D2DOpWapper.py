@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-06-13 15:35:55
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-06-13 18:27:19
+LastEditTime: 2025-06-14 02:49:52
 FilePath: /D2D-placer/placer/OpWapper.py
 Description:
 '''
@@ -40,11 +40,15 @@ class D2DOpCollection(object):
 
 class D2DOpWapper(object):
 
-    def __init__(self, basic_data, placedb_2d, placedb_tier, params, tier_data):
+    def __init__(self, basic_data, placedb_2d, placedb_tier, d2d_params,
+                 tier_data, die_spec):
         self.basic_data = basic_data
         self.placedb_2d = placedb_2d
         self.placedb_tier = placedb_tier
-        self.params = params
+        self.params = d2d_params.flatten_2d
+        self.case_name = d2d_params.case_name
+        self.die_spec = die_spec
+        self.num_tiers = d2d_params.flatten_2d.num_tiers
 
         self.node_size_x = torch.stack([
             data.data_collections.node_size_x[:placedb_2d.num_movable_nodes]
@@ -61,12 +65,16 @@ class D2DOpWapper(object):
             [data.data_collections.pin_offset_y for data in tier_data])
 
         # 3d-placer set flattened_die size as die_size*2
-        self.die_size_x = np.mean([placedb.xh
-                              for placedb in placedb_tier]) - np.mean(
-                                  [placedb.xl for placedb in placedb_tier])
-        self.die_size_y = np.mean([placedb.yh
-                              for placedb in placedb_tier]) - np.mean(
-                                  [placedb.yl for placedb in placedb_tier])
+        if self.num_tiers == 2:
+            self.die_size_x = self.die_spec.dieSizeX
+            self.die_size_y = self.die_spec.dieSizeY
+        else:
+            self.die_size_x = np.mean([
+                placedb.xh for placedb in placedb_tier
+            ]) - np.mean([placedb.xl for placedb in placedb_tier])
+            self.die_size_y = np.mean([
+                placedb.yh for placedb in placedb_tier
+            ]) - np.mean([placedb.yl for placedb in placedb_tier])
 
         self.row_height = [placedb.row_height for placedb in placedb_tier]
 
@@ -102,7 +110,7 @@ class D2DOpWapper(object):
             self.basic_data.data_collections.pin2node_map,
             self.basic_data.data_collections.net_weights,
             self.basic_data.data_collections.net_mask_all,
-            self.placedb_2d.num_movable_nodes)
+            self.placedb_2d.num_movable_nodes, self.case_name)
 
         return hmetis_op
 
@@ -138,10 +146,18 @@ class D2DOpWapper(object):
             self.die_size_x,
             self.die_size_y,
             self.row_height,
+            self.die_spec.terminalSizeX,
+            self.die_spec.terminalSizeY,
+            self.die_spec.terminalSpacing,
             terminal_instert_flag=False,
-            terminal_legalize_flag=False)
+            terminal_legalize_flag=False,
+            case_name=self.case_name)
+        
+        def build_init_partition_op(tier, pos_2d):
+            pin_pos = self.pin_pos_op(pos_2d)
+            return init_partition_op(tier, pin_pos, pos_2d)
 
-        return init_partition_op
+        return build_init_partition_op
 
     def build_out_fmt_iccad(self):
 
@@ -173,10 +189,18 @@ class D2DOpWapper(object):
             self.die_size_x,
             self.die_size_y,
             self.row_height,
+            self.die_spec.terminalSizeX,
+            self.die_spec.terminalSizeY,
+            self.die_spec.terminalSpacing,
             terminal_instert_flag=True,
-            terminal_legalize_flag=False)
+            terminal_legalize_flag=False,
+            case_name=self.case_name)
 
-        return terminal_insert_op
+        def build_terminal_insert_op(tier, pos_2d):
+            pin_pos = self.pin_pos_op(pos_2d)
+            return terminal_insert_op(tier, pin_pos, pos_2d)
+
+        return build_terminal_insert_op
 
     def build_pin_pos(self):
 
@@ -210,10 +234,18 @@ class D2DOpWapper(object):
             self.die_size_x,
             self.die_size_y,
             self.row_height,
+            self.die_spec.terminalSizeX,
+            self.die_spec.terminalSizeY,
+            self.die_spec.terminalSpacing,
             terminal_instert_flag=True,
-            terminal_legalize_flag=True)
+            terminal_legalize_flag=True,
+            case_name=self.case_name)
+        
+        def build_terminal_legalize_op(tier, pos_2d, terminal_pos, num_terminal_NIs, node_names):
+            pin_pos = self.pin_pos_op(pos_2d)
+            return terminal_legalize_op(tier, pin_pos, terminal_pos, num_terminal_NIs, pos_2d, node_names)
 
-        return terminal_legalize_op
+        return build_terminal_legalize_op
 
     def build_avg_cut(self):
 
@@ -233,15 +265,15 @@ class D2DOpWapper(object):
             self.basic_data.data_collections.flat_net2pin_start_map,
             self.basic_data.data_collections.pin2node_map,
             self.basic_data.data_collections.net_weights,
-            self.placedb_2d.num_movable_nodes,
-            self.placedb_2d.node_names,
-            self.placedb_2d.net_names,
-            self.node_size_x,
-            self.node_size_y,
-            self.pin_offset_x,
-            self.pin_offset_y,
-            self.die_size_x,
-            self.die_size_y,
-            self.row_height)
+            self.placedb_2d.num_movable_nodes, self.placedb_2d.node_names,
+            self.placedb_2d.net_names, self.node_size_x, self.node_size_y,
+            self.pin_offset_x, self.pin_offset_y, self.die_size_x,
+            self.die_size_y, self.row_height, self.die_spec.terminalSizeX,
+            self.die_spec.terminalSizeY, self.die_spec.terminalSpacing,
+            self.case_name)
+        
+        def build_terminal_aux_op(tier, pos_2d):
+            pin_pos = self.pin_pos_op(pos_2d)
+            return terminal_aux_op(tier, pin_pos, pos_2d)
 
-        return terminal_aux_op
+        return build_terminal_aux_op

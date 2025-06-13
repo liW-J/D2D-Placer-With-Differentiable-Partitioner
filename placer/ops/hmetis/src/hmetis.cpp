@@ -2,7 +2,7 @@
  * @Author: JeanneWillis hi@jeannewillis.cn
  * @Date: 2025-04-08 12:35:48
  * @LastEditors: JeanneWillis hi@jeannewillis.cn
- * @LastEditTime: 2025-06-11 22:51:14
+ * @LastEditTime: 2025-06-14 01:00:33
  * @FilePath: /D2D-placer/placer/ops/hmetis/src/hmetis.cpp
  * @Description:
  */
@@ -20,10 +20,11 @@ PLACER_BEGIN_NAMESPACE
 int hmetisPartitionLauncher(int *tier, const int *flat_netpin,
                             const int *netpin_start, const int *pin2node_map,
                             const unsigned char *net_mask, int num_nets,
-                            int num_movable_nodes, int num_threads) {
+                            int num_movable_nodes, int num_threads,
+                            std::string case_name) {
 
   // write hgr file
-  HGR hgr("./run_tmp/case_demo/", "circuit");
+  HGR hgr("./run_tmp/" + case_name, "circuit");
 
   for (int net_id = 0; net_id < num_nets; ++net_id) {
     hgr.add_net(to_string(net_id));
@@ -33,7 +34,7 @@ int hmetisPartitionLauncher(int *tier, const int *flat_netpin,
       for (int pin_id = netpin_start[net_id]; pin_id < netpin_start[net_id + 1];
            ++pin_id) {
         LOG(DEBUG, "net %d, pin %d, node %d", net_id, pin_id,
-        pin2node_map[flat_netpin[pin_id]]);
+            pin2node_map[flat_netpin[pin_id]]);
         hgr.add_node(to_string(net_id),
                      to_string(pin2node_map[flat_netpin[pin_id]]));
       }
@@ -42,16 +43,17 @@ int hmetisPartitionLauncher(int *tier, const int *flat_netpin,
   hgr.write_hgr();
 
   // run hmetis
-  // string cmd = "bin/hmetis -ufactor=0.7 ./run_tmp/case_demo/circuit.hgr 2 > "
-  //              "./run_tmp/case_demo/circuit-hmetis.log";
-  // system(cmd.c_str());
+  string cmd = "bin/hmetis -ufactor=0.7 ./run_tmp/" + case_name +
+               "/circuit.hgr 2 > ./run_tmp/" + case_name +
+               "/circuit-hmetis.log";
+  system(cmd.c_str());
   hgr.read_part_result(2);
 
   assert(hgr.get_part_size(0) + hgr.get_part_size(1) == num_movable_nodes);
   LOG(INFO, "hmetis partition result: %d : %d", hgr.get_part_size(0),
       hgr.get_part_size(1));
 
-  // partiton result save to ./run_tmp/case_demo/circuit.part.2
+  // partiton result save to ./run_tmp/{case_name}/{tt_format}/circuit.part.2
   for (int i = 0; i < num_movable_nodes; ++i) {
     tier[i] = hgr.get_part_result(to_string(i));
   }
@@ -63,7 +65,7 @@ int hmetisPartitionLauncher(int *tier, const int *flat_netpin,
 at::Tensor hmetis_forward(at::Tensor pos, at::Tensor flat_netpin,
                           at::Tensor netpin_start, at::Tensor pin2node_map,
                           at::Tensor net_weights, at::Tensor net_mask,
-                          int num_movable_nodes) {
+                          int num_movable_nodes, std::string case_name) {
   CHECK_FLAT_CPU(flat_netpin);
   CHECK_CONTIGUOUS(flat_netpin);
   CHECK_FLAT_CPU(netpin_start);
@@ -87,7 +89,8 @@ at::Tensor hmetis_forward(at::Tensor pos, at::Tensor flat_netpin,
                           DREAMPLACE_TENSOR_DATA_PTR(netpin_start, int),
                           DREAMPLACE_TENSOR_DATA_PTR(pin2node_map, int),
                           DREAMPLACE_TENSOR_DATA_PTR(net_mask, unsigned char),
-                          num_nets, num_movable_nodes, at::get_num_threads());
+                          num_nets, num_movable_nodes, at::get_num_threads(),
+                          case_name);
 
   return tier;
 }

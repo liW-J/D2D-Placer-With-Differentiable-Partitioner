@@ -1,5 +1,7 @@
 # 3D(D2D) Placer
 
+3D placement engine based on DREAMPlace.
+
 # Dependency
 
 - [Python](https://www.python.org/) 3.5/3.6/3.7/3.8/3.9
@@ -22,8 +24,8 @@
 
 (Optional)
 
-  - If installed and found, GPU acceleration will be enabled.
-  - Otherwise, only CPU implementation is enabled.
+- If installed and found, GPU acceleration will be enabled.
+- Otherwise, only CPU implementation is enabled.
 
 - GPU architecture compatibility 6.0 or later (Optional)
   - Code has been tested on GPUs with compute compatibility 6.0, 7.0, and 7.5.
@@ -72,13 +74,17 @@ You can use the Docker container to avoid building all the dependencies yourself
 3. Navigate to the repository.
 4. Get the docker container with either of the following options.
    - Option 1: pull from the cloud [limbo018/dreamplace](https://hub.docker.com/r/limbo018/dreamplace).
+
    ```
    docker pull limbo018/dreamplace:cuda
    ```
+
    - Option 2: build the container.
+
    ```
    docker build . --file Dockerfile --tag your_name/dreamplace:cuda
    ```
+
 5. Enter bash environment of the container. Replace `limbo018` with your name if option 2 is chosen in the previous step.
 
 Run with GPU on Linux.
@@ -120,6 +126,7 @@ cmake .. -DCMAKE_INSTALL_PREFIX=<installation directory> -DPython_EXECUTABLE=$(w
 make
 make install
 ```
+
 Where `<build directory>` is the directory where you compile the code, and `<installation directory>` is the directory where you want to install DREAMPlace (e.g., `../install`).
 Third party submodules are automatically built except for [Boost](https://www.boost.org).
 
@@ -128,7 +135,8 @@ To clean, go to the root directory.
 ```
 rm -r build
 ```
-`<build directory>` can be removed after installation if you do not need incremental compilation later. 
+
+`<build directory>` can be removed after installation if you do not need incremental compilation later.
 
 Here are the available options for CMake.
 

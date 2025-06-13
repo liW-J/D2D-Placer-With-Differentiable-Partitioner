@@ -2,7 +2,7 @@
  * @Author: JeanneWillis hi@jeannewillis.cn
  * @Date: 2025-03-19 11:49:04
  * @LastEditors: JeanneWillis hi@jeannewillis.cn
- * @LastEditTime: 2025-06-11 18:56:42
+ * @LastEditTime: 2025-06-14 02:57:40
  * @FilePath: /D2D-placer/src/ops/partition/src/partition.cpp
  * @Description: partition
  */
@@ -26,9 +26,11 @@ void terminal_insert(const int *tier, const T *pin_pos_x, const T *pin_pos_y,
                      const int *flat_netpin, const int *netpin_start,
                      const int *pin2node_map, int num_movable_nodes,
                      int num_nets, int num_tiers, const int *cut_net_mask,
-                     bool terminal_instert_flag, vector<AUX> &auxListRef,
-                     bool terminal_legalize_flag, const T *node_x,
-                     const T *node_y, int num_movable_nodes_top,
+                     int terminal_size_x, int terminal_size_y,
+                     int terminal_spacing, bool terminal_instert_flag,
+                     vector<AUX> &auxListRef, bool terminal_legalize_flag,
+                     const T *node_x, const T *node_y,
+                     int num_movable_nodes_top,
                      const std::vector<std::string> &node_names,
                      const std::vector<std::string> &net_names,
                      const std::vector<std::string> &terminal_names) {
@@ -84,11 +86,12 @@ void terminal_insert(const int *tier, const T *pin_pos_x, const T *pin_pos_y,
               break;
             }
           }
-          auxListRef[tier_id].add_node(net_names[net_id], 6, 6, x, y,
-                                       TERMINAL_NI);
+          auxListRef[tier_id].add_node(net_names[net_id], terminal_size_x,
+                                       terminal_size_y, x, y, TERMINAL_NI);
         } else {
-          auxListRef[tier_id].add_node(net_names[net_id], 6, 6, center_x,
-                                       center_y, TERMINAL_NI);
+          auxListRef[tier_id].add_node(net_names[net_id], terminal_size_x,
+                                       terminal_size_y, center_x, center_y,
+                                       TERMINAL_NI);
           // LOG(DEBUG, "Intersection Center: (%f, %f)", center_x, center_y);
         }
         auxListRef[tier_id].add_pin(net_names[net_id], net_names[net_id], 'O',
@@ -104,14 +107,15 @@ void partitionAuxLauncher(
     const int *pin2node_map, int num_nets, int num_tiers, int num_movable_nodes,
     int num_pins, const T *node_size_x, const T *node_size_y,
     const T *pin_offset_x, const T *pin_offset_y, float die_size_x,
-    float die_size_y, pybind11::list row_height, int *cut_net_mask,
+    float die_size_y, pybind11::list row_height, int terminal_size_x,
+    int terminal_size_y, int terminal_spacing, int *cut_net_mask,
     const T *pin_pos_x, const T *pin_pos_y, bool terminal_instert_flag,
     bool terminal_legalize_flag, const T *node_x, const T *node_y,
     int num_movable_nodes_top, const std::vector<std::string> &node_names,
     const std::vector<std::string> &net_names,
     const std::vector<std::string> &terminal_names, const T *pos_2d_x,
-    const T *pos_2d_y) {
-  string aux_dir = "./run_tmp/case_demo/partition/";
+    const T *pos_2d_y, std::string case_name) {
+  string aux_dir = "./run_tmp/" + case_name + "/partition/";
   char IO_type;
   vector<AUX> aux_list(num_tiers);
 
@@ -173,9 +177,10 @@ void partitionAuxLauncher(
   if (terminal_instert_flag) {
     terminal_insert(
         tier, pin_pos_x, pin_pos_y, flat_netpin, netpin_start, pin2node_map,
-        num_movable_nodes, num_nets, num_tiers, cut_net_mask,
-        terminal_instert_flag, aux_list, terminal_legalize_flag, node_x, node_y,
-        num_movable_nodes_top, node_names, net_names, terminal_names);
+        num_movable_nodes, num_nets, num_tiers, cut_net_mask, terminal_size_x,
+        terminal_size_y, terminal_spacing, terminal_instert_flag, aux_list,
+        terminal_legalize_flag, node_x, node_y, num_movable_nodes_top,
+        node_names, net_names, terminal_names);
   }
 
   // write aux files
@@ -203,11 +208,13 @@ at::Tensor partition_aux_forward(
     at::Tensor pin2node_map, at::Tensor net_weights, int num_movable_nodes,
     at::Tensor node_size_x, at::Tensor node_size_y, at::Tensor pin_offset_x,
     at::Tensor pin_offset_y, float die_size_x, float die_size_y,
-    pybind11::list row_height, at::Tensor pin_pos, bool terminal_instert_flag,
+    pybind11::list row_height, int terminal_size_x, int terminal_size_y,
+    int terminal_spacing, at::Tensor pin_pos, bool terminal_instert_flag,
     bool terminal_legalize_flag, at::Tensor pos_tier_legalized_terminal,
     int num_movable_nodes_top, const std::vector<std::string> &node_names,
     const std::vector<std::string> &net_names,
-    const std::vector<std::string> &terminal_names, at::Tensor pos_2d) {
+    const std::vector<std::string> &terminal_names, at::Tensor pos_2d,
+    std::string case_name) {
   CHECK_FLAT_CPU(flat_netpin);
   CHECK_CONTIGUOUS(flat_netpin);
   CHECK_FLAT_CPU(netpin_start);
@@ -253,7 +260,8 @@ at::Tensor partition_aux_forward(
         DREAMPLACE_TENSOR_DATA_PTR(node_size_y, scalar_t),
         DREAMPLACE_TENSOR_DATA_PTR(pin_offset_x, scalar_t),
         DREAMPLACE_TENSOR_DATA_PTR(pin_offset_y, scalar_t), die_size_x,
-        die_size_y, row_height, DREAMPLACE_TENSOR_DATA_PTR(cut_net_mask, int),
+        die_size_y, row_height, terminal_size_x, terminal_size_y,
+        terminal_spacing, DREAMPLACE_TENSOR_DATA_PTR(cut_net_mask, int),
         DREAMPLACE_TENSOR_DATA_PTR(pin_pos, scalar_t),
         DREAMPLACE_TENSOR_DATA_PTR(pin_pos, scalar_t) + pin_pos.numel() / 2,
         terminal_instert_flag, terminal_legalize_flag,
@@ -262,7 +270,8 @@ at::Tensor partition_aux_forward(
             pos_tier_legalized_terminal.numel() / 2,
         num_movable_nodes_top, node_names, net_names, terminal_names,
         DREAMPLACE_TENSOR_DATA_PTR(pos_2d, scalar_t),
-        DREAMPLACE_TENSOR_DATA_PTR(pos_2d, scalar_t) + pos_2d.numel() / 2);
+        DREAMPLACE_TENSOR_DATA_PTR(pos_2d, scalar_t) + pos_2d.numel() / 2,
+        case_name);
   });
 
   return cut_net_mask;

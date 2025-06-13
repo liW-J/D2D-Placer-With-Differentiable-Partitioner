@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-04-14 01:03:42
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-06-13 18:27:25
+LastEditTime: 2025-06-13 21:52:05
 FilePath: /D2D-placer/placer/tools/OutfmtICCAD.py
 Description: 
 '''
@@ -15,7 +15,7 @@ class OutfmtICCAD:
     def __init__(self, placedb_tier, params):
         self.placedb_tier = placedb_tier
         self.params = params
-    
+
     def __call__(self, case_name):
         """
             @brief write .txt file
@@ -25,7 +25,7 @@ class OutfmtICCAD:
         # TODO: case_name
         content = ""
         output_path = self.params.result_dir
-        output_file = output_path + f"/{case_name}/output.txt"
+        output_file = output_path + f"/output.txt"
         num_tiers = self.params.num_tiers
         logging.info("output_file: %s" % (output_file))
 
@@ -51,7 +51,7 @@ class OutfmtICCAD:
 
             # write terminal nodes
             content += f"NumTerminals {self.placedb_tier[0].num_terminal_NIs}\n"
-            
+
             for fixed_pin_id in range(
                     self.placedb_tier[-1].num_movable_nodes +
                     self.placedb_tier[-1].num_terminals,

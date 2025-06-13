@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-03-15 14:13:35
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-04-08 12:21:52
+LastEditTime: 2025-06-14 01:44:58
 FilePath: /D2D-placer/placer/ops/parser_txt/parser_txt.py
 Description: parser ICCAD 3D placement txt file
 '''
@@ -21,9 +21,9 @@ class ParserTxtFunction(Function):
         
         func = parser_txt_cpp.parser_txt
         input_args = ["3d-placer", file_path, ""]
-        output = func(input_args)
+        die_spec = func(input_args)
         
-        return output
+        return die_spec
     
 class ParserTxt(object):
     def __init__(self, file_path):
