@@ -21,7 +21,6 @@ set(PLACER_BENCHMARKS_DIR "${CMAKE_INSTALL_PREFIX}/benchmarks")
 set(PLACER_CPP_DIR "${CMAKE_INSTALL_PREFIX}/placer/ops")
 set(PLACER_CPP_INCLUDE_DIR "${CMAKE_INSTALL_PREFIX}/placer/ops/include")
 set(PLACER_UTILS_3D_DIR "${CMAKE_INSTALL_PREFIX}/placer/ops/utils_3d")
-
 include_directories(${PLACER_CPP_DIR})
 
 message(STATUS "PLACER_SOURCE_DIR ${PLACER_SOURCE_DIR}")
