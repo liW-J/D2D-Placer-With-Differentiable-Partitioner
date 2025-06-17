@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-03-19 11:47:31
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-06-14 02:05:22
+LastEditTime: 2025-06-16 21:16:14
 FilePath: /D2D-placer/placer/ops/partition/partition.py
 Description: partition flattened 2D placement to 2 Die
 '''
@@ -24,7 +24,7 @@ class PartitionAuxFunction(Function):
                 pin_offset_y, die_size_x, die_size_y, row_height,
                 terminal_size_x, terminal_size_y, terminal_spacing, pin_pos,
                 terminal_instert_flag, terminal_legalize_flag,
-                pos_tier_legalized_terminal, num_movable_nodes_top, node_names,
+                pos_terminal_legalized, num_terminals, node_names,
                 net_names, terminal_names, pos_2d, case_name):
         func = partition_aux_cpp.partition_aux
         output = func(tier, flat_netpin, netpin_start, pin2node_map,
@@ -32,8 +32,8 @@ class PartitionAuxFunction(Function):
                       pin_offset_x, pin_offset_y, die_size_x, die_size_y,
                       row_height, terminal_size_x, terminal_size_y,
                       terminal_spacing, pin_pos, terminal_instert_flag,
-                      terminal_legalize_flag, pos_tier_legalized_terminal,
-                      num_movable_nodes_top, node_names, net_names,
+                      terminal_legalize_flag, pos_terminal_legalized,
+                      num_terminals, node_names, net_names,
                       terminal_names, pos_2d, case_name)
 
         return output
@@ -76,8 +76,8 @@ class PartitionAux(object):
     def __call__(self,
                  tier,
                  pin_pos=torch.empty(0),
-                 pos_tier_legalized_terminal=torch.empty(0),
-                 num_movable_nodes_top=0,
+                 pos_terminal_legalized=torch.empty(0),
+                 num_terminals=0,
                  pos_2d=torch.empty(0),
                  terminal_names=[]):
         return PartitionAuxFunction.forward(
@@ -87,7 +87,7 @@ class PartitionAux(object):
             self.die_size_x, self.die_size_y, self.row_height,
             self.terminal_size_x, self.terminal_size_y, self.terminal_spacing,
             pin_pos, self.terminal_instert_flag, self.terminal_legalize_flag,
-            pos_tier_legalized_terminal, num_movable_nodes_top,
+            pos_terminal_legalized, num_terminals,
             self.node_names, self.net_names, terminal_names, pos_2d,
             self.case_name)
 

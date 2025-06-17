@@ -169,7 +169,7 @@ if __name__ == "__main__":
     #                               pos_2d=pos_2d / 2)
     # pos_2d/2 beceuse of 3d-placer set flattened_die size as die_size*2
     cut_net_mask = d2d_op_wapper.d2d_op_collections.terminal_insert_op(
-        tier, pos_2d=pos_2d / 2)
+        tier, pos_2d / 2)
     num_terminal_NIs = int(cut_net_mask.sum().item())
     breakpoint()
 
@@ -208,7 +208,6 @@ if __name__ == "__main__":
     d2d_params.terminal.printWelcome()
     terminal_metrics, terminal_pos = place(d2d_params.terminal,
                                            placedb_terminal, timer)
-    # breakpoint()
 
     d2d_op_wapper.d2d_op_collections.terminal_legalize_op(
         tier, pos_2d, terminal_pos, num_terminal_NIs,
@@ -230,8 +229,15 @@ if __name__ == "__main__":
         logging.info("tier %d placement  HPWL:%.6f " %
                      (i, metrics_tier[i][-1].hpwl))
 
+    # refinement
+    cut_net_mask = d2d_op_wapper.d2d_op_collections.refinement_op(
+        tier, pos_2d, terminal_pos, num_terminal_NIs,
+        placedb_terminal.node_names)
+    breakpoint()
+
     logging.info("placement takes %.3f seconds" % (time.time() - tt))
 
-    d2d_op_wapper.d2d_op_collections.out_fmt_iccad_op(d2d_params.case_name)
+    d2d_op_wapper.d2d_op_collections.out_fmt_iccad_op(placedb_terminal,
+                                                      d2d_params.case_name)
 
     # breakpoint()

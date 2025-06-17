@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-06-13 15:35:55
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-06-14 02:49:52
+LastEditTime: 2025-06-16 21:22:39
 FilePath: /D2D-placer/placer/OpWapper.py
 Description:
 '''
@@ -11,6 +11,7 @@ from placer.ops.multi_bipartition.multi_bipartition import MultiBipartition
 from placer.ops.partition_aux.partition_aux import PartitionAux
 from placer.ops.avg_cut.avg_cut import AvgCut
 from placer.ops.terminal_aux.terminal_aux import TerminalAux
+from placer.ops.refinement.refinement import Refinement
 
 from placer.tools.OutfmtICCAD import OutfmtICCAD
 from placer.tools.PosFlattened import PosFlattened
@@ -24,8 +25,8 @@ class D2DOpCollection(object):
 
     def __init__(self, hmetis_op, multi_bipartition_op, init_partition_op,
                  out_fmt_iccad_op, pos_flattened_op, terminal_insert_op,
-                 pin_pos_op, terminal_legalize_op, avg_cut_op,
-                 terminal_aux_op):
+                 pin_pos_op, terminal_legalize_op, avg_cut_op, terminal_aux_op,
+                 refinement_op):
         self.hmetis_op = hmetis_op
         self.multi_bipartition_op = multi_bipartition_op
         self.init_partition_op = init_partition_op
@@ -36,6 +37,7 @@ class D2DOpCollection(object):
         self.terminal_legalize_op = terminal_legalize_op
         self.avg_cut_op = avg_cut_op
         self.terminal_aux_op = terminal_aux_op
+        self.refinement_op = refinement_op
 
 
 class D2DOpWapper(object):
@@ -88,6 +90,7 @@ class D2DOpWapper(object):
         self.terminal_legalize_op = self.build_terminal_legalize()
         self.avg_cut_op = self.build_avg_cut()
         self.terminal_aux_op = self.build_terminal_aux()
+        self.refinement_op = self.build_refinement()
 
         self.d2d_op_collections = D2DOpCollection(
             hmetis_op=self.hmetis_op,
@@ -100,7 +103,7 @@ class D2DOpWapper(object):
             terminal_legalize_op=self.terminal_legalize_op,
             avg_cut_op=self.avg_cut_op,
             terminal_aux_op=self.terminal_aux_op,
-        )
+            refinement_op=self.refinement_op)
 
     def build_hmetis(self):
 
@@ -152,7 +155,7 @@ class D2DOpWapper(object):
             terminal_instert_flag=False,
             terminal_legalize_flag=False,
             case_name=self.case_name)
-        
+
         def build_init_partition_op(tier, pos_2d):
             pin_pos = self.pin_pos_op(pos_2d)
             return init_partition_op(tier, pin_pos, pos_2d)
@@ -240,10 +243,13 @@ class D2DOpWapper(object):
             terminal_instert_flag=True,
             terminal_legalize_flag=True,
             case_name=self.case_name)
-        
-        def build_terminal_legalize_op(tier, pos_2d, terminal_pos, num_terminal_NIs, node_names):
+
+        def build_terminal_legalize_op(tier, pos_2d, terminal_pos,
+                                       num_terminal_NIs, terminal_names):
             pin_pos = self.pin_pos_op(pos_2d)
-            return terminal_legalize_op(tier, pin_pos, terminal_pos, num_terminal_NIs, pos_2d, node_names)
+            return terminal_legalize_op(tier, pin_pos, terminal_pos,
+                                        num_terminal_NIs, pos_2d,
+                                        terminal_names)
 
         return build_terminal_legalize_op
 
@@ -271,9 +277,31 @@ class D2DOpWapper(object):
             self.die_size_y, self.row_height, self.die_spec.terminalSizeX,
             self.die_spec.terminalSizeY, self.die_spec.terminalSpacing,
             self.case_name)
-        
+
         def build_terminal_aux_op(tier, pos_2d):
             pin_pos = self.pin_pos_op(pos_2d)
             return terminal_aux_op(tier, pin_pos, pos_2d)
 
         return build_terminal_aux_op
+
+    def build_refinement(self):
+
+        refinement_op = Refinement(
+            self.basic_data.data_collections.flat_net2pin_map,
+            self.basic_data.data_collections.flat_net2pin_start_map,
+            self.basic_data.data_collections.pin2node_map,
+            self.basic_data.data_collections.net_weights,
+            self.placedb_2d.num_movable_nodes, self.placedb_2d.node_names,
+            self.placedb_2d.net_names, self.node_size_x, self.node_size_y,
+            self.pin_offset_x, self.pin_offset_y, self.die_size_x,
+            self.die_size_y, self.row_height, self.die_spec.terminalSizeX,
+            self.die_spec.terminalSizeY, self.die_spec.terminalSpacing,
+            self.case_name)
+
+        def build_refinement_op(tier, pos_2d, terminal_pos, num_terminal_NIs,
+                                terminal_names):
+            pin_pos = self.pin_pos_op(pos_2d)
+            return refinement_op(tier, pin_pos, pos_2d, terminal_pos,
+                                 num_terminal_NIs, terminal_names)
+
+        return build_refinement_op

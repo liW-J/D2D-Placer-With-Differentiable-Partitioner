@@ -6,6 +6,7 @@ add_subdirectory(avg_cut)
 add_subdirectory(terminal_aux)
 add_subdirectory(utils_3d)
 add_subdirectory(multi_bipartition)
+add_subdirectory(refinement)
 
 file(GLOB INSTALL_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/*.py")
 install(

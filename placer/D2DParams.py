@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-06-13 20:00:00
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-06-13 21:43:36
+LastEditTime: 2025-06-16 23:46:49
 FilePath: /D2D-placer/placer/D2DParams.py
 Description: 
 '''
@@ -50,3 +50,4 @@ class D2DParams:
 
         # special params
         self.terminal.random_center_init_flag = 0
+        self.terminal.detailed_place_flag = 1
