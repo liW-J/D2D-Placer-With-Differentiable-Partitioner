@@ -165,8 +165,8 @@ if __name__ == "__main__":
     tier = tier.to(torch.int32)
 
     # return partition result but not receive now
-    # cut_net_mask = init_partition(tier,
-    #                               pos_2d=pos_2d / 2)
+    # cut_net_mask = d2d_op_wapper.d2d_op_collections.init_partition_op(
+    #     tier, pos_2d / 2)
     # pos_2d/2 beceuse of 3d-placer set flattened_die size as die_size*2
     cut_net_mask = d2d_op_wapper.d2d_op_collections.terminal_insert_op(
         tier, pos_2d / 2)
@@ -229,11 +229,12 @@ if __name__ == "__main__":
         logging.info("tier %d placement  HPWL:%.6f " %
                      (i, metrics_tier[i][-1].hpwl))
 
-    # refinement
-    cut_net_mask = d2d_op_wapper.d2d_op_collections.refinement_op(
-        tier, pos_2d, terminal_pos, num_terminal_NIs,
+    d2d_op_wapper.d2d_op_collections.pos_flattened_op(tier, pos_2d, pos_tier)
+
+    hpwl_d2d = d2d_op_wapper.d2d_op_collections.hpwl_d2d_op(
+        pos_2d, cut_net_mask, tier, terminal_pos, num_terminal_NIs,
         placedb_terminal.node_names)
-    breakpoint()
+    logging.info("HPWL_D2D:%.6f " % (hpwl_d2d))
 
     logging.info("placement takes %.3f seconds" % (time.time() - tt))
 

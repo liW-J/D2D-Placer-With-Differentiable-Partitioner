@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-04-14 01:03:42
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-06-17 01:36:17
+LastEditTime: 2025-06-18 15:00:52
 FilePath: /D2D-placer/placer/tools/OutfmtICCAD.py
 Description: 
 '''
@@ -12,9 +12,13 @@ import logging
 
 class OutfmtICCAD:
 
-    def __init__(self, placedb_tier, params):
+    def __init__(self, placedb_tier, params, die_spec):
         self.placedb_tier = placedb_tier
         self.params = params
+        self.die_spec = die_spec
+        self.terminal_size_x = die_spec.terminalSizeX
+        self.terminal_size_y = die_spec.terminalSizeY
+        self.terminal_spacing = die_spec.terminalSpacing
 
     def __call__(self, placedb_terminal, case_name):
         """
@@ -58,7 +62,7 @@ class OutfmtICCAD:
             for terminal_id in range(0, placedb_terminal.num_movable_nodes):
                 # node_x, node_y of terminal must be same in each tier
                 # rawdb here is tier[-1] for easier
-                content += f"Terminal {rawdb_terminal.nodeName(terminal_id)} {int(terminal_x[terminal_id])} {int(terminal_y[terminal_id])}\n"
+                content += f"Terminal {rawdb_terminal.nodeName(terminal_id)} {int(terminal_x[terminal_id] + (self.terminal_size_x + self.terminal_spacing) / 2)} {int(terminal_y[terminal_id] + (self.terminal_size_y + self.terminal_spacing) / 2)}\n"
         else:
             logging.info("unsupported num_tiers: %d for iccad format" %
                          (num_tiers))

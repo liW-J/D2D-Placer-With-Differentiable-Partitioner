@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-06-13 15:35:55
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-06-16 21:22:39
+LastEditTime: 2025-06-19 12:52:45
 FilePath: /D2D-placer/placer/OpWapper.py
 Description:
 '''
@@ -12,6 +12,7 @@ from placer.ops.partition_aux.partition_aux import PartitionAux
 from placer.ops.avg_cut.avg_cut import AvgCut
 from placer.ops.terminal_aux.terminal_aux import TerminalAux
 from placer.ops.refinement.refinement import Refinement
+from placer.ops.hpwl_d2d.hpwl_d2d import HPWLD2D
 
 from placer.tools.OutfmtICCAD import OutfmtICCAD
 from placer.tools.PosFlattened import PosFlattened
@@ -25,8 +26,8 @@ class D2DOpCollection(object):
 
     def __init__(self, hmetis_op, multi_bipartition_op, init_partition_op,
                  out_fmt_iccad_op, pos_flattened_op, terminal_insert_op,
-                 pin_pos_op, terminal_legalize_op, avg_cut_op, terminal_aux_op,
-                 refinement_op):
+                 pin_pos_op, pin_pos_tier_op, terminal_legalize_op, avg_cut_op,
+                 terminal_aux_op, refinement_op, hpwl_d2d_op):
         self.hmetis_op = hmetis_op
         self.multi_bipartition_op = multi_bipartition_op
         self.init_partition_op = init_partition_op
@@ -34,10 +35,12 @@ class D2DOpCollection(object):
         self.pos_flattened_op = pos_flattened_op
         self.terminal_insert_op = terminal_insert_op
         self.pin_pos_op = pin_pos_op
+        self.pin_pos_tier_op = pin_pos_tier_op
         self.terminal_legalize_op = terminal_legalize_op
         self.avg_cut_op = avg_cut_op
         self.terminal_aux_op = terminal_aux_op
         self.refinement_op = refinement_op
+        self.hpwl_d2d_op = hpwl_d2d_op
 
 
 class D2DOpWapper(object):
@@ -51,6 +54,7 @@ class D2DOpWapper(object):
         self.case_name = d2d_params.case_name
         self.die_spec = die_spec
         self.num_tiers = d2d_params.flatten_2d.num_tiers
+        self.tier_data = tier_data
 
         self.node_size_x = torch.stack([
             data.data_collections.node_size_x[:placedb_2d.num_movable_nodes]
@@ -87,10 +91,12 @@ class D2DOpWapper(object):
         self.pos_flattened_op = self.build_pos_flattened()
         self.terminal_insert_op = self.build_terminal_insert()
         self.pin_pos_op = self.build_pin_pos()
+        self.pin_pos_tier_op = self.build_pin_pos_tier()
         self.terminal_legalize_op = self.build_terminal_legalize()
         self.avg_cut_op = self.build_avg_cut()
         self.terminal_aux_op = self.build_terminal_aux()
         self.refinement_op = self.build_refinement()
+        self.hpwl_d2d_op = self.build_hpwl_d2d()
 
         self.d2d_op_collections = D2DOpCollection(
             hmetis_op=self.hmetis_op,
@@ -100,10 +106,12 @@ class D2DOpWapper(object):
             pos_flattened_op=self.pos_flattened_op,
             terminal_insert_op=self.terminal_insert_op,
             pin_pos_op=self.pin_pos_op,
+            pin_pos_tier_op=self.pin_pos_tier_op,
             terminal_legalize_op=self.terminal_legalize_op,
             avg_cut_op=self.avg_cut_op,
             terminal_aux_op=self.terminal_aux_op,
-            refinement_op=self.refinement_op)
+            refinement_op=self.refinement_op,
+            hpwl_d2d_op=self.hpwl_d2d_op)
 
     def build_hmetis(self):
 
@@ -157,14 +165,26 @@ class D2DOpWapper(object):
             case_name=self.case_name)
 
         def build_init_partition_op(tier, pos_2d):
-            pin_pos = self.pin_pos_op(pos_2d)
+            pin_pos_x = torch.stack([
+                self.pin_pos_tier_op[tier_id](pos_2d)
+                [:self.basic_data.data_collections.pin2node_map.numel()]
+                for tier_id in range(self.num_tiers)
+            ])
+            pin_pos_y = torch.stack([
+                self.pin_pos_tier_op[tier_id](pos_2d)
+                [self.basic_data.data_collections.pin2node_map.numel():]
+                for tier_id in range(self.num_tiers)
+            ])
+            pin_pos = torch.cat([pin_pos_x, pin_pos_y], dim=0)
+
             return init_partition_op(tier, pin_pos, pos_2d)
 
         return build_init_partition_op
 
     def build_out_fmt_iccad(self):
 
-        out_fmt_iccad_op = OutfmtICCAD(self.placedb_tier, self.params)
+        out_fmt_iccad_op = OutfmtICCAD(self.placedb_tier, self.params,
+                                       self.die_spec)
 
         return out_fmt_iccad_op
 
@@ -200,7 +220,18 @@ class D2DOpWapper(object):
             case_name=self.case_name)
 
         def build_terminal_insert_op(tier, pos_2d):
-            pin_pos = self.pin_pos_op(pos_2d)
+            pin_pos_x = torch.stack([
+                self.pin_pos_tier_op[tier_id](pos_2d)
+                [:self.basic_data.data_collections.pin2node_map.numel()]
+                for tier_id in range(self.num_tiers)
+            ])
+            pin_pos_y = torch.stack([
+                self.pin_pos_tier_op[tier_id](pos_2d)
+                [self.basic_data.data_collections.pin2node_map.numel():]
+                for tier_id in range(self.num_tiers)
+            ])
+            pin_pos = torch.cat([pin_pos_x, pin_pos_y], dim=0)
+
             return terminal_insert_op(tier, pin_pos, pos_2d)
 
         return build_terminal_insert_op
@@ -219,6 +250,28 @@ class D2DOpWapper(object):
             algorithm="node-by-node")
 
         return pin_pos_op
+
+    def build_pin_pos_tier(self):
+
+        pin_pos_tier_op = []
+
+        for tier_id in range(self.num_tiers):
+            pin_pos_tier_op.append(
+                PinPos(pin_offset_x=self.tier_data[tier_id].data_collections.
+                       pin_offset_x,
+                       pin_offset_y=self.tier_data[tier_id].data_collections.
+                       pin_offset_y,
+                       pin2node_map=self.tier_data[tier_id].data_collections.
+                       pin2node_map,
+                       flat_node2pin_map=self.tier_data[tier_id].
+                       data_collections.flat_node2pin_map,
+                       flat_node2pin_start_map=self.tier_data[tier_id].
+                       data_collections.flat_node2pin_start_map,
+                       num_physical_nodes=self.placedb_tier[tier_id].
+                       num_physical_nodes,
+                       algorithm="node-by-node"))
+
+        return pin_pos_tier_op
 
     def build_terminal_legalize(self):
 
@@ -246,7 +299,17 @@ class D2DOpWapper(object):
 
         def build_terminal_legalize_op(tier, pos_2d, terminal_pos,
                                        num_terminal_NIs, terminal_names):
-            pin_pos = self.pin_pos_op(pos_2d)
+            pin_pos_x = torch.stack([
+                self.pin_pos_tier_op[tier_id](pos_2d)
+                [:self.basic_data.data_collections.pin2node_map.numel()]
+                for tier_id in range(self.num_tiers)
+            ])
+            pin_pos_y = torch.stack([
+                self.pin_pos_tier_op[tier_id](pos_2d)
+                [self.basic_data.data_collections.pin2node_map.numel():]
+                for tier_id in range(self.num_tiers)
+            ])
+            pin_pos = torch.cat([pin_pos_x, pin_pos_y], dim=0)
             return terminal_legalize_op(tier, pin_pos, terminal_pos,
                                         num_terminal_NIs, pos_2d,
                                         terminal_names)
@@ -279,7 +342,17 @@ class D2DOpWapper(object):
             self.case_name)
 
         def build_terminal_aux_op(tier, pos_2d):
-            pin_pos = self.pin_pos_op(pos_2d)
+            pin_pos_x = torch.stack([
+                self.pin_pos_tier_op[tier_id](pos_2d)
+                [:self.basic_data.data_collections.pin2node_map.numel()]
+                for tier_id in range(self.num_tiers)
+            ])
+            pin_pos_y = torch.stack([
+                self.pin_pos_tier_op[tier_id](pos_2d)
+                [self.basic_data.data_collections.pin2node_map.numel():]
+                for tier_id in range(self.num_tiers)
+            ])
+            pin_pos = torch.cat([pin_pos_x, pin_pos_y], dim=0)
             return terminal_aux_op(tier, pin_pos, pos_2d)
 
         return build_terminal_aux_op
@@ -300,8 +373,48 @@ class D2DOpWapper(object):
 
         def build_refinement_op(tier, pos_2d, terminal_pos, num_terminal_NIs,
                                 terminal_names):
-            pin_pos = self.pin_pos_op(pos_2d)
+            pin_pos_x = torch.stack([
+                self.pin_pos_tier_op[tier_id](pos_2d)
+                [:self.basic_data.data_collections.pin2node_map.numel()]
+                for tier_id in range(self.num_tiers)
+            ])
+            pin_pos_y = torch.stack([
+                self.pin_pos_tier_op[tier_id](pos_2d)
+                [self.basic_data.data_collections.pin2node_map.numel():]
+                for tier_id in range(self.num_tiers)
+            ])
+            pin_pos = torch.cat([pin_pos_x, pin_pos_y], dim=0)
             return refinement_op(tier, pin_pos, pos_2d, terminal_pos,
                                  num_terminal_NIs, terminal_names)
 
         return build_refinement_op
+
+    def build_hpwl_d2d(self):
+
+        hpwl_d2d_op = HPWLD2D(
+            self.basic_data.data_collections.flat_net2pin_map,
+            self.basic_data.data_collections.flat_net2pin_start_map,
+            self.basic_data.data_collections.pin2node_map,
+            self.basic_data.data_collections.net_weights,
+            self.die_spec.terminalSizeX, self.die_spec.terminalSizeY,
+            self.die_spec.terminalSpacing, self.placedb_2d.net_names,
+            self.num_tiers)
+
+        def build_hpwl_d2d_op(pos_2d, cut_net_mask, tier, terminal_pos,
+                              num_terminal_NIs, terminal_names):
+            pin_pos_x = torch.stack([
+                self.pin_pos_tier_op[tier_id](pos_2d)
+                [:self.basic_data.data_collections.pin2node_map.numel()]
+                for tier_id in range(self.num_tiers)
+            ])
+            pin_pos_y = torch.stack([
+                self.pin_pos_tier_op[tier_id](pos_2d)
+                [self.basic_data.data_collections.pin2node_map.numel():]
+                for tier_id in range(self.num_tiers)
+            ])
+            pin_pos = torch.cat([pin_pos_x, pin_pos_y], dim=0)
+
+            return hpwl_d2d_op(pin_pos, cut_net_mask, tier, terminal_pos,
+                               num_terminal_NIs, terminal_names)
+
+        return build_hpwl_d2d_op
