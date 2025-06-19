@@ -231,6 +231,52 @@ if __name__ == "__main__":
 
     d2d_op_wapper.d2d_op_collections.pos_flattened_op(tier, pos_2d, pos_tier)
 
+    # refinement
+    tier = d2d_op_wapper.d2d_op_collections.refinement_op(
+        tier, pos_2d, terminal_pos, num_terminal_NIs,
+        placedb_terminal.node_names)
+
+    cut_net_mask = d2d_op_wapper.d2d_op_collections.terminal_insert_op(
+        tier, pos_2d)
+    num_terminal_NIs = int(cut_net_mask.sum().item())
+
+    # update placedb_tier & tier_data using new terminal_insert result
+    for i in range(num_tiers):
+        placedb_tier[i], timer = database(d2d_params.partition_tier[i])
+        tier_data[i] = BasicPlace.BasicPlace(d2d_params.partition_tier[i],
+                                             placedb_tier[i], timer)
+
+    # create terminal aux for collaborative optimization by tier[0]
+    d2d_op_wapper.d2d_op_collections.terminal_aux_op(tier, pos_2d)
+
+    placedb_terminal, timer = database(d2d_params.terminal)
+    d2d_params.terminal.printWelcome()
+    terminal_metrics, terminal_pos = place(d2d_params.terminal,
+                                           placedb_terminal, timer)
+
+    d2d_op_wapper.d2d_op_collections.terminal_legalize_op(
+        tier, pos_2d, terminal_pos, num_terminal_NIs,
+        placedb_terminal.node_names)
+
+    # breakpoint()
+
+    for i in range(num_tiers):
+        d2d_params.partition_tier[i].random_center_init_flag = 0
+        d2d_params.partition_tier[i].global_place_stages[0]["iteration"] = -1
+        placedb_tier[i], timer = database(d2d_params.partition_tier[i])
+        d2d_params.partition_tier[i].printWelcome()
+        metrics, pos = place(d2d_params.partition_tier[i], placedb_tier[i],
+                             timer)
+        metrics_tier[i] = metrics
+        pos_tier[i] = pos
+        terminal_legalize_flag = False
+
+    for i in range(num_tiers):
+        logging.info("tier %d placement  HPWL:%.6f " %
+                     (i, metrics_tier[i][-1].hpwl))
+
+    d2d_op_wapper.d2d_op_collections.pos_flattened_op(tier, pos_2d, pos_tier)
+
     hpwl_d2d = d2d_op_wapper.d2d_op_collections.hpwl_d2d_op(
         pos_2d, cut_net_mask, tier, terminal_pos, num_terminal_NIs,
         placedb_terminal.node_names)
