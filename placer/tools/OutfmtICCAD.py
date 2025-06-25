@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-04-14 01:03:42
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-06-13 21:52:05
+LastEditTime: 2025-06-18 15:00:52
 FilePath: /D2D-placer/placer/tools/OutfmtICCAD.py
 Description: 
 '''
@@ -12,11 +12,15 @@ import logging
 
 class OutfmtICCAD:
 
-    def __init__(self, placedb_tier, params):
+    def __init__(self, placedb_tier, params, die_spec):
         self.placedb_tier = placedb_tier
         self.params = params
+        self.die_spec = die_spec
+        self.terminal_size_x = die_spec.terminalSizeX
+        self.terminal_size_y = die_spec.terminalSizeY
+        self.terminal_spacing = die_spec.terminalSpacing
 
-    def __call__(self, case_name):
+    def __call__(self, placedb_terminal, case_name):
         """
             @brief write .txt file
             @param output_file .txt file
@@ -50,17 +54,15 @@ class OutfmtICCAD:
                     content += f"Inst {rawdb.nodeName(node_id)} {int(node_x[node_id])} {int(node_y[node_id])}\n"
 
             # write terminal nodes
-            content += f"NumTerminals {self.placedb_tier[0].num_terminal_NIs}\n"
-
-            for fixed_pin_id in range(
-                    self.placedb_tier[-1].num_movable_nodes +
-                    self.placedb_tier[-1].num_terminals,
-                    self.placedb_tier[-1].num_movable_nodes +
-                    self.placedb_tier[-1].num_terminals +
-                    self.placedb_tier[-1].num_terminal_NIs):
+            content += f"NumTerminals {placedb_terminal.num_movable_nodes}\n"
+            
+            rawdb_terminal = placedb_terminal.rawdb
+            terminal_x, terminal_y = placedb_terminal.unscale_pl(
+                    self.params.shift_factor, self.params.scale_factor)
+            for terminal_id in range(0, placedb_terminal.num_movable_nodes):
                 # node_x, node_y of terminal must be same in each tier
                 # rawdb here is tier[-1] for easier
-                content += f"Terminal {rawdb.nodeName(fixed_pin_id)} {int(node_x[fixed_pin_id])} {int(node_y[fixed_pin_id])}\n"
+                content += f"Terminal {rawdb_terminal.nodeName(terminal_id)} {int(terminal_x[terminal_id] + (self.terminal_size_x + self.terminal_spacing) / 2)} {int(terminal_y[terminal_id] + (self.terminal_size_y + self.terminal_spacing) / 2)}\n"
         else:
             logging.info("unsupported num_tiers: %d for iccad format" %
                          (num_tiers))

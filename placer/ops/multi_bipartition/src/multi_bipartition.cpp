@@ -2,7 +2,7 @@
  * @Author: JeanneWillis hi@jeannewillis.cn
  * @Date: 2025-04-08 12:35:48
  * @LastEditors: JeanneWillis hi@jeannewillis.cn
- * @LastEditTime: 2025-06-11 11:21:03
+ * @LastEditTime: 2025-06-16 16:50:24
  * @FilePath: /D2D-placer/placer/ops/hmetis/src/hmetis.cpp
  * @Description:
  */
@@ -243,9 +243,9 @@ int multiBipartitionLauncher(int *tier, const int *flat_netpin,
     }
   }
 
-  Partitioner::countNodesInCutNets(tier, flat_netpin, netpin_start,
-                                   pin2node_map, num_movable_nodes, num_nets,
-                                   num_tiers, cut_net_mask);
+  Partitioner::countRelatedNodesInCutNets(tier, flat_netpin, netpin_start,
+                                          pin2node_map, num_movable_nodes,
+                                          num_nets, num_tiers, cut_net_mask);
   return 0;
 }
 
