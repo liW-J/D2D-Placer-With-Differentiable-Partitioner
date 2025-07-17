@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-06-13 20:00:00
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-06-19 19:49:40
+LastEditTime: 2025-07-17 12:13:50
 FilePath: /D2D-placer/placer/D2DParams.py
 Description: 
 '''
@@ -51,4 +51,5 @@ class D2DParams:
         # special params
         self.terminal.random_center_init_flag = 0
         self.terminal.global_place_stages[0]["iteration"] = -1
-        
+        self.flatten_2d.legalize_flag = 0
+        # self.flatten_2d.target_density = 2.0
