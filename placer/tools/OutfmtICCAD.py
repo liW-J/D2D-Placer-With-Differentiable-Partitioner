@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-04-14 01:03:42
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-06-18 15:00:52
+LastEditTime: 2025-07-17 14:00:05
 FilePath: /D2D-placer/placer/tools/OutfmtICCAD.py
 Description: 
 '''
@@ -26,7 +26,6 @@ class OutfmtICCAD:
             @param output_file .txt file
             """
         # read .gp.pl file
-        # TODO: case_name
         content = ""
         output_path = self.params.result_dir
         output_file = output_path + f"/output.txt"

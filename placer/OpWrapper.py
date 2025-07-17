@@ -2,8 +2,8 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-06-13 15:35:55
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-07-17 11:48:04
-FilePath: /D2D-placer/placer/OpWapper.py
+LastEditTime: 2025-07-17 14:27:30
+FilePath: /D2D-placer/placer/OpWrapper.py
 Description:
 '''
 from placer.ops.hmetis.hmetis import Hmetis
@@ -43,7 +43,7 @@ class D2DOpCollection(object):
         self.hpwl_d2d_op = hpwl_d2d_op
 
 
-class D2DOpWapper(object):
+class OpWrapper(object):
 
     def __init__(self, basic_data, placedb_2d, placedb_tier, d2d_params,
                  tier_data, die_spec):
@@ -232,7 +232,7 @@ class D2DOpWapper(object):
             ])
             pin_pos = torch.cat([pin_pos_x, pin_pos_y], dim=0)
 
-            return terminal_insert_op(tier, pin_pos, pos_2d = pos_2d)
+            return terminal_insert_op(tier, pin_pos, pos_2d=pos_2d)
 
         return build_terminal_insert_op
 
