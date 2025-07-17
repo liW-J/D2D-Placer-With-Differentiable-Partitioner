@@ -165,9 +165,9 @@ if __name__ == "__main__":
     tier = tier.to(torch.int32)
 
     # return partition result but not receive now
+    # pos_2d/2 beceuse of 3d-placer set flattened_die size as die_size*2
     # cut_net_mask = d2d_op_wapper.d2d_op_collections.init_partition_op(
     #     tier, pos_2d / 2)
-    # pos_2d/2 beceuse of 3d-placer set flattened_die size as die_size*2
     cut_net_mask = d2d_op_wapper.d2d_op_collections.terminal_insert_op(
         tier, pos_2d / 2)
     num_terminal_NIs = int(cut_net_mask.sum().item())
@@ -177,6 +177,7 @@ if __name__ == "__main__":
     metrics_tier = []
     pos_tier = []
     for i in range(num_tiers):
+        # d2d_params.partition_tier[i].random_center_init_flag = 0
         placedb_tier[i], timer = database(d2d_params.partition_tier[i])
         d2d_params.partition_tier[i].printWelcome()
         metrics, pos = place(d2d_params.partition_tier[i], placedb_tier[i],
