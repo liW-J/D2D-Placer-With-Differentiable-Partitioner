@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-07-17 14:00:51
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-07-17 14:23:01
+LastEditTime: 2025-07-17 18:14:28
 FilePath: /D2D-placer/placer/tools/DreamplaceData.py
 Description: 
 '''
@@ -16,14 +16,18 @@ import numpy as np
 import os
 
 class DreamplaceData:
-    def __init__(self):
-        self.metrics_2d = None
-        self.metrics_tier = None
-        self.metrics_terminal = None
+    def __init__(self, num_tiers):
+        self.placedb_2d = None # raw placement database, a C++ object
+        self.placedb_tier = [None] * num_tiers # python placement database interface
+        self.placedb_terminal = None
         
-        self.pos_2d = None
-        self.pos_tier = None
-        self.pos_terminal = None
+        self.data_2d = None
+        self.data_tier = [None] * num_tiers
+        self.data_terminal = None
+        
+        self.metrics_2d = None
+        self.metrics_tier = [None] * num_tiers
+        self.metrics_terminal = None
         
     def database(params):
         """
