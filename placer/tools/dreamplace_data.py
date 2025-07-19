@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-07-17 14:31:37
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-07-19 17:55:52
+LastEditTime: 2025-07-19 18:16:19
 FilePath: /D2D-placer/placer/tools/dreamplace_data.py
 Description: 
 '''

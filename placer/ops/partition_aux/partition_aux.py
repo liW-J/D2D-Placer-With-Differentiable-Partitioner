@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-03-19 11:47:31
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-06-16 21:16:14
+LastEditTime: 2025-07-20 02:42:07
 FilePath: /D2D-placer/placer/ops/partition/partition.py
 Description: partition flattened 2D placement to 2 Die
 '''
@@ -25,7 +25,7 @@ class PartitionAuxFunction(Function):
                 terminal_size_x, terminal_size_y, terminal_spacing, pin_pos,
                 terminal_instert_flag, terminal_legalize_flag,
                 pos_terminal_legalized, num_terminals, node_names,
-                net_names, terminal_names, pos_2d, case_name):
+                net_names, terminal_names, pos_2d, case_name,  node_orient):
         func = partition_aux_cpp.partition_aux
         output = func(tier, flat_netpin, netpin_start, pin2node_map,
                       net_weights, num_movable_nodes, node_size_x, node_size_y,
@@ -34,7 +34,7 @@ class PartitionAuxFunction(Function):
                       terminal_spacing, pin_pos, terminal_instert_flag,
                       terminal_legalize_flag, pos_terminal_legalized,
                       num_terminals, node_names, net_names,
-                      terminal_names, pos_2d, case_name)
+                      terminal_names, pos_2d, case_name,  node_orient)
 
         return output
 
@@ -75,6 +75,7 @@ class PartitionAux(object):
 
     def __call__(self,
                  tier,
+                  node_orient,
                  pin_pos=torch.empty(0),
                  pos_terminal_legalized=torch.empty(0),
                  num_terminals=0,
@@ -89,7 +90,7 @@ class PartitionAux(object):
             pin_pos, self.terminal_instert_flag, self.terminal_legalize_flag,
             pos_terminal_legalized, num_terminals,
             self.node_names, self.net_names, terminal_names, pos_2d,
-            self.case_name)
+            self.case_name,  node_orient)
 
 
 if __name__ == "__main__":

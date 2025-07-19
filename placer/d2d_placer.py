@@ -2,12 +2,14 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-07-19 17:57:28
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-07-19 17:57:30
+LastEditTime: 2025-07-20 03:03:40
 FilePath: /D2D-placer/placer/d2d_placer.py
 Description: 
 '''
 
+import configure
 import matplotlib
+
 matplotlib.use('Agg')
 
 import os
@@ -25,7 +27,7 @@ from placer.ops.parser_txt.parser_txt import ParserTxt
 from placer.op_wrapper import OpWrapper
 from placer.d2d_params import D2DParams
 from placer.tools.dreamplace_data import DreamplaceData
-from placer.constants import Format
+from placer.constants import Format, Orient
 import torch
 
 
@@ -59,7 +61,8 @@ class D2Dplacer:
 
         # macro mask
         self.movable_macro_mask = None  # movable macros in movables nodes
-        self.movable_macro_angle = None  # angle of movable macro
+        # self.movable_macro_angle = None  # angle of movable macro
+        self.node_orient = None  # orient of nodes
 
         self.cut_net_mask = None
         self.num_terminal_NIs = None
@@ -110,6 +113,9 @@ class D2Dplacer:
             self.place_data.data_tier[i] = BasicPlace.BasicPlace(
                 self.params.flattened_tier[i], self.place_data.placedb_tier[i],
                 self.timer)
+
+        self.node_orient = [Orient.N.value
+                            ] * self.place_data.placedb_2d.num_movable_nodes
 
     def init_op_wrapper(self):
         self.op_wrapper = OpWrapper(self.place_data.data_2d,
@@ -164,12 +170,12 @@ class D2Dplacer:
         # cut_net_mask = self.op_wrapper.d2d_op_collections.init_partition_op(
         #     self.tier, self.pos_2d / 2)
         self.cut_net_mask = self.op_wrapper.d2d_op_collections.terminal_insert_op(
-            self.tier, self.pos_2d / 2)
+            self.tier, self.pos_2d / 2, self.node_orient)
         self.num_terminal_NIs = int(self.cut_net_mask.sum().item())
 
     def terminal_insert(self):
         self.op_wrapper.d2d_op_collections.terminal_insert_op(
-            self.tier, self.pos_2d)
+            self.tier, self.pos_2d, self.node_orient)
 
         # create terminal aux for collaborative optimization by tier[0]
         self.op_wrapper.d2d_op_collections.terminal_aux_op(
@@ -182,7 +188,7 @@ class D2Dplacer:
 
         self.op_wrapper.d2d_op_collections.terminal_legalize_op(
             self.tier, self.pos_2d, self.pos_terminal, self.num_terminal_NIs,
-            self.place_data.placedb_terminal.node_names)
+            self.place_data.placedb_terminal.node_names, self.node_orient)
 
     def refinement(self):
         self.tier = self.op_wrapper.d2d_op_collections.refinement_op(
@@ -190,7 +196,7 @@ class D2Dplacer:
             self.place_data.placedb_terminal.node_names)
 
         self.cut_net_mask = self.op_wrapper.d2d_op_collections.terminal_insert_op(
-            self.tier, self.pos_2d)
+            self.tier, self.pos_2d, self.node_orient)
         self.num_terminal_NIs = int(self.cut_net_mask.sum().item())
 
         # create terminal aux for collaborative optimization by tier[0]
@@ -204,7 +210,12 @@ class D2Dplacer:
 
         self.op_wrapper.d2d_op_collections.terminal_legalize_op(
             self.tier, self.pos_2d, terminal_pos, self.num_terminal_NIs,
-            self.place_data.placedb_terminal.node_names)
+            self.place_data.placedb_terminal.node_names, self.node_orient)
+
+    def macro_rotation(self):
+        # self.place_data.placedb_terminal.node_orient = np.array(self.place_data.placedb_terminal.node_orient, dtype=np.string_)
+        # self.place_data.placedb_terminal.node_orient = np.array(self.place_data.placedb_terminal.node_orient, dtype=np.string_)
+        pass
 
     def output(self):
         self.op_wrapper.d2d_op_collections.out_fmt_iccad_op(
@@ -220,6 +231,7 @@ class D2Dplacer:
         self.die_by_die_place(random_center_init_flag=True)
         self.terminal_insert()
         self.die_by_die_place(random_center_init_flag=False)
+        self.macro_rotation()
         self.refinement()
         for i in range(self.num_tiers):
             self.params.partition_tier[i].global_place_stages[0][

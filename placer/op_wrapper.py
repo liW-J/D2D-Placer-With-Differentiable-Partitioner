@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-06-13 15:35:55
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-07-19 17:58:03
+LastEditTime: 2025-07-20 02:41:26
 FilePath: /D2D-placer/placer/op_wrapper.py
 Description:
 '''
@@ -164,7 +164,7 @@ class OpWrapper(object):
             terminal_legalize_flag=False,
             case_name=self.case_name)
 
-        def build_init_partition_op(tier, pos_2d):
+        def build_init_partition_op(tier, pos_2d,  node_orient):
             pin_pos_x = torch.stack([
                 self.pin_pos_tier_op[tier_id](pos_2d)
                 [:self.basic_data.data_collections.pin2node_map.numel()]
@@ -177,7 +177,7 @@ class OpWrapper(object):
             ])
             pin_pos = torch.cat([pin_pos_x, pin_pos_y], dim=0)
 
-            return init_partition_op(tier, pin_pos, pos_2d)
+            return init_partition_op(tier,  node_orient, pin_pos, pos_2d)
 
         return build_init_partition_op
 
@@ -219,7 +219,7 @@ class OpWrapper(object):
             terminal_legalize_flag=False,
             case_name=self.case_name)
 
-        def build_terminal_insert_op(tier, pos_2d):
+        def build_terminal_insert_op(tier, pos_2d,  node_orient):
             pin_pos_x = torch.stack([
                 self.pin_pos_tier_op[tier_id](pos_2d)
                 [:self.basic_data.data_collections.pin2node_map.numel()]
@@ -232,7 +232,7 @@ class OpWrapper(object):
             ])
             pin_pos = torch.cat([pin_pos_x, pin_pos_y], dim=0)
 
-            return terminal_insert_op(tier, pin_pos, pos_2d=pos_2d)
+            return terminal_insert_op(tier,  node_orient, pin_pos, pos_2d=pos_2d)
 
         return build_terminal_insert_op
 
@@ -298,7 +298,7 @@ class OpWrapper(object):
             case_name=self.case_name)
 
         def build_terminal_legalize_op(tier, pos_2d, terminal_pos,
-                                       num_terminal_NIs, terminal_names):
+                                       num_terminal_NIs, terminal_names,  node_orient):
             pin_pos_x = torch.stack([
                 self.pin_pos_tier_op[tier_id](pos_2d)
                 [:self.basic_data.data_collections.pin2node_map.numel()]
@@ -310,7 +310,7 @@ class OpWrapper(object):
                 for tier_id in range(self.num_tiers)
             ])
             pin_pos = torch.cat([pin_pos_x, pin_pos_y], dim=0)
-            return terminal_legalize_op(tier, pin_pos, terminal_pos,
+            return terminal_legalize_op(tier,  node_orient, pin_pos, terminal_pos,
                                         num_terminal_NIs, pos_2d,
                                         terminal_names)
 
