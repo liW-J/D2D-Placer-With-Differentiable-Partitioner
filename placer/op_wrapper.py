@@ -2,8 +2,8 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-06-13 15:35:55
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-07-19 17:13:19
-FilePath: /D2D-placer/placer/OpWrapper.py
+LastEditTime: 2025-07-19 17:58:03
+FilePath: /D2D-placer/placer/op_wrapper.py
 Description:
 '''
 from placer.ops.hmetis.hmetis import Hmetis

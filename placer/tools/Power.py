@@ -2,8 +2,8 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-03-17 18:36:28
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-04-08 12:23:42
-FilePath: /D2D-placer/placer/utils/Power.py
+LastEditTime: 2025-07-19 17:57:13
+FilePath: /D2D-placer/placer/tools/power.py
 Description: 
 '''
 import numpy as np

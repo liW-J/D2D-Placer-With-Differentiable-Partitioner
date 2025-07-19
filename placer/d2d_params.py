@@ -2,8 +2,8 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-06-13 20:00:00
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-07-17 12:13:50
-FilePath: /D2D-placer/placer/D2DParams.py
+LastEditTime: 2025-07-19 17:57:21
+FilePath: /D2D-placer/placer/d2d_params.py
 Description: 
 '''
 import dreamplace.Params as Params

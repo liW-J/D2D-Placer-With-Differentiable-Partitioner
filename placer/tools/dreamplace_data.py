@@ -1,11 +1,12 @@
 '''
 Author: JeanneWillis hi@jeannewillis.cn
-Date: 2025-07-17 14:00:51
+Date: 2025-07-17 14:31:37
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-07-19 17:11:55
-FilePath: /D2D-placer/placer/tools/DreamplaceData.py
+LastEditTime: 2025-07-19 17:55:52
+FilePath: /D2D-placer/placer/tools/dreamplace_data.py
 Description: 
 '''
+
 import dreamplace.PlaceDB as PlaceDB
 import dreamplace.Timer as Timer
 import dreamplace.configure as configure
@@ -19,10 +20,8 @@ import os
 class DreamplaceData:
 
     def __init__(self, num_tiers):
-        self.placedb_2d = None  # raw placement database, a C++ object
-        self.placedb_tier = [
-            None
-        ] * num_tiers  # python placement database interface
+        self.placedb_2d = None
+        self.placedb_tier = [None] * num_tiers
         self.placedb_terminal = None
 
         self.data_2d = None

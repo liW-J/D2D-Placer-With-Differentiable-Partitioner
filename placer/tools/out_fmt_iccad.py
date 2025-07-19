@@ -2,12 +2,13 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-04-14 01:03:42
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-07-19 17:12:23
-FilePath: /D2D-placer/placer/tools/OutfmtICCAD.py
+LastEditTime: 2025-07-19 17:56:55
+FilePath: /D2D-placer/placer/tools/out_fmt_iccad.py
 Description: 
 '''
 import time
 import logging
+from placer.constants import Format
 
 class OutfmtICCAD:
 
@@ -19,7 +20,7 @@ class OutfmtICCAD:
         self.terminal_size_y = die_spec.terminalSizeY
         self.terminal_spacing = die_spec.terminalSpacing
 
-    def __call__(self, placedb_terminal, case_name):
+    def __call__(self, placedb_terminal, case_name, format):
         """
             @brief write .txt file
             @param output_file .txt file
@@ -49,7 +50,10 @@ class OutfmtICCAD:
                 content += f"{dieName} {num_movable_nodes}\n"
 
                 for node_id in range(num_movable_nodes):
-                    content += f"Inst {rawdb.nodeName(node_id)} {int(node_x[node_id])} {int(node_y[node_id])}\n"
+                    if format == Format.ICCAD2022:
+                        content += f"Inst {rawdb.nodeName(node_id)} {int(node_x[node_id])} {int(node_y[node_id])}\n"
+                    elif format == Format.ICCAD2023:
+                        content += f"Inst {rawdb.nodeName(node_id)} {int(node_x[node_id])} {int(node_y[node_id])} R0\n"
 
             # write terminal nodes
             content += f"NumTerminals {placedb_terminal.num_movable_nodes}\n"

@@ -1,14 +1,15 @@
-##
-# @file   Placer.py
-# @author Yibo Lin
-# @date   Apr 2018
-# @brief  Main file to run the entire placement flow.
-#
+'''
+Author: JeanneWillis hi@jeannewillis.cn
+Date: 2025-07-19 17:57:28
+LastEditors: JeanneWillis hi@jeannewillis.cn
+LastEditTime: 2025-07-19 17:57:30
+FilePath: /D2D-placer/placer/d2d_placer.py
+Description: 
+'''
 
-import configure
 import matplotlib
-
 matplotlib.use('Agg')
+
 import os
 import sys
 import time
@@ -24,8 +25,8 @@ from placer.ops.parser_txt.parser_txt import ParserTxt
 from placer.op_wrapper import OpWrapper
 from placer.d2d_params import D2DParams
 from placer.tools.dreamplace_data import DreamplaceData
+from placer.constants import Format
 import torch
-from enum import Enum, auto
 
 
 def printWelcome():
@@ -41,11 +42,6 @@ def printWelcome():
 ================================================================{Style.RESET_ALL}
 """
     print(welcome_msg)
-
-
-class Format(Enum):
-    ICCAD2022 = auto()  # 1
-    ICCAD2023 = auto()  # 2
 
 
 class D2Dplacer:
@@ -211,10 +207,9 @@ class D2Dplacer:
             self.place_data.placedb_terminal.node_names)
 
     def output(self):
-        if self.format == Format.ICCAD2022:
-            self.op_wrapper.d2d_op_collections.out_fmt_iccad_op(
-                self.place_data.placedb_terminal, self.params.case_name,
-                self.format)
+        self.op_wrapper.d2d_op_collections.out_fmt_iccad_op(
+            self.place_data.placedb_terminal, self.params.case_name,
+            self.format)
 
     def run(self):
         self.parse_die_spec()
