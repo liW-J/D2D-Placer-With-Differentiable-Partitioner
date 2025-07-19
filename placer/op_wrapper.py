@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-06-13 15:35:55
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-07-17 14:27:30
+LastEditTime: 2025-07-19 17:13:19
 FilePath: /D2D-placer/placer/OpWrapper.py
 Description:
 '''
@@ -14,8 +14,8 @@ from placer.ops.terminal_aux.terminal_aux import TerminalAux
 from placer.ops.refinement.refinement import Refinement
 from placer.ops.hpwl_d2d.hpwl_d2d import HPWLD2D
 
-from placer.tools.OutfmtICCAD import OutfmtICCAD
-from placer.tools.PosFlattened import PosFlattened
+from placer.tools.out_fmt_iccad import OutfmtICCAD
+from placer.tools.pos_flattened import PosFlattened
 from dreamplace.ops.pin_pos.pin_pos import PinPos
 
 import torch

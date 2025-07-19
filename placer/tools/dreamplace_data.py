@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-07-17 14:00:51
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-07-17 18:14:28
+LastEditTime: 2025-07-19 17:11:55
 FilePath: /D2D-placer/placer/tools/DreamplaceData.py
 Description: 
 '''
@@ -15,20 +15,24 @@ import logging
 import numpy as np
 import os
 
+
 class DreamplaceData:
+
     def __init__(self, num_tiers):
-        self.placedb_2d = None # raw placement database, a C++ object
-        self.placedb_tier = [None] * num_tiers # python placement database interface
+        self.placedb_2d = None  # raw placement database, a C++ object
+        self.placedb_tier = [
+            None
+        ] * num_tiers  # python placement database interface
         self.placedb_terminal = None
-        
+
         self.data_2d = None
         self.data_tier = [None] * num_tiers
         self.data_terminal = None
-        
+
         self.metrics_2d = None
         self.metrics_tier = [None] * num_tiers
         self.metrics_terminal = None
-        
+
     def database(params):
         """
         @brief Data collection for placement.
@@ -43,7 +47,8 @@ class DreamplaceData:
         tt = time.time()
         placedb = PlaceDB.PlaceDB()
         placedb(params)
-        logging.info("reading database takes %.2f seconds" % (time.time() - tt))
+        logging.info("reading database takes %.2f seconds" %
+                     (time.time() - tt))
 
         # Read timing constraints provided in the benchmarks into out timing analysis
         # engine and then pass the timer into the placement core.
@@ -55,10 +60,11 @@ class DreamplaceData:
             # This must be done to explicitly execute the parser builders.
             # The parsers in OpenTimer are all in lazy mode.
             timer.update_timing()
-            logging.info("reading timer takes %.2f seconds" % (time.time() - tt))
+            logging.info("reading timer takes %.2f seconds" %
+                         (time.time() - tt))
 
         return placedb, timer
-      
+
     def place(params, placedb, timer):
         """
         @brief Top API to run the entire placement flow.
@@ -69,10 +75,10 @@ class DreamplaceData:
         tt = time.time()
         placer = NonLinearPlace.NonLinearPlace(params, placedb, timer)
         logging.info("non-linear placement initialization takes %.2f seconds" %
-                    (time.time() - tt))
+                     (time.time() - tt))
         metrics = placer(params, placedb)
         logging.info("non-linear placement takes %.2f seconds" %
-                    (time.time() - tt))
+                     (time.time() - tt))
 
         # write placement solution
         path = "%s/%s" % (params.result_dir, params.design_name())
@@ -84,6 +90,3 @@ class DreamplaceData:
         placedb.write(params, gp_out_file)
 
         return metrics, placer.pos[0]
-
-
-

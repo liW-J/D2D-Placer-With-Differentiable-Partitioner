@@ -21,9 +21,9 @@ if root_dir not in sys.path:
 import dreamplace.BasicPlace as BasicPlace
 from colorama import Fore, Style
 from placer.ops.parser_txt.parser_txt import ParserTxt
-from placer.OpWrapper import OpWrapper
-from placer.D2DParams import D2DParams
-from placer.tools.DreamplaceData import DreamplaceData
+from placer.op_wrapper import OpWrapper
+from placer.d2d_params import D2DParams
+from placer.tools.dreamplace_data import DreamplaceData
 import torch
 from enum import Enum, auto
 
@@ -213,7 +213,8 @@ class D2Dplacer:
     def output(self):
         if self.format == Format.ICCAD2022:
             self.op_wrapper.d2d_op_collections.out_fmt_iccad_op(
-                self.place_data.placedb_terminal, self.params.case_name)
+                self.place_data.placedb_terminal, self.params.case_name,
+                self.format)
 
     def run(self):
         self.parse_die_spec()

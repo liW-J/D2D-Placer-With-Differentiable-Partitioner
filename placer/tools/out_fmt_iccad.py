@@ -2,13 +2,12 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-04-14 01:03:42
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-07-17 14:00:05
+LastEditTime: 2025-07-19 17:12:23
 FilePath: /D2D-placer/placer/tools/OutfmtICCAD.py
 Description: 
 '''
 import time
 import logging
-
 
 class OutfmtICCAD:
 
@@ -54,10 +53,10 @@ class OutfmtICCAD:
 
             # write terminal nodes
             content += f"NumTerminals {placedb_terminal.num_movable_nodes}\n"
-            
+
             rawdb_terminal = placedb_terminal.rawdb
             terminal_x, terminal_y = placedb_terminal.unscale_pl(
-                    self.params.shift_factor, self.params.scale_factor)
+                self.params.shift_factor, self.params.scale_factor)
             for terminal_id in range(0, placedb_terminal.num_movable_nodes):
                 # node_x, node_y of terminal must be same in each tier
                 # rawdb here is tier[-1] for easier
