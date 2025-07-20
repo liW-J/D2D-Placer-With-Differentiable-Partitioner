@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-07-19 17:57:28
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-07-20 03:03:40
+LastEditTime: 2025-07-20 18:25:57
 FilePath: /D2D-placer/placer/d2d_placer.py
 Description: 
 '''
@@ -114,7 +114,7 @@ class D2Dplacer:
                 self.params.flattened_tier[i], self.place_data.placedb_tier[i],
                 self.timer)
 
-        self.node_orient = [Orient.N.value
+        self.node_orient = [Orient.N.name
                             ] * self.place_data.placedb_2d.num_movable_nodes
 
     def init_op_wrapper(self):
@@ -220,7 +220,7 @@ class D2Dplacer:
     def output(self):
         self.op_wrapper.d2d_op_collections.out_fmt_iccad_op(
             self.place_data.placedb_terminal, self.params.case_name,
-            self.format)
+            self.format, self.node_orient)
 
     def run(self):
         self.parse_die_spec()

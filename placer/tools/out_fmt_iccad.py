@@ -2,13 +2,13 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-04-14 01:03:42
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-07-19 17:56:55
+LastEditTime: 2025-07-20 18:27:38
 FilePath: /D2D-placer/placer/tools/out_fmt_iccad.py
 Description: 
 '''
 import time
 import logging
-from placer.constants import Format
+from placer.constants import Format, Orient
 
 class OutfmtICCAD:
 
@@ -20,7 +20,7 @@ class OutfmtICCAD:
         self.terminal_size_y = die_spec.terminalSizeY
         self.terminal_spacing = die_spec.terminalSpacing
 
-    def __call__(self, placedb_terminal, case_name, format):
+    def __call__(self, placedb_terminal, case_name, format, node_orient):
         """
             @brief write .txt file
             @param output_file .txt file
@@ -53,7 +53,7 @@ class OutfmtICCAD:
                     if format == Format.ICCAD2022:
                         content += f"Inst {rawdb.nodeName(node_id)} {int(node_x[node_id])} {int(node_y[node_id])}\n"
                     elif format == Format.ICCAD2023:
-                        content += f"Inst {rawdb.nodeName(node_id)} {int(node_x[node_id])} {int(node_y[node_id])} R0\n"
+                        content += f"Inst {rawdb.nodeName(node_id)} {int(node_x[node_id])} {int(node_y[node_id])} {Orient[node_orient[node_id]].value}\n"
 
             # write terminal nodes
             content += f"NumTerminals {placedb_terminal.num_movable_nodes}\n"
