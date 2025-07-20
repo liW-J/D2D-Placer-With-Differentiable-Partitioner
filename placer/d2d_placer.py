@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-07-19 17:57:28
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-07-21 00:09:24
+LastEditTime: 2025-07-21 00:46:09
 FilePath: /D2D-placer/placer/d2d_placer.py
 Description: 
 '''
@@ -212,11 +212,11 @@ class D2Dplacer:
 
         self.place_data.placedb_terminal, self.timer = DreamplaceData.database(
             self.params.terminal)
-        self.place_data.metrics_terminal, terminal_pos = DreamplaceData.place(
+        self.place_data.metrics_terminal, self.pos_terminal = DreamplaceData.place(
             self.params.terminal, self.place_data.placedb_terminal, self.timer)
 
         self.op_wrapper.d2d_op_collections.terminal_legalize_op(
-            self.tier, self.pos_2d, terminal_pos, self.num_terminal_NIs,
+            self.tier, self.pos_2d, self.pos_terminal, self.num_terminal_NIs,
             self.place_data.placedb_terminal.node_names, self.node_orient)
 
     def macro_rotation(self):

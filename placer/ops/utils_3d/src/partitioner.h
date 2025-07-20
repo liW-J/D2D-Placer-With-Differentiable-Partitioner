@@ -2,7 +2,7 @@
  * @Author: JeanneWillis hi@jeannewillis.cn
  * @Date: 2025-05-26 14:47:09
  * @LastEditors: JeanneWillis hi@jeannewillis.cn
- * @LastEditTime: 2025-06-19 18:27:16
+ * @LastEditTime: 2025-07-21 00:25:58
  * @FilePath: /D2D-placer/placer/ops/utils_3d/src/partition.h
  * @Description:
  */
@@ -133,7 +133,7 @@ struct Partitioner {
       const std::vector<std::string> &net_names,
       const std::vector<std::string> &terminal_name, int num_threads) {
     int hpwl = 0;
-#pragma omp parallel for num_threads(num_threads)
+// #pragma omp parallel for num_threads(num_threads)
     for (int net_id = 0; net_id < num_nets; ++net_id) {
 
       if (cut_net_mask[net_id]) {
