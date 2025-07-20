@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-07-19 17:57:28
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-07-20 18:25:57
+LastEditTime: 2025-07-20 21:15:57
 FilePath: /D2D-placer/placer/d2d_placer.py
 Description: 
 '''
@@ -234,8 +234,7 @@ class D2Dplacer:
         self.macro_rotation()
         self.refinement()
         for i in range(self.num_tiers):
-            self.params.partition_tier[i].global_place_stages[0][
-                "iteration"] = -1
+            self.params.partition_tier[i].global_place_flag = 0
         self.die_by_die_place(random_center_init_flag=False)
         self.hpwl_d2d()
         self.output()
