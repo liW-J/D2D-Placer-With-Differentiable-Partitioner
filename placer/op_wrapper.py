@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-06-13 15:35:55
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-07-20 02:41:26
+LastEditTime: 2025-07-20 23:32:47
 FilePath: /D2D-placer/placer/op_wrapper.py
 Description:
 '''
@@ -400,8 +400,8 @@ class OpWrapper(object):
             self.die_spec.terminalSpacing, self.placedb_2d.net_names,
             self.num_tiers)
 
-        def build_hpwl_d2d_op(pos_2d, cut_net_mask, tier, terminal_pos,
-                              num_terminal_NIs, terminal_names):
+        def build_hpwl_d2d_op(pos_2d, cut_net_mask, tier, terminal_pos = torch.empty(0),
+                              num_terminal_NIs=0, terminal_names=np.array([], dtype=np.string_)):
             pin_pos_x = torch.stack([
                 self.pin_pos_tier_op[tier_id](pos_2d)
                 [:self.basic_data.data_collections.pin2node_map.numel()]

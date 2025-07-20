@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-07-19 17:57:28
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-07-20 21:15:57
+LastEditTime: 2025-07-21 00:09:24
 FilePath: /D2D-placer/placer/d2d_placer.py
 Description: 
 '''
@@ -81,9 +81,13 @@ class D2Dplacer:
         return self.movable_macro_mask.sum()
 
     def hpwl_d2d(self):
-        hpwl_d2d = self.op_wrapper.d2d_op_collections.hpwl_d2d_op(
-            self.pos_2d, self.cut_net_mask, self.tier, self.pos_terminal,
-            self.num_terminal_NIs, self.place_data.placedb_terminal.node_names)
+        if self.pos_terminal is not None:
+            hpwl_d2d = self.op_wrapper.d2d_op_collections.hpwl_d2d_op(
+                self.pos_2d, self.cut_net_mask, self.tier, self.pos_terminal,
+                self.num_terminal_NIs, self.place_data.placedb_terminal.node_names)
+        else:
+            hpwl_d2d = self.op_wrapper.d2d_op_collections.hpwl_d2d_op(
+                self.pos_2d, self.cut_net_mask, self.tier)
         logging.info("HPWL_D2D:%.6f " % (hpwl_d2d))
 
         return hpwl_d2d
@@ -116,6 +120,9 @@ class D2Dplacer:
 
         self.node_orient = [Orient.N.name
                             ] * self.place_data.placedb_2d.num_movable_nodes
+        
+        self.cut_net_mask = torch.zeros(self.place_data.placedb_2d.num_nets, dtype = torch.int32)
+        self.tier = torch.zeros(self.place_data.placedb_2d.num_movable_nodes, dtype = torch.int32)
 
     def init_op_wrapper(self):
         self.op_wrapper = OpWrapper(self.place_data.data_2d,
