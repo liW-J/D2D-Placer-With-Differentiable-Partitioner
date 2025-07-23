@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-07-19 17:57:28
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-07-21 00:46:09
+LastEditTime: 2025-07-23 10:57:10
 FilePath: /D2D-placer/placer/d2d_placer.py
 Description: 
 '''
@@ -170,7 +170,7 @@ class D2Dplacer:
         # bin-based partition
         # temporarily call tier result from file
         # tier = torch.load('placer/die_tensor.pt')
-        # d2d_placer.tier = d2d_placer.tier.to(torch.int32)
+        self.tier = self.tier.to(torch.int32)
 
         # return partition result but not receive now
         # pos_2d/2 beceuse of 3d-placer set flattened_die size as die_size*2
@@ -179,6 +179,7 @@ class D2Dplacer:
         self.cut_net_mask = self.op_wrapper.d2d_op_collections.terminal_insert_op(
             self.tier, self.pos_2d / 2, self.node_orient)
         self.num_terminal_NIs = int(self.cut_net_mask.sum().item())
+        
 
     def terminal_insert(self):
         self.op_wrapper.d2d_op_collections.terminal_insert_op(
