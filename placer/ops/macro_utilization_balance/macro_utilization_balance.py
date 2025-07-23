@@ -1,10 +1,10 @@
 '''
 Author: JeanneWillis hi@jeannewillis.cn
-Date: 2025-03-19 11:47:31
+Date: 2025-07-21 01:12:38
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-07-23 15:40:09
-FilePath: /D2D-placer/placer/ops/partition/partition.py
-Description: partition flattened 2D placement to 2 Die
+LastEditTime: 2025-07-23 15:40:56
+FilePath: /D2D-placer/placer/ops/macro_utilization_balance/macro_utilization_balance.py
+Description: 
 '''
 from torch.autograd import Function
 import torch
@@ -13,10 +13,10 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-import ops.partition_aux.partition_aux_cpp as partition_aux_cpp
+import ops.macro_utilization_balance.macro_utilization_balance_cpp as macro_utilization_balance_cpp
 
 
-class PartitionAuxFunction(Function):
+class MacroUtilizationBalanceFunction(Function):
 
     @staticmethod
     def forward(tier, flat_netpin, netpin_start, pin2node_map, net_weights,
@@ -26,7 +26,7 @@ class PartitionAuxFunction(Function):
                 terminal_instert_flag, terminal_legalize_flag,
                 pos_terminal_legalized, num_terminals, node_names, net_names,
                 terminal_names, pos_2d, case_name, node_orient):
-        func = partition_aux_cpp.partition_aux
+        func = macro_utilization_balance_cpp.macro_utilization_balance
         output = func(tier, flat_netpin, netpin_start, pin2node_map,
                       net_weights, num_movable_nodes, node_size_x, node_size_y,
                       pin_offset_x, pin_offset_y, die_size_x, die_size_y,
@@ -39,7 +39,7 @@ class PartitionAuxFunction(Function):
         return output
 
 
-class PartitionAux(object):
+class MacroUtilizationBalance(object):
 
     def __init__(self, flat_netpin, netpin_start, pin2node_map, net_weights,
                  num_movable_nodes, node_names, net_names, node_size_x,
@@ -47,7 +47,7 @@ class PartitionAux(object):
                  die_size_y, row_height, terminal_size_x, terminal_size_y,
                  terminal_spacing, terminal_instert_flag,
                  terminal_legalize_flag, case_name):
-        super(PartitionAux, self).__init__()
+        super(MacroUtilizationBalance, self).__init__()
 
         self.flat_netpin = flat_netpin
         self.netpin_start = netpin_start
@@ -81,7 +81,7 @@ class PartitionAux(object):
                  num_terminals=0,
                  pos_2d=torch.empty(0),
                  terminal_names=[]):
-        return PartitionAuxFunction.forward(
+        return MacroUtilizationBalanceFunction.forward(
             tier, self.flat_netpin, self.netpin_start, self.pin2node_map,
             self.net_weights, self.num_movable_nodes, self.node_size_x,
             self.node_size_y, self.pin_offset_x, self.pin_offset_y,

@@ -2,7 +2,7 @@
  * @Author: JeanneWillis hi@jeannewillis.cn
  * @Date: 2025-03-19 11:49:04
  * @LastEditors: JeanneWillis hi@jeannewillis.cn
- * @LastEditTime: 2025-07-17 11:44:01
+ * @LastEditTime: 2025-07-23 15:39:40
  * @FilePath: /D2D-placer/src/ops/partition/src/partition.cpp
  * @Description: partition
  */
@@ -25,12 +25,12 @@ template <typename T>
 void terminal_insert(const int *tier, const T *pin_x, const T *pin_y,
                      const int *flat_netpin, const int *netpin_start,
                      const int *pin2node_map, int num_movable_nodes,
-                     int num_nets, int num_pins, int num_tiers, const int *cut_net_mask,
-                     int terminal_size_x, int terminal_size_y,
-                     int terminal_spacing, bool terminal_instert_flag,
-                     vector<AUX> &auxListRef, bool terminal_legalize_flag,
-                     const T *terminal_x, const T *terminal_y,
-                     int num_terminals,
+                     int num_nets, int num_pins, int num_tiers,
+                     const int *cut_net_mask, int terminal_size_x,
+                     int terminal_size_y, int terminal_spacing,
+                     bool terminal_instert_flag, vector<AUX> &auxListRef,
+                     bool terminal_legalize_flag, const T *terminal_x,
+                     const T *terminal_y, int num_terminals,
                      const std::vector<std::string> &node_names,
                      const std::vector<std::string> &net_names,
                      const std::vector<std::string> &terminal_names) {
@@ -49,14 +49,10 @@ void terminal_insert(const int *tier, const T *pin_x, const T *pin_y,
           int index_pin = num_pins * tier_id + flat_netpin[pin_id];
           int node_id = pin2node_map[flat_netpin[pin_id]];
           if (tier[node_id] == tier_id) {
-            max_x[tier_id] =
-                std::max(max_x[tier_id], pin_x[index_pin]);
-            min_x[tier_id] =
-                std::min(min_x[tier_id], pin_x[index_pin]);
-            max_y[tier_id] =
-                std::max(max_y[tier_id], pin_y[index_pin]);
-            min_y[tier_id] =
-                std::min(min_y[tier_id], pin_y[index_pin]);
+            max_x[tier_id] = std::max(max_x[tier_id], pin_x[index_pin]);
+            min_x[tier_id] = std::min(min_x[tier_id], pin_x[index_pin]);
+            max_y[tier_id] = std::max(max_y[tier_id], pin_y[index_pin]);
+            min_y[tier_id] = std::min(min_y[tier_id], pin_y[index_pin]);
           }
         }
       }
@@ -121,7 +117,8 @@ void partitionAuxLauncher(
     int num_terminals, const std::vector<std::string> &node_names,
     const std::vector<std::string> &net_names,
     const std::vector<std::string> &terminal_names, const T *pos_2d_x,
-    const T *pos_2d_y, std::string case_name) {
+    const T *pos_2d_y, std::string case_name,
+    const std::vector<std::string> &node_orient) {
   string aux_dir = "./run_tmp/" + case_name + "/partition/";
   char IO_type;
   vector<AUX> aux_list(num_tiers);
@@ -183,11 +180,11 @@ void partitionAuxLauncher(
 
   if (terminal_instert_flag) {
     terminal_insert(tier, pin_x, pin_y, flat_netpin, netpin_start, pin2node_map,
-                    num_movable_nodes, num_nets, num_pins, num_tiers, cut_net_mask,
-                    terminal_size_x, terminal_size_y, terminal_spacing,
-                    terminal_instert_flag, aux_list, terminal_legalize_flag,
-                    terminal_x, terminal_y, num_terminals, node_names,
-                    net_names, terminal_names);
+                    num_movable_nodes, num_nets, num_pins, num_tiers,
+                    cut_net_mask, terminal_size_x, terminal_size_y,
+                    terminal_spacing, terminal_instert_flag, aux_list,
+                    terminal_legalize_flag, terminal_x, terminal_y,
+                    num_terminals, node_names, net_names, terminal_names);
   }
 
   // write aux files
@@ -202,7 +199,7 @@ void partitionAuxLauncher(
     // sort node by name
     aux_list[tier_id].sort_node();
 
-    aux_list[tier_id].write_files();
+    aux_list[tier_id].write_files(node_orient);
   }
 
   Partitioner::countRelatedNodesInCutNets(tier, flat_netpin, netpin_start,
@@ -221,7 +218,7 @@ at::Tensor partition_aux_forward(
     int num_terminals, const std::vector<std::string> &node_names,
     const std::vector<std::string> &net_names,
     const std::vector<std::string> &terminal_names, at::Tensor pos_2d,
-    std::string case_name) {
+    std::string case_name, const std::vector<std::string> &node_orient) {
   CHECK_FLAT_CPU(flat_netpin);
   CHECK_CONTIGUOUS(flat_netpin);
   CHECK_FLAT_CPU(netpin_start);
@@ -277,7 +274,7 @@ at::Tensor partition_aux_forward(
         num_terminals, node_names, net_names, terminal_names,
         DREAMPLACE_TENSOR_DATA_PTR(pos_2d, scalar_t),
         DREAMPLACE_TENSOR_DATA_PTR(pos_2d, scalar_t) + pos_2d.numel() / 2,
-        case_name);
+        case_name, node_orient);
   });
 
   return cut_net_mask;

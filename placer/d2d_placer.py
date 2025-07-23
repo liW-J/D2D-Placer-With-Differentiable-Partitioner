@@ -1,14 +1,17 @@
-##
-# @file   Placer.py
-# @author Yibo Lin
-# @date   Apr 2018
-# @brief  Main file to run the entire placement flow.
-#
+'''
+Author: JeanneWillis hi@jeannewillis.cn
+Date: 2025-07-19 17:57:28
+LastEditors: JeanneWillis hi@jeannewillis.cn
+LastEditTime: 2025-07-23 10:57:10
+FilePath: /D2D-placer/placer/d2d_placer.py
+Description: 
+'''
 
 import configure
 import matplotlib
 
 matplotlib.use('Agg')
+
 import os
 import sys
 import time
@@ -21,11 +24,11 @@ if root_dir not in sys.path:
 import dreamplace.BasicPlace as BasicPlace
 from colorama import Fore, Style
 from placer.ops.parser_txt.parser_txt import ParserTxt
-from placer.OpWrapper import OpWrapper
-from placer.D2DParams import D2DParams
-from placer.tools.DreamplaceData import DreamplaceData
+from placer.op_wrapper import OpWrapper
+from placer.d2d_params import D2DParams
+from placer.tools.dreamplace_data import DreamplaceData
+from placer.constants import Format, Orient
 import torch
-from enum import Enum, auto
 
 
 def printWelcome():
@@ -43,11 +46,6 @@ def printWelcome():
     print(welcome_msg)
 
 
-class Format(Enum):
-    ICCAD2022 = auto()  # 1
-    ICCAD2023 = auto()  # 2
-
-
 class D2Dplacer:
 
     def __init__(self, input_params):
@@ -63,7 +61,8 @@ class D2Dplacer:
 
         # macro mask
         self.movable_macro_mask = None  # movable macros in movables nodes
-        self.movable_macro_angle = None  # angle of movable macro
+        # self.movable_macro_angle = None  # angle of movable macro
+        self.node_orient = None  # orient of nodes
 
         self.cut_net_mask = None
         self.num_terminal_NIs = None
@@ -82,9 +81,13 @@ class D2Dplacer:
         return self.movable_macro_mask.sum()
 
     def hpwl_d2d(self):
-        hpwl_d2d = self.op_wrapper.d2d_op_collections.hpwl_d2d_op(
-            self.pos_2d, self.cut_net_mask, self.tier, self.pos_terminal,
-            self.num_terminal_NIs, self.place_data.placedb_terminal.node_names)
+        if self.pos_terminal is not None:
+            hpwl_d2d = self.op_wrapper.d2d_op_collections.hpwl_d2d_op(
+                self.pos_2d, self.cut_net_mask, self.tier, self.pos_terminal,
+                self.num_terminal_NIs, self.place_data.placedb_terminal.node_names)
+        else:
+            hpwl_d2d = self.op_wrapper.d2d_op_collections.hpwl_d2d_op(
+                self.pos_2d, self.cut_net_mask, self.tier)
         logging.info("HPWL_D2D:%.6f " % (hpwl_d2d))
 
         return hpwl_d2d
@@ -114,6 +117,12 @@ class D2Dplacer:
             self.place_data.data_tier[i] = BasicPlace.BasicPlace(
                 self.params.flattened_tier[i], self.place_data.placedb_tier[i],
                 self.timer)
+
+        self.node_orient = [Orient.N.name
+                            ] * self.place_data.placedb_2d.num_movable_nodes
+        
+        self.cut_net_mask = torch.zeros(self.place_data.placedb_2d.num_nets, dtype = torch.int32)
+        self.tier = torch.zeros(self.place_data.placedb_2d.num_movable_nodes, dtype = torch.int32)
 
     def init_op_wrapper(self):
         self.op_wrapper = OpWrapper(self.place_data.data_2d,
@@ -161,19 +170,20 @@ class D2Dplacer:
         # bin-based partition
         # temporarily call tier result from file
         # tier = torch.load('placer/die_tensor.pt')
-        # d2d_placer.tier = d2d_placer.tier.to(torch.int32)
+        self.tier = self.tier.to(torch.int32)
 
         # return partition result but not receive now
         # pos_2d/2 beceuse of 3d-placer set flattened_die size as die_size*2
         # cut_net_mask = self.op_wrapper.d2d_op_collections.init_partition_op(
         #     self.tier, self.pos_2d / 2)
         self.cut_net_mask = self.op_wrapper.d2d_op_collections.terminal_insert_op(
-            self.tier, self.pos_2d / 2)
+            self.tier, self.pos_2d / 2, self.node_orient)
         self.num_terminal_NIs = int(self.cut_net_mask.sum().item())
+        
 
     def terminal_insert(self):
         self.op_wrapper.d2d_op_collections.terminal_insert_op(
-            self.tier, self.pos_2d)
+            self.tier, self.pos_2d, self.node_orient)
 
         # create terminal aux for collaborative optimization by tier[0]
         self.op_wrapper.d2d_op_collections.terminal_aux_op(
@@ -186,7 +196,7 @@ class D2Dplacer:
 
         self.op_wrapper.d2d_op_collections.terminal_legalize_op(
             self.tier, self.pos_2d, self.pos_terminal, self.num_terminal_NIs,
-            self.place_data.placedb_terminal.node_names)
+            self.place_data.placedb_terminal.node_names, self.node_orient)
 
     def refinement(self):
         self.tier = self.op_wrapper.d2d_op_collections.refinement_op(
@@ -194,7 +204,7 @@ class D2Dplacer:
             self.place_data.placedb_terminal.node_names)
 
         self.cut_net_mask = self.op_wrapper.d2d_op_collections.terminal_insert_op(
-            self.tier, self.pos_2d)
+            self.tier, self.pos_2d, self.node_orient)
         self.num_terminal_NIs = int(self.cut_net_mask.sum().item())
 
         # create terminal aux for collaborative optimization by tier[0]
@@ -203,17 +213,22 @@ class D2Dplacer:
 
         self.place_data.placedb_terminal, self.timer = DreamplaceData.database(
             self.params.terminal)
-        self.place_data.metrics_terminal, terminal_pos = DreamplaceData.place(
+        self.place_data.metrics_terminal, self.pos_terminal = DreamplaceData.place(
             self.params.terminal, self.place_data.placedb_terminal, self.timer)
 
         self.op_wrapper.d2d_op_collections.terminal_legalize_op(
-            self.tier, self.pos_2d, terminal_pos, self.num_terminal_NIs,
-            self.place_data.placedb_terminal.node_names)
+            self.tier, self.pos_2d, self.pos_terminal, self.num_terminal_NIs,
+            self.place_data.placedb_terminal.node_names, self.node_orient)
+
+    def macro_rotation(self):
+        # self.place_data.placedb_terminal.node_orient = np.array(self.place_data.placedb_terminal.node_orient, dtype=np.string_)
+        # self.place_data.placedb_terminal.node_orient = np.array(self.place_data.placedb_terminal.node_orient, dtype=np.string_)
+        pass
 
     def output(self):
-        if self.format == Format.ICCAD2022:
-            self.op_wrapper.d2d_op_collections.out_fmt_iccad_op(
-                self.place_data.placedb_terminal, self.params.case_name)
+        self.op_wrapper.d2d_op_collections.out_fmt_iccad_op(
+            self.place_data.placedb_terminal, self.params.case_name,
+            self.format, self.node_orient)
 
     def run(self):
         self.parse_die_spec()
@@ -224,10 +239,10 @@ class D2Dplacer:
         self.die_by_die_place(random_center_init_flag=True)
         self.terminal_insert()
         self.die_by_die_place(random_center_init_flag=False)
+        self.macro_rotation()
         self.refinement()
         for i in range(self.num_tiers):
-            self.params.partition_tier[i].global_place_stages[0][
-                "iteration"] = -1
+            self.params.partition_tier[i].global_place_flag = 0
         self.die_by_die_place(random_center_init_flag=False)
         self.hpwl_d2d()
         self.output()
