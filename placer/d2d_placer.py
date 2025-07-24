@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-07-19 17:57:28
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-07-23 10:57:10
+LastEditTime: 2025-07-24 23:47:33
 FilePath: /D2D-placer/placer/d2d_placer.py
 Description: 
 '''
@@ -46,6 +46,36 @@ def printWelcome():
     print(welcome_msg)
 
 
+def init_log(result_root_dir):
+    formatter = logging.Formatter('[%(levelname)-7s] %(name)s - %(message)s')
+    logging.root.name = 'placement'
+    logging.basicConfig(level=logging.INFO,
+                        format='[%(levelname)-7s] %(name)s - %(message)s',
+                        stream=sys.stdout)
+
+    d2d_logger = logging.getLogger('d2d-logger')
+    d2d_logger.setLevel(logging.INFO)
+
+    # file_formatter = logging.Formatter(
+    #     '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    #     datefmt='%Y-%m-%d %H:%M:%S')
+
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(formatter)
+    d2d_logger.addHandler(console_handler)
+
+    os.makedirs(result_root_dir, exist_ok=True)
+    log_filename = f"{result_root_dir}/d2d-placement.log"
+    file_handler = logging.FileHandler(log_filename, encoding='utf-8')
+    file_handler.setLevel(logging.DEBUG)
+
+    file_handler.setFormatter(formatter)
+    d2d_logger.addHandler(file_handler)
+
+    return d2d_logger
+
+
 class D2Dplacer:
 
     def __init__(self, input_params):
@@ -53,7 +83,7 @@ class D2Dplacer:
         self.num_tiers = self.params.flatten_2d.num_tiers
         self.place_data = DreamplaceData(self.num_tiers)
 
-        self.format = Format.ICCAD2023
+        self.format = Format.ICCAD2022
 
         self.pos_2d = None
         self.pos_tier = [None] * self.num_tiers
@@ -80,15 +110,16 @@ class D2Dplacer:
         """
         return self.movable_macro_mask.sum()
 
-    def hpwl_d2d(self):
+    def hpwl_d2d(self, logger):
         if self.pos_terminal is not None:
             hpwl_d2d = self.op_wrapper.d2d_op_collections.hpwl_d2d_op(
                 self.pos_2d, self.cut_net_mask, self.tier, self.pos_terminal,
-                self.num_terminal_NIs, self.place_data.placedb_terminal.node_names)
+                self.num_terminal_NIs,
+                self.place_data.placedb_terminal.node_names)
         else:
             hpwl_d2d = self.op_wrapper.d2d_op_collections.hpwl_d2d_op(
                 self.pos_2d, self.cut_net_mask, self.tier)
-        logging.info("HPWL_D2D:%.6f " % (hpwl_d2d))
+        logger.info("HPWL_D2D:%.6f " % (hpwl_d2d))
 
         return hpwl_d2d
 
@@ -120,9 +151,11 @@ class D2Dplacer:
 
         self.node_orient = [Orient.N.name
                             ] * self.place_data.placedb_2d.num_movable_nodes
-        
-        self.cut_net_mask = torch.zeros(self.place_data.placedb_2d.num_nets, dtype = torch.int32)
-        self.tier = torch.zeros(self.place_data.placedb_2d.num_movable_nodes, dtype = torch.int32)
+
+        self.cut_net_mask = torch.zeros(self.place_data.placedb_2d.num_nets,
+                                        dtype=torch.int32)
+        self.tier = torch.zeros(self.place_data.placedb_2d.num_movable_nodes,
+                                dtype=torch.int32)
 
     def init_op_wrapper(self):
         self.op_wrapper = OpWrapper(self.place_data.data_2d,
@@ -179,7 +212,6 @@ class D2Dplacer:
         self.cut_net_mask = self.op_wrapper.d2d_op_collections.terminal_insert_op(
             self.tier, self.pos_2d / 2, self.node_orient)
         self.num_terminal_NIs = int(self.cut_net_mask.sum().item())
-        
 
     def terminal_insert(self):
         self.op_wrapper.d2d_op_collections.terminal_insert_op(
@@ -230,40 +262,33 @@ class D2Dplacer:
             self.place_data.placedb_terminal, self.params.case_name,
             self.format, self.node_orient)
 
-    def run(self):
-        self.parse_die_spec()
-        self.init_basic_date()
-        self.flatten_2d_place()
-        self.init_op_wrapper()
-        self.partition()
-        self.die_by_die_place(random_center_init_flag=True)
-        self.terminal_insert()
-        self.die_by_die_place(random_center_init_flag=False)
-        self.macro_rotation()
-        self.refinement()
-        for i in range(self.num_tiers):
-            self.params.partition_tier[i].global_place_flag = 0
-        self.die_by_die_place(random_center_init_flag=False)
-        self.hpwl_d2d()
-        self.output()
-
 
 if __name__ == "__main__":
     """
     @brief main function to invoke the entire placement flow.
     """
-    logging.root.name = 'D2Dplacer'
-    logging.basicConfig(level=logging.INFO,
-                        format='[%(levelname)-7s] %(name)s - %(message)s',
-                        stream=sys.stdout)
-
-    d2d_placer = D2Dplacer(sys.argv[1])
 
     # placement begin
     printWelcome()
     tt = time.time()
+    d2d_placer = D2Dplacer(sys.argv[1])
+    d2d_logger = init_log(d2d_placer.params.result_dir_root)
 
-    d2d_placer.run()
+    d2d_placer.parse_die_spec()
+    d2d_placer.init_basic_date()
+    d2d_placer.flatten_2d_place()
+    d2d_placer.init_op_wrapper()
+    d2d_placer.partition()
+    d2d_placer.die_by_die_place(random_center_init_flag=True)
+    d2d_placer.terminal_insert()
+    d2d_placer.die_by_die_place(random_center_init_flag=False)
+    d2d_placer.macro_rotation()
+    d2d_placer.refinement()
+    for i in range(d2d_placer.num_tiers):
+        d2d_placer.params.partition_tier[i].global_place_flag = 0
+    d2d_placer.die_by_die_place(random_center_init_flag=False)
+    d2d_placer.hpwl_d2d(d2d_logger)
+    d2d_placer.output()
 
     # # load parameters
     # # parse input get flattened .aux
