@@ -1,4 +1,4 @@
-set(OP_NAME macro_utilization_balance)
+set(OP_NAME macro_balance)
 
 set(TARGET_NAME ${OP_NAME})
 
@@ -20,7 +20,7 @@ set(LINK_LIBS
   )
 
 add_pytorch_extension(${TARGET_NAME}_cpp 
-  src/macro_utilization_balance.cpp
+  src/macro_balance.cpp
   EXTRA_INCLUDE_DIRS ${INCLUDE_DIRS}
   EXTRA_LINK_LIBRARIES ${LINK_LIBS})
 

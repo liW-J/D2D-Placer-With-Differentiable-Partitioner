@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-07-19 17:57:28
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-07-27 18:28:36
+LastEditTime: 2025-07-28 01:35:32
 FilePath: /D2D-placer/placer/d2d_placer.py
 Description: 
 '''
@@ -92,6 +92,7 @@ class D2Dplacer:
 
         # macro mask
         self.movable_macro_mask = None  # movable macros in movables nodes
+        self.num_movable_macro = [None] * self.num_tiers
         # self.movable_macro_angle = None  # angle of movable macro
         self.node_orient = None  # orient of nodes
 
@@ -103,13 +104,6 @@ class D2Dplacer:
         self.die_spec = None
 
         self.op_wrapper = None
-
-    @property
-    def num_movable_macro(self):
-        """
-        @return number of movable macro nodes
-        """
-        return self.movable_macro_mask.sum()
 
     def hpwl_d2d(self, logger):
         if self.pos_terminal is not None:
@@ -212,6 +206,23 @@ class D2Dplacer:
         #     self.tier, self.pos_2d / 2, self.node_orient)
         self.cut_net_mask = self.op_wrapper.d2d_op_collections.terminal_insert_op(
             self.tier, self.pos_2d / 2, self.node_orient)
+
+        if self.format == Format.ICCAD2023:
+            for i in range(self.num_tiers):
+                # update placedb_tier & data_tier using new terminal_insert result
+                self.place_data.placedb_tier[
+                    i], self.timer = DreamplaceData.database(
+                        self.params.partition_tier[i])
+                self.place_data.data_tier[i] = BasicPlace.BasicPlace(
+                    self.params.partition_tier[i],
+                    self.place_data.placedb_tier[i], self.timer)
+
+            self.tier = self.op_wrapper.d2d_op_collections.macro_balance_op(
+                self.tier, self.node_orient)
+
+            self.cut_net_mask = self.op_wrapper.d2d_op_collections.terminal_insert_op(
+                self.tier, self.pos_2d / 2, self.node_orient)
+
         self.num_terminal_NIs = int(self.cut_net_mask.sum().item())
 
     def terminal_insert(self):

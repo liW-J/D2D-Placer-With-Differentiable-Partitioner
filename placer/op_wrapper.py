@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-06-13 15:35:55
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-07-27 17:46:18
+LastEditTime: 2025-07-28 01:35:39
 FilePath: /D2D-placer/placer/op_wrapper.py
 Description:
 '''
@@ -13,6 +13,7 @@ from placer.ops.avg_cut.avg_cut import AvgCut
 from placer.ops.terminal_aux.terminal_aux import TerminalAux
 from placer.ops.refinement.refinement import Refinement
 from placer.ops.hpwl_d2d.hpwl_d2d import HPWLD2D
+from placer.ops.macro_balance.macro_balance import MacroBalance
 
 from placer.tools.out_fmt_iccad import OutfmtICCAD
 from placer.tools.pos_flattened import PosFlattened
@@ -27,7 +28,8 @@ class D2DOpCollection(object):
     def __init__(self, hmetis_op, multi_bipartition_op, init_partition_op,
                  out_fmt_iccad_op, pos_flattened_op, terminal_insert_op,
                  pin_pos_op, pin_pos_tier_op, terminal_legalize_op, avg_cut_op,
-                 terminal_aux_op, refinement_op, hpwl_d2d_op):
+                 terminal_aux_op, refinement_op, hpwl_d2d_op,
+                 macro_balance_op):
         self.hmetis_op = hmetis_op
         self.multi_bipartition_op = multi_bipartition_op
         self.init_partition_op = init_partition_op
@@ -41,6 +43,7 @@ class D2DOpCollection(object):
         self.terminal_aux_op = terminal_aux_op
         self.refinement_op = refinement_op
         self.hpwl_d2d_op = hpwl_d2d_op
+        self.macro_balance_op = macro_balance_op
 
 
 class OpWrapper(object):
@@ -97,6 +100,7 @@ class OpWrapper(object):
         self.terminal_aux_op = self.build_terminal_aux()
         self.refinement_op = self.build_refinement()
         self.hpwl_d2d_op = self.build_hpwl_d2d()
+        self.macro_balance_op = self.build_macro_balance()
 
         self.d2d_op_collections = D2DOpCollection(
             hmetis_op=self.hmetis_op,
@@ -111,7 +115,8 @@ class OpWrapper(object):
             avg_cut_op=self.avg_cut_op,
             terminal_aux_op=self.terminal_aux_op,
             refinement_op=self.refinement_op,
-            hpwl_d2d_op=self.hpwl_d2d_op)
+            hpwl_d2d_op=self.hpwl_d2d_op,
+            macro_balance_op=self.macro_balance_op)
 
     def build_hmetis(self):
 
@@ -330,7 +335,8 @@ class OpWrapper(object):
             self.placedb_2d.num_movable_nodes)
 
         def build_avg_cut_op(pos_2d):
-            return avg_cut_op(self.pin_pos_op(pos_2d), self.node_size_x, self.node_size_y)
+            return avg_cut_op(self.pin_pos_op(pos_2d), self.node_size_x,
+                              self.node_size_y)
 
         return build_avg_cut_op
 
@@ -429,3 +435,24 @@ class OpWrapper(object):
                                num_terminal_NIs, terminal_names)
 
         return build_hpwl_d2d_op
+
+    def build_macro_balance(self):
+        macro_balance_op = MacroBalance(
+            self.basic_data.data_collections.flat_net2pin_map,
+            self.basic_data.data_collections.flat_net2pin_start_map,
+            self.basic_data.data_collections.pin2node_map,
+            self.basic_data.data_collections.net_weights,
+            self.placedb_2d.num_movable_nodes, self.placedb_2d.node_names,
+            self.placedb_2d.net_names, self.node_size_x, self.node_size_y,
+            self.pin_offset_x, self.pin_offset_y, self.die_size_x,
+            self.die_size_y, self.row_height, self.die_spec.terminalSizeX,
+            self.die_spec.terminalSizeY, self.die_spec.terminalSpacing,
+            self.case_name)
+
+        def build_macro_balance_op(tier, node_orient):
+
+            return macro_balance_op(
+                tier, node_orient,
+                self.basic_data.data_collections.movable_macro_mask)
+
+        return build_macro_balance_op
