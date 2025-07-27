@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-07-19 17:57:28
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-07-24 23:47:33
+LastEditTime: 2025-07-27 18:28:36
 FilePath: /D2D-placer/placer/d2d_placer.py
 Description: 
 '''
@@ -47,7 +47,12 @@ def printWelcome():
 
 
 def init_log(result_root_dir):
-    formatter = logging.Formatter('[%(levelname)-7s] %(name)s - %(message)s')
+    console_formatter = logging.Formatter(
+        '[%(levelname)-7s] %(name)s - %(message)s')
+    file_formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S')
+
     logging.root.name = 'placement'
     logging.basicConfig(level=logging.INFO,
                         format='[%(levelname)-7s] %(name)s - %(message)s',
@@ -56,13 +61,9 @@ def init_log(result_root_dir):
     d2d_logger = logging.getLogger('d2d-logger')
     d2d_logger.setLevel(logging.INFO)
 
-    # file_formatter = logging.Formatter(
-    #     '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    #     datefmt='%Y-%m-%d %H:%M:%S')
-
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(logging.INFO)
-    console_handler.setFormatter(formatter)
+    console_handler.setFormatter(console_formatter)
     d2d_logger.addHandler(console_handler)
 
     os.makedirs(result_root_dir, exist_ok=True)
@@ -70,7 +71,7 @@ def init_log(result_root_dir):
     file_handler = logging.FileHandler(log_filename, encoding='utf-8')
     file_handler.setLevel(logging.DEBUG)
 
-    file_handler.setFormatter(formatter)
+    file_handler.setFormatter(file_formatter)
     d2d_logger.addHandler(file_handler)
 
     return d2d_logger
@@ -163,7 +164,7 @@ class D2Dplacer:
                                     self.place_data.placedb_tier, self.params,
                                     self.place_data.data_tier, self.die_spec)
 
-    def die_by_die_place(self, random_center_init_flag):
+    def die_by_die_place(self, random_center_init_flag, logging=logging):
         for i in range(self.num_tiers):
             self.params.partition_tier[
                 i].random_center_init_flag = random_center_init_flag
@@ -197,18 +198,18 @@ class D2Dplacer:
 
     def partition(self):
         self.tier = self.op_wrapper.d2d_op_collections.hmetis_op(self.pos_2d)
-        # tier = avg_cut(pin_pos_op(d2d_placer.pos_2d), node_size_x, node_size_y)
+        # self.tier = self.op_wrapper.d2d_op_collections.avg_cut_op(self.pos_2d)
         # tier = multi_bipartition(d2d_placer.pos_2d)
 
         # bin-based partition
         # temporarily call tier result from file
-        # tier = torch.load('placer/die_tensor.pt')
+        # self.tier = torch.load('placer/die_tensor.pt')
         self.tier = self.tier.to(torch.int32)
 
         # return partition result but not receive now
         # pos_2d/2 beceuse of 3d-placer set flattened_die size as die_size*2
-        # cut_net_mask = self.op_wrapper.d2d_op_collections.init_partition_op(
-        #     self.tier, self.pos_2d / 2)
+        # self.cut_net_mask = self.op_wrapper.d2d_op_collections.init_partition_op(
+        #     self.tier, self.pos_2d / 2, self.node_orient)
         self.cut_net_mask = self.op_wrapper.d2d_op_collections.terminal_insert_op(
             self.tier, self.pos_2d / 2, self.node_orient)
         self.num_terminal_NIs = int(self.cut_net_mask.sum().item())
@@ -289,40 +290,3 @@ if __name__ == "__main__":
     d2d_placer.die_by_die_place(random_center_init_flag=False)
     d2d_placer.hpwl_d2d(d2d_logger)
     d2d_placer.output()
-
-    # # load parameters
-    # # parse input get flattened .aux
-    # d2d_placer.parse_die_spec()
-
-    # d2d_placer.init_basic_date()
-
-    # # dreamplace for flattened 2d placement
-    # logging.info("flattened 2d placement begin")
-    # d2d_placer.flatten_2d_place()
-
-    # # prepare for partitioning
-    # d2d_placer.init_op_wrapper()
-
-    # # partition
-    # d2d_placer.partition()
-    # breakpoint()
-
-    # # if 2D result for init pos may casued no convergence
-    # d2d_placer.die_by_die_place(random_center_init_flag=True)
-    # logging.info("2d placement  HPWL:%.6f " %
-    #              (d2d_placer.place_data.metrics_2d[-1].hpwl))
-    # breakpoint()
-
-    # # terminal insert
-    # d2d_placer.terminal_insert()
-    # d2d_placer.die_by_die_place(random_center_init_flag=False)
-
-    # # refinement
-    # d2d_placer.refinement()
-
-    # d2d_placer.die_by_die_place(random_center_init_flag=False)
-    # d2d_placer.hpwl_d2d()
-    # logging.info("placement takes %.3f seconds" % (time.time() - tt))
-
-    # d2d_placer.output()
-    # breakpoint()

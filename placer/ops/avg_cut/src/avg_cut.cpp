@@ -2,7 +2,7 @@
  * @Author: JeanneWillis hi@jeannewillis.cn
  * @Date: 2025-04-08 12:35:48
  * @LastEditors: JeanneWillis hi@jeannewillis.cn
- * @LastEditTime: 2025-05-26 15:12:05
+ * @LastEditTime: 2025-07-27 18:02:28
  * @FilePath: /D2D-placer/placer/ops/hmetis/src/hmetis.cpp
  * @Description:
  */
@@ -53,24 +53,32 @@ void tier_assign(T *tier, const T *x, const T *y, const int *flat_netpin,
     // outer_max_y: %f", min_x, max_x, min_y, max_y);
     T cut_x = (min_x + max_x) / 2;
     T cut_y = (min_y + max_y) / 2;
-    // if (net_degree > 35)
-    // {
-    // LOG(WARN, "net_id: %d, cut_x: %f, cut_y: %f", net_id, cut_x, cut_y);
-    for (int pin_id = netpin_start[net_id]; pin_id < netpin_start[net_id + 1];
-         pin_id++) {
-      int node_id = pin2node_map[flat_netpin[pin_id]];
+    if (net_degree > 3) {
+      // LOG(WARN, "net_id: %d, cut_x: %f, cut_y: %f", net_id, cut_x, cut_y);
+      for (int pin_id = netpin_start[net_id]; pin_id < netpin_start[net_id + 1];
+           pin_id++) {
+        int node_id = pin2node_map[flat_netpin[pin_id]];
 
-      // LOG(ERROR, "pin_id: %d, x: %f, tier: %f, node_id: %d", pin_id,
-      // x[pin_id], tier[node_id], node_id);
-      if (x[pin_id] < cut_x) {
-        tier[node_id] = BOTTOM_TIER;
-        bottom_cout += 1;
-      } else if (x[pin_id] >= cut_x) {
-        tier[node_id] = TOP_TIER;
-        top_count += 1;
-      } else {
-        // LOG(DEBUG, "have assigned");
-        reassign_count++;
+        // LOG(ERROR, "pin_id: %d, x: %f, tier: %f, node_id: %d", pin_id,
+        // x[pin_id], tier[node_id], node_id);
+        if (x[pin_id] < cut_x) {
+          tier[node_id] = BOTTOM_TIER;
+          bottom_cout += 1;
+        } else if (x[pin_id] >= cut_x) {
+          tier[node_id] = TOP_TIER;
+          top_count += 1;
+        } else {
+          // LOG(DEBUG, "have assigned");
+          reassign_count++;
+        }
+      }
+    }
+    else {
+      int tier_assign = top_count>bottom_cout ? BOTTOM_TIER : TOP_TIER;
+      for (int pin_id = netpin_start[net_id]; pin_id < netpin_start[net_id + 1];
+           pin_id++) {
+        int node_id = pin2node_map[flat_netpin[pin_id]];
+        tier[node_id] = tier_assign;
       }
     }
   }
@@ -92,37 +100,36 @@ int avgCutPartitionLauncher(T *tier, const int *flat_netpin,
               num_movable_nodes, num_nets, num_tiers, node_size_x, node_size_y);
 
   // // balance area
-  // int no_cut_count = 0;
-  // for (int net_id = 0; net_id < num_nets; net_id++)
-  // {
-  //   int net_degree = netpin_start[net_id + 1] - netpin_start[net_id];
-  //   if (net_degree <= 4)
-  //   {
-  //     for (int pin_id = netpin_start[net_id]; pin_id < netpin_start[net_id +
-  //     1]; pin_id++)
-  //     {
-  //       int node_id = pin2node_map[flat_netpin[pin_id]];
-  //       if (no_cut_count < 1500)
-  //       {
-  //         tier[node_id] = BOTTOM_TIER;
-  //         no_cut_count++;
-  //       }
-  //     }
-  //   }
-  //   if (net_degree == 2)
-  //   {
-  //     for (int pin_id = netpin_start[net_id]; pin_id < netpin_start[net_id +
-  //     1]; pin_id++)
-  //     {
-  //       int node_id = pin2node_map[flat_netpin[pin_id]];
-  //       if (no_cut_count < 1500)
-  //       {
-  //         tier[node_id] = BOTTOM_TIER;
-  //         no_cut_count++;
-  //       }
-  //     }
-  //   }
-  // }
+  int no_cut_count = 0;
+  for (int net_id = 0; net_id < num_nets; net_id++) {
+    int net_degree = netpin_start[net_id + 1] - netpin_start[net_id];
+    // if (net_degree <= 4)
+    // {
+    //   for (int pin_id = netpin_start[net_id]; pin_id < netpin_start[net_id +
+    //   1]; pin_id++)
+    //   {
+    //     int node_id = pin2node_map[flat_netpin[pin_id]];
+    //     if (no_cut_count < 1500)
+    //     {
+    //       tier[node_id] = BOTTOM_TIER;
+    //       no_cut_count++;
+    //     }
+    //   }
+    // }
+    // if (net_degree == 2)
+    // {
+    //   for (int pin_id = netpin_start[net_id]; pin_id < netpin_start[net_id +
+    //   1]; pin_id++)
+    //   {
+    //     int node_id = pin2node_map[flat_netpin[pin_id]];
+    //     if (no_cut_count < 1500)
+    //     {
+    //       tier[node_id] = BOTTOM_TIER;
+    //       no_cut_count++;
+    //     }
+    //   }
+    // }
+  }
 
   LOG(INFO, "Running avg_cut completed");
   return 0;
