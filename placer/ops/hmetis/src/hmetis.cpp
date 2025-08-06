@@ -2,7 +2,7 @@
  * @Author: JeanneWillis hi@jeannewillis.cn
  * @Date: 2025-04-08 12:35:48
  * @LastEditors: JeanneWillis hi@jeannewillis.cn
- * @LastEditTime: 2025-07-27 19:43:25
+ * @LastEditTime: 2025-08-03 01:12:22
  * @FilePath: /D2D-placer/placer/ops/hmetis/src/hmetis.cpp
  * @Description:
  */
@@ -46,7 +46,7 @@ int hmetisPartitionLauncher(int *tier, const int *flat_netpin,
   string cmd = "bin/hmetis -ufactor=0.7 ./run_tmp/" + case_name +
                "/circuit.hgr 2 > ./run_tmp/" + case_name +
                "/circuit-hmetis.log";
-  system(cmd.c_str());
+  // system(cmd.c_str());
   hgr.read_part_result(2);
 
   assert(hgr.get_part_size(0) + hgr.get_part_size(1) == num_movable_nodes);

@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-07-19 17:57:28
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-07-28 01:35:32
+LastEditTime: 2025-08-06 18:51:44
 FilePath: /D2D-placer/placer/d2d_placer.py
 Description: 
 '''
@@ -158,10 +158,19 @@ class D2Dplacer:
                                     self.place_data.placedb_tier, self.params,
                                     self.place_data.data_tier, self.die_spec)
 
-    def die_by_die_place(self, random_center_init_flag, logging=logging):
+    def die_by_die_place(self,
+                         global_place_flag,
+                         legalize_flag,
+                         detailed_place_flag,
+                         random_center_init_flag,
+                         logging=logging):
         for i in range(self.num_tiers):
             self.params.partition_tier[
                 i].random_center_init_flag = random_center_init_flag
+            self.params.partition_tier[i].global_place_flag = global_place_flag
+            self.params.partition_tier[i].legalize_flag = legalize_flag
+            self.params.partition_tier[
+                i].detailed_place_flag = detailed_place_flag
 
             # update placedb_tier & data_tier using new terminal_insert result
             self.place_data.placedb_tier[
@@ -176,9 +185,9 @@ class D2Dplacer:
                                           self.place_data.placedb_tier[i],
                                           self.timer)
 
-        for i in range(self.num_tiers):
-            logging.info("tier %d placement  HPWL:%.6f " %
-                         (i, self.place_data.metrics_tier[i][-1].hpwl))
+        # for i in range(self.num_tiers):
+        #     logging.info("tier %d placement  HPWL:%.6f " %
+        #                  (i, self.place_data.metrics_tier[i][-1].hpwl))
 
         self.op_wrapper.d2d_op_collections.pos_flattened_op(
             self.tier, self.pos_2d, self.pos_tier)
@@ -291,13 +300,20 @@ if __name__ == "__main__":
     d2d_placer.flatten_2d_place()
     d2d_placer.init_op_wrapper()
     d2d_placer.partition()
-    d2d_placer.die_by_die_place(random_center_init_flag=True)
+    d2d_placer.die_by_die_place(global_place_flag=True,
+                                legalize_flag=False,
+                                detailed_place_flag=False,
+                                random_center_init_flag=False)
     d2d_placer.terminal_insert()
-    d2d_placer.die_by_die_place(random_center_init_flag=False)
+    d2d_placer.die_by_die_place(global_place_flag=True,
+                                legalize_flag=False,
+                                detailed_place_flag=False,
+                                random_center_init_flag=False)
     d2d_placer.macro_rotation()
     d2d_placer.refinement()
-    for i in range(d2d_placer.num_tiers):
-        d2d_placer.params.partition_tier[i].global_place_flag = 0
-    d2d_placer.die_by_die_place(random_center_init_flag=False)
+    d2d_placer.die_by_die_place(global_place_flag=False,
+                                legalize_flag=True,
+                                detailed_place_flag=True,
+                                random_center_init_flag=False)
     d2d_placer.hpwl_d2d(d2d_logger)
     d2d_placer.output()
