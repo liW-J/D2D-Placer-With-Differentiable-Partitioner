@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-07-17 14:31:37
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-08-10 04:23:53
+LastEditTime: 2025-08-10 05:01:56
 FilePath: /D2D-placer/placer/tools/dreamplace_data.py
 Description: 
 '''
@@ -59,20 +59,20 @@ class Dreamplace:
 
     def init_basic_place(self, params, timer):
         self.data_2d.placedb = self.database(params.flatten_2d)
-        self.data_2d.basic_place = BasicPlace.BasicPlace(
+        self.data_2d.basic_place = NonLinearPlace.NonLinearPlace(
             params.flatten_2d, self.data_2d.placedb, timer)
 
         # save each tier's placedb for backup
         for i in range(self.num_tiers):
             self.data_tier[i].placedb(params.flattened_tier[i])
-            self.data_tier[i].basic_place = BasicPlace.BasicPlace(
+            self.data_tier[i].basic_place = NonLinearPlace.NonLinearPlace(
                 params.flattened_tier[i], self.data_tier[i].placedb, timer)
 
     def reload_die_basic_place(self, params, timer):
         for i in range(self.num_tiers):
             # update placedb_tier & data_tier using new terminal_insert result
             self.data_tier[i].placedb = self.database(params.partition_tier[i])
-            self.data_tier[i].basic_place = BasicPlace.BasicPlace(
+            self.data_tier[i].basic_place = NonLinearPlace.NonLinearPlace(
                 params.partition_tier[i], self.data_tier[i].placedb, timer)
 
     def convert_terminal_ni_format(self, params):
@@ -81,7 +81,7 @@ class Dreamplace:
         change size.x size.y to 0 0
         """
         nodes_files = []
-        for root, dirs, files in os.walk(params.run_tmp_dir_root):
+        for root, dirs, files in os.walk(os.path.dirname(params.aux_input)):
             for file in files:
                 if file.endswith('.nodes'):
                     nodes_files.append(os.path.join(root, file))
@@ -143,7 +143,7 @@ class Dreamplace:
         # TODO: support more external placers, currently only support
         # 1. NTUplace3/NTUplace4h with Bookshelf format
         # 2. NTUplace_4dr with LEF/DEF format
-        if params.ntuplace_flag and params.detailed_place_flag and params.detailed_place_engine and os.path.exists(
+        if params.ntuplace_flag and params.detailed_place_engine and os.path.exists(
                 params.detailed_place_engine):
             logging.info("Use external detailed placement engine %s" %
                          (params.detailed_place_engine))
@@ -176,11 +176,11 @@ class Dreamplace:
                     pos[0:placedb.num_physical_nodes] = placedb.node_x
                     pos[placedb.num_nodes:placedb.num_nodes +
                         placedb.num_physical_nodes] = placedb.node_y
-                    hpwl, density_overflow, max_density = placer.validate(
-                        placedb, pos, iteration)
-                    logging.info(
-                        "iteration %4d, HPWL %.3E, overflow %.3E, max density %.3E"
-                        % (iteration, hpwl, density_overflow, max_density))
+                    # hpwl, density_overflow, max_density = placer.validate(
+                    #     placedb, pos, iteration)
+                    # logging.info(
+                    #     "iteration %4d, HPWL %.3E, overflow %.3E, max density %.3E"
+                    #     % (iteration, hpwl, density_overflow, max_density))
                     placer.plot(params, placedb, iteration, pos)
             elif 'ntuplace_4dr' in params.detailed_place_engine:
                 dp_out_file = gp_out_file.replace(".gp.def", "")

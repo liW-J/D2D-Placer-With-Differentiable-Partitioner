@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-07-19 17:57:28
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-08-10 04:29:48
+LastEditTime: 2025-08-10 04:56:50
 FilePath: /D2D-placer/placer/d2d_placer.py
 Description: 
 '''
@@ -21,7 +21,6 @@ import logging
 root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if root_dir not in sys.path:
     sys.path.append(root_dir)
-import dreamplace.BasicPlace as BasicPlace
 from colorama import Fore, Style
 from placer.ops.parser_txt.parser_txt import ParserTxt
 from placer.op_wrapper import OpWrapper
@@ -287,8 +286,8 @@ if __name__ == "__main__":
     d2d_placer.macro_rotation()
     d2d_placer.refinement()
     d2d_placer.die_by_die_place(global_place_flag=False,
-                                legalize_flag=True,
-                                detailed_place_flag=True,
+                                legalize_flag=False,
+                                detailed_place_flag=False,
                                 random_center_init_flag=False,
                                 ntuplace_flag=True)
     d2d_placer.hpwl_d2d(d2d_logger)
