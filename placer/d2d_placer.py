@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-07-19 17:57:28
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-08-06 18:51:44
+LastEditTime: 2025-08-10 04:29:48
 FilePath: /D2D-placer/placer/d2d_placer.py
 Description: 
 '''
@@ -26,7 +26,7 @@ from colorama import Fore, Style
 from placer.ops.parser_txt.parser_txt import ParserTxt
 from placer.op_wrapper import OpWrapper
 from placer.d2d_params import D2DParams
-from placer.tools.dreamplace_data import DreamplaceData
+from placer.tools.dreamplace_data import Dreamplace, DreamplaceData
 from placer.constants import Format, Orient
 import torch
 
@@ -82,7 +82,7 @@ class D2Dplacer:
     def __init__(self, input_params):
         self.params = D2DParams(input_params)
         self.num_tiers = self.params.flatten_2d.num_tiers
-        self.place_data = DreamplaceData(self.num_tiers)
+        self.dreamplace = Dreamplace(self.num_tiers, self.params)
 
         self.format = Format.ICCAD2022
 
@@ -105,12 +105,12 @@ class D2Dplacer:
 
         self.op_wrapper = None
 
-    def hpwl_d2d(self, logger):
+    def hpwl_d2d(self, logger=logging):
         if self.pos_terminal is not None:
             hpwl_d2d = self.op_wrapper.d2d_op_collections.hpwl_d2d_op(
                 self.pos_2d, self.cut_net_mask, self.tier, self.pos_terminal,
                 self.num_terminal_NIs,
-                self.place_data.placedb_terminal.node_names)
+                self.dreamplace.data_terminal.placedb.node_names)
         else:
             hpwl_d2d = self.op_wrapper.d2d_op_collections.hpwl_d2d_op(
                 self.pos_2d, self.cut_net_mask, self.tier)
@@ -125,79 +125,57 @@ class D2Dplacer:
             parser_txt = ParserTxt(self.params.flatten_2d.txt_input)
             self.die_spec = parser_txt()
 
-    def init_basic_date(self):
+    def init_date(self):
         # control numpy multithreading
         os.environ["OMP_NUM_THREADS"] = "%d" % (
             self.params.flatten_2d.num_threads)
 
-        self.place_data.placedb_2d, self.timer = DreamplaceData.database(
-            self.params.flatten_2d)
-        self.place_data.data_2d = BasicPlace.BasicPlace(
-            self.params.flatten_2d, self.place_data.placedb_2d, self.timer)
+        self.dreamplace.init_basic_place(self.params, self.timer)
+        self.node_orient = [
+            Orient.N.name
+        ] * self.dreamplace.data_2d.placedb.num_movable_nodes
 
-        # save each tier's placedb for backup
-        for i in range(self.num_tiers):
-            self.place_data.placedb_tier[
-                i], self.timer = DreamplaceData.database(
-                    self.params.flattened_tier[i])
-            self.place_data.data_tier[i] = BasicPlace.BasicPlace(
-                self.params.flattened_tier[i], self.place_data.placedb_tier[i],
-                self.timer)
-
-        self.node_orient = [Orient.N.name
-                            ] * self.place_data.placedb_2d.num_movable_nodes
-
-        self.cut_net_mask = torch.zeros(self.place_data.placedb_2d.num_nets,
-                                        dtype=torch.int32)
-        self.tier = torch.zeros(self.place_data.placedb_2d.num_movable_nodes,
-                                dtype=torch.int32)
+        self.cut_net_mask = torch.zeros(
+            self.dreamplace.data_2d.placedb.num_nets, dtype=torch.int32)
+        self.tier = torch.zeros(
+            self.dreamplace.data_2d.placedb.num_movable_nodes,
+            dtype=torch.int32)
 
     def init_op_wrapper(self):
-        self.op_wrapper = OpWrapper(self.place_data.data_2d,
-                                    self.place_data.placedb_2d,
-                                    self.place_data.placedb_tier, self.params,
-                                    self.place_data.data_tier, self.die_spec)
+        self.op_wrapper = OpWrapper(self.dreamplace.data_2d,
+                                    self.dreamplace.data_tier, self.params,
+                                    self.die_spec)
 
     def die_by_die_place(self,
                          global_place_flag,
                          legalize_flag,
                          detailed_place_flag,
                          random_center_init_flag,
-                         logging=logging):
+                         ntuplace_flag,
+                         logger=logging):
+        self.params.set_die_place_flags(
+            global_place_flag=global_place_flag,
+            legalize_flag=legalize_flag,
+            detailed_place_flag=detailed_place_flag,
+            random_center_init_flag=random_center_init_flag,
+            ntuplace_flag=ntuplace_flag)
+        self.dreamplace.reload_die_basic_place(self.params, self.timer)
+
         for i in range(self.num_tiers):
-            self.params.partition_tier[
-                i].random_center_init_flag = random_center_init_flag
-            self.params.partition_tier[i].global_place_flag = global_place_flag
-            self.params.partition_tier[i].legalize_flag = legalize_flag
-            self.params.partition_tier[
-                i].detailed_place_flag = detailed_place_flag
-
-            # update placedb_tier & data_tier using new terminal_insert result
-            self.place_data.placedb_tier[
-                i], self.timer = DreamplaceData.database(
-                    self.params.partition_tier[i])
-            self.place_data.data_tier[i] = BasicPlace.BasicPlace(
-                self.params.partition_tier[i], self.place_data.placedb_tier[i],
-                self.timer)
-
-            self.place_data.metrics_tier[i], self.pos_tier[
-                i] = DreamplaceData.place(self.params.partition_tier[i],
-                                          self.place_data.placedb_tier[i],
-                                          self.timer)
+            self.dreamplace.data_tier[i].metrics, self.pos_tier[
+                i] = self.dreamplace.place(self.dreamplace.data_tier[i],
+                                           self.timer)
 
         # for i in range(self.num_tiers):
-        #     logging.info("tier %d placement  HPWL:%.6f " %
-        #                  (i, self.place_data.metrics_tier[i][-1].hpwl))
+        #     logger.info("tier %d placement  HPWL:%.6f " %
+        #                  (i, self.dreamplace.metrics_tier[i][-1].hpwl))
 
         self.op_wrapper.d2d_op_collections.pos_flattened_op(
             self.tier, self.pos_2d, self.pos_tier)
 
-    def terminal_place(self):
-        pass
-
     def flatten_2d_place(self):
-        self.place_data.metrics_2d, self.pos_2d = DreamplaceData.place(
-            self.params.flatten_2d, self.place_data.placedb_2d, self.timer)
+        self.dreamplace.data_2d.metrics, self.pos_2d = self.dreamplace.place(
+            self.dreamplace.data_2d, self.timer)
 
     def partition(self):
         self.tier = self.op_wrapper.d2d_op_collections.hmetis_op(self.pos_2d)
@@ -217,14 +195,9 @@ class D2Dplacer:
             self.tier, self.pos_2d / 2, self.node_orient)
 
         if self.format == Format.ICCAD2023:
-            for i in range(self.num_tiers):
-                # update placedb_tier & data_tier using new terminal_insert result
-                self.place_data.placedb_tier[
-                    i], self.timer = DreamplaceData.database(
-                        self.params.partition_tier[i])
-                self.place_data.data_tier[i] = BasicPlace.BasicPlace(
-                    self.params.partition_tier[i],
-                    self.place_data.placedb_tier[i], self.timer)
+
+            # update placedb_tier & data_tier using new terminal_insert result
+            self.dreamplace.reload_die_basic_place(self.params, self.timer)
 
             self.tier = self.op_wrapper.d2d_op_collections.macro_balance_op(
                 self.tier, self.node_orient)
@@ -242,19 +215,19 @@ class D2Dplacer:
         self.op_wrapper.d2d_op_collections.terminal_aux_op(
             self.tier, self.pos_2d)
 
-        self.place_data.placedb_terminal, self.timer = DreamplaceData.database(
+        self.dreamplace.data_terminal.placedb = self.dreamplace.database(
             self.params.terminal)
-        self.place_data.metrics_terminal, self.pos_terminal = DreamplaceData.place(
-            self.params.terminal, self.place_data.placedb_terminal, self.timer)
+        self.dreamplace.data_terminal.metrics, self.pos_terminal = self.dreamplace.place(
+            self.dreamplace.data_terminal, self.timer)
 
         self.op_wrapper.d2d_op_collections.terminal_legalize_op(
             self.tier, self.pos_2d, self.pos_terminal, self.num_terminal_NIs,
-            self.place_data.placedb_terminal.node_names, self.node_orient)
+            self.dreamplace.data_terminal.placedb.node_names, self.node_orient)
 
     def refinement(self):
         self.tier = self.op_wrapper.d2d_op_collections.refinement_op(
             self.tier, self.pos_2d, self.pos_terminal, self.num_terminal_NIs,
-            self.place_data.placedb_terminal.node_names)
+            self.dreamplace.data_terminal.placedb.node_names)
 
         self.cut_net_mask = self.op_wrapper.d2d_op_collections.terminal_insert_op(
             self.tier, self.pos_2d, self.node_orient)
@@ -264,23 +237,23 @@ class D2Dplacer:
         self.op_wrapper.d2d_op_collections.terminal_aux_op(
             self.tier, self.pos_2d)
 
-        self.place_data.placedb_terminal, self.timer = DreamplaceData.database(
+        self.dreamplace.data_terminal.placedb = self.dreamplace.database(
             self.params.terminal)
-        self.place_data.metrics_terminal, self.pos_terminal = DreamplaceData.place(
-            self.params.terminal, self.place_data.placedb_terminal, self.timer)
+        self.dreamplace.data_terminal.metrics, self.pos_terminal = self.dreamplace.place(
+            self.dreamplace.data_terminal, self.timer)
 
         self.op_wrapper.d2d_op_collections.terminal_legalize_op(
             self.tier, self.pos_2d, self.pos_terminal, self.num_terminal_NIs,
-            self.place_data.placedb_terminal.node_names, self.node_orient)
+            self.dreamplace.data_terminal.placedb.node_names, self.node_orient)
 
     def macro_rotation(self):
-        # self.place_data.placedb_terminal.node_orient = np.array(self.place_data.placedb_terminal.node_orient, dtype=np.string_)
-        # self.place_data.placedb_terminal.node_orient = np.array(self.place_data.placedb_terminal.node_orient, dtype=np.string_)
+        # self.dreamplace.placedb_terminal.node_orient = np.array(self.dreamplace.placedb_terminal.node_orient, dtype=np.string_)
+        # self.dreamplace.placedb_terminal.node_orient = np.array(self.dreamplace.placedb_terminal.node_orient, dtype=np.string_)
         pass
 
     def output(self):
         self.op_wrapper.d2d_op_collections.out_fmt_iccad_op(
-            self.place_data.placedb_terminal, self.params.case_name,
+            self.dreamplace.data_terminal.placedb, self.params.case_name,
             self.format, self.node_orient)
 
 
@@ -296,24 +269,27 @@ if __name__ == "__main__":
     d2d_logger = init_log(d2d_placer.params.result_dir_root)
 
     d2d_placer.parse_die_spec()
-    d2d_placer.init_basic_date()
+    d2d_placer.init_date()
     d2d_placer.flatten_2d_place()
     d2d_placer.init_op_wrapper()
     d2d_placer.partition()
     d2d_placer.die_by_die_place(global_place_flag=True,
                                 legalize_flag=False,
                                 detailed_place_flag=False,
-                                random_center_init_flag=False)
+                                random_center_init_flag=False,
+                                ntuplace_flag=False)
     d2d_placer.terminal_insert()
     d2d_placer.die_by_die_place(global_place_flag=True,
                                 legalize_flag=False,
                                 detailed_place_flag=False,
-                                random_center_init_flag=False)
+                                random_center_init_flag=False,
+                                ntuplace_flag=False)
     d2d_placer.macro_rotation()
     d2d_placer.refinement()
     d2d_placer.die_by_die_place(global_place_flag=False,
                                 legalize_flag=True,
                                 detailed_place_flag=True,
-                                random_center_init_flag=False)
+                                random_center_init_flag=False,
+                                ntuplace_flag=True)
     d2d_placer.hpwl_d2d(d2d_logger)
     d2d_placer.output()

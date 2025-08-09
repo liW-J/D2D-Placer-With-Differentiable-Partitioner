@@ -26,5 +26,6 @@
 "gift_init_flag" : 0, 
 "sort_nets_by_degree" : 0, 
 "num_threads" : 8,
-"deterministic_flag" : 1
+"deterministic_flag" : 1,
+"ntuplace_flag" : 1
 }

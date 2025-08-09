@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-06-13 15:35:55
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-07-28 01:35:39
+LastEditTime: 2025-08-10 03:54:18
 FilePath: /D2D-placer/placer/op_wrapper.py
 Description:
 '''
@@ -48,30 +48,37 @@ class D2DOpCollection(object):
 
 class OpWrapper(object):
 
-    def __init__(self, basic_data, placedb_2d, placedb_tier, d2d_params,
-                 tier_data, die_spec):
-        self.basic_data = basic_data
-        self.placedb_2d = placedb_2d
-        self.placedb_tier = placedb_tier
+    def __init__(self, data_2d, data_tier, d2d_params, die_spec):
+        self.data_2d = data_2d
+        self.data_tier = data_tier
+        self.data_collections_2d = data_2d.basic_place.data_collections
+        self.placedb_2d = data_2d.placedb
+        self.placedb_tier = [data.placedb for data in data_tier]
         self.params = d2d_params.flatten_2d
         self.case_name = d2d_params.case_name
         self.die_spec = die_spec
         self.num_tiers = d2d_params.flatten_2d.num_tiers
-        self.tier_data = tier_data
+        self.data_collections_tier = [
+            data.basic_place.data_collections for data in data_tier
+        ]
 
         self.node_size_x = torch.stack([
-            data.data_collections.node_size_x[:placedb_2d.num_movable_nodes]
-            for data in tier_data
+            data_collection.node_size_x[:self.placedb_2d.num_movable_nodes]
+            for data_collection in self.data_collections_tier
         ])
         self.node_size_y = torch.stack([
-            data.data_collections.node_size_y[:placedb_2d.num_movable_nodes]
-            for data in tier_data
+            data_collection.node_size_y[:self.placedb_2d.num_movable_nodes]
+            for data_collection in self.data_collections_tier
         ])
 
-        self.pin_offset_x = torch.stack(
-            [data.data_collections.pin_offset_x for data in tier_data])
-        self.pin_offset_y = torch.stack(
-            [data.data_collections.pin_offset_y for data in tier_data])
+        self.pin_offset_x = torch.stack([
+            data_collections.pin_offset_x
+            for data_collections in self.data_collections_tier
+        ])
+        self.pin_offset_y = torch.stack([
+            data_collections.pin_offset_y
+            for data_collections in self.data_collections_tier
+        ])
 
         # 3d-placer set flattened_die size as die_size*2
         if self.num_tiers == 2:
@@ -79,13 +86,13 @@ class OpWrapper(object):
             self.die_size_y = self.die_spec.dieSizeY
         else:
             self.die_size_x = np.mean([
-                placedb.xh for placedb in placedb_tier
-            ]) - np.mean([placedb.xl for placedb in placedb_tier])
+                data.placedb.xh for data in self.data_tier
+            ]) - np.mean([data.placedb.xl for data in self.data_tier])
             self.die_size_y = np.mean([
-                placedb.yh for placedb in placedb_tier
-            ]) - np.mean([placedb.yl for placedb in placedb_tier])
+                data.placedb.yh for data in self.data_tier
+            ]) - np.mean([data.placedb.yl for data in self.data_tier])
 
-        self.row_height = [placedb.row_height for placedb in placedb_tier]
+        self.row_height = [data.placedb.row_height for data in self.data_tier]
 
         self.hmetis_op = self.build_hmetis()
         self.multi_bipartition_op = self.build_multi_bipartition()
@@ -120,38 +127,37 @@ class OpWrapper(object):
 
     def build_hmetis(self):
 
-        hmetis_op = Hmetis(
-            self.basic_data.data_collections.flat_net2pin_map,
-            self.basic_data.data_collections.flat_net2pin_start_map,
-            self.basic_data.data_collections.pin2node_map,
-            self.basic_data.data_collections.net_weights,
-            self.basic_data.data_collections.net_mask_all,
-            self.placedb_2d.num_movable_nodes, self.case_name)
+        hmetis_op = Hmetis(self.data_collections_2d.flat_net2pin_map,
+                           self.data_collections_2d.flat_net2pin_start_map,
+                           self.data_collections_2d.pin2node_map,
+                           self.data_collections_2d.net_weights,
+                           self.data_collections_2d.net_mask_all,
+                           self.placedb_2d.num_movable_nodes, self.case_name)
 
         return hmetis_op
 
     def build_multi_bipartition(self):
 
         multi_bipartition_op = MultiBipartition(
-            self.basic_data.data_collections.flat_net2pin_map,
-            self.basic_data.data_collections.flat_net2pin_start_map,
-            self.basic_data.data_collections.pin2node_map,
-            self.basic_data.data_collections.net_weights,
-            self.basic_data.data_collections.net_mask_all,
+            self.data_collections_2d.flat_net2pin_map,
+            self.data_collections_2d.flat_net2pin_start_map,
+            self.data_collections_2d.pin2node_map,
+            self.data_collections_2d.net_weights,
+            self.data_collections_2d.net_mask_all,
             self.placedb_2d.num_movable_nodes,
-            self.basic_data.data_collections.flat_node2pin_map,
-            self.basic_data.data_collections.flat_node2pin_start_map,
-            self.basic_data.data_collections.pin2net_map)
+            self.data_collections_2d.flat_node2pin_map,
+            self.data_collections_2d.flat_node2pin_start_map,
+            self.data_collections_2d.pin2net_map)
 
         return multi_bipartition_op
 
     def build_init_partition(self):
 
         init_partition_op = PartitionAux(
-            self.basic_data.data_collections.flat_net2pin_map,
-            self.basic_data.data_collections.flat_net2pin_start_map,
-            self.basic_data.data_collections.pin2node_map,
-            self.basic_data.data_collections.net_weights,
+            self.data_collections_2d.flat_net2pin_map,
+            self.data_collections_2d.flat_net2pin_start_map,
+            self.data_collections_2d.pin2node_map,
+            self.data_collections_2d.net_weights,
             self.placedb_2d.num_movable_nodes,
             self.placedb_2d.node_names,
             self.placedb_2d.net_names,
@@ -172,12 +178,12 @@ class OpWrapper(object):
         def build_init_partition_op(tier, pos_2d, node_orient):
             pin_pos_x = torch.stack([
                 self.pin_pos_tier_op[tier_id](pos_2d)
-                [:self.basic_data.data_collections.pin2node_map.numel()]
+                [:self.data_collections_2d.pin2node_map.numel()]
                 for tier_id in range(self.num_tiers)
             ])
             pin_pos_y = torch.stack([
                 self.pin_pos_tier_op[tier_id](pos_2d)
-                [self.basic_data.data_collections.pin2node_map.numel():]
+                [self.data_collections_2d.pin2node_map.numel():]
                 for tier_id in range(self.num_tiers)
             ])
             pin_pos = torch.cat([pin_pos_x, pin_pos_y], dim=0)
@@ -188,25 +194,25 @@ class OpWrapper(object):
 
     def build_out_fmt_iccad(self):
 
-        out_fmt_iccad_op = OutfmtICCAD(self.placedb_tier, self.params,
+        out_fmt_iccad_op = OutfmtICCAD(self.data_tier, self.params,
                                        self.die_spec)
 
         return out_fmt_iccad_op
 
     def build_pos_flattened(self):
 
-        pos_flattened_op = PosFlattened(self.params, self.placedb_2d,
-                                        self.placedb_tier)
+        pos_flattened_op = PosFlattened(self.params, self.data_2d,
+                                        self.data_tier)
 
         return pos_flattened_op
 
     def build_terminal_insert(self):
 
         terminal_insert_op = PartitionAux(
-            self.basic_data.data_collections.flat_net2pin_map,
-            self.basic_data.data_collections.flat_net2pin_start_map,
-            self.basic_data.data_collections.pin2node_map,
-            self.basic_data.data_collections.net_weights,
+            self.data_collections_2d.flat_net2pin_map,
+            self.data_collections_2d.flat_net2pin_start_map,
+            self.data_collections_2d.pin2node_map,
+            self.data_collections_2d.net_weights,
             self.placedb_2d.num_movable_nodes,
             self.placedb_2d.node_names,
             self.placedb_2d.net_names,
@@ -227,12 +233,12 @@ class OpWrapper(object):
         def build_terminal_insert_op(tier, pos_2d, node_orient):
             pin_pos_x = torch.stack([
                 self.pin_pos_tier_op[tier_id](pos_2d)
-                [:self.basic_data.data_collections.pin2node_map.numel()]
+                [:self.data_collections_2d.pin2node_map.numel()]
                 for tier_id in range(self.num_tiers)
             ])
             pin_pos_y = torch.stack([
                 self.pin_pos_tier_op[tier_id](pos_2d)
-                [self.basic_data.data_collections.pin2node_map.numel():]
+                [self.data_collections_2d.pin2node_map.numel():]
                 for tier_id in range(self.num_tiers)
             ])
             pin_pos = torch.cat([pin_pos_x, pin_pos_y], dim=0)
@@ -247,12 +253,11 @@ class OpWrapper(object):
     def build_pin_pos(self):
 
         pin_pos_op = PinPos(
-            pin_offset_x=self.basic_data.data_collections.pin_offset_x,
-            pin_offset_y=self.basic_data.data_collections.pin_offset_y,
-            pin2node_map=self.basic_data.data_collections.pin2node_map,
-            flat_node2pin_map=self.basic_data.data_collections.
-            flat_node2pin_map,
-            flat_node2pin_start_map=self.basic_data.data_collections.
+            pin_offset_x=self.data_collections_2d.pin_offset_x,
+            pin_offset_y=self.data_collections_2d.pin_offset_y,
+            pin2node_map=self.data_collections_2d.pin2node_map,
+            flat_node2pin_map=self.data_collections_2d.flat_node2pin_map,
+            flat_node2pin_start_map=self.data_collections_2d.
             flat_node2pin_start_map,
             num_physical_nodes=self.placedb_2d.num_physical_nodes,
             algorithm="node-by-node")
@@ -265,16 +270,16 @@ class OpWrapper(object):
 
         for tier_id in range(self.num_tiers):
             pin_pos_tier_op.append(
-                PinPos(pin_offset_x=self.tier_data[tier_id].data_collections.
+                PinPos(pin_offset_x=self.data_collections_tier[tier_id].
                        pin_offset_x,
-                       pin_offset_y=self.tier_data[tier_id].data_collections.
+                       pin_offset_y=self.data_collections_tier[tier_id].
                        pin_offset_y,
-                       pin2node_map=self.tier_data[tier_id].data_collections.
+                       pin2node_map=self.data_collections_tier[tier_id].
                        pin2node_map,
-                       flat_node2pin_map=self.tier_data[tier_id].
-                       data_collections.flat_node2pin_map,
-                       flat_node2pin_start_map=self.tier_data[tier_id].
-                       data_collections.flat_node2pin_start_map,
+                       flat_node2pin_map=self.data_collections_tier[tier_id].
+                       flat_node2pin_map,
+                       flat_node2pin_start_map=self.
+                       data_collections_tier[tier_id].flat_node2pin_start_map,
                        num_physical_nodes=self.placedb_tier[tier_id].
                        num_physical_nodes,
                        algorithm="node-by-node"))
@@ -284,10 +289,10 @@ class OpWrapper(object):
     def build_terminal_legalize(self):
 
         terminal_legalize_op = PartitionAux(
-            self.basic_data.data_collections.flat_net2pin_map,
-            self.basic_data.data_collections.flat_net2pin_start_map,
-            self.basic_data.data_collections.pin2node_map,
-            self.basic_data.data_collections.net_weights,
+            self.data_collections_2d.flat_net2pin_map,
+            self.data_collections_2d.flat_net2pin_start_map,
+            self.data_collections_2d.pin2node_map,
+            self.data_collections_2d.net_weights,
             self.placedb_2d.num_movable_nodes,
             self.placedb_2d.node_names,
             self.placedb_2d.net_names,
@@ -310,12 +315,12 @@ class OpWrapper(object):
                                        node_orient):
             pin_pos_x = torch.stack([
                 self.pin_pos_tier_op[tier_id](pos_2d)
-                [:self.basic_data.data_collections.pin2node_map.numel()]
+                [:self.data_collections_2d.pin2node_map.numel()]
                 for tier_id in range(self.num_tiers)
             ])
             pin_pos_y = torch.stack([
                 self.pin_pos_tier_op[tier_id](pos_2d)
-                [self.basic_data.data_collections.pin2node_map.numel():]
+                [self.data_collections_2d.pin2node_map.numel():]
                 for tier_id in range(self.num_tiers)
             ])
             pin_pos = torch.cat([pin_pos_x, pin_pos_y], dim=0)
@@ -327,12 +332,11 @@ class OpWrapper(object):
 
     def build_avg_cut(self):
 
-        avg_cut_op = AvgCut(
-            self.basic_data.data_collections.flat_net2pin_map,
-            self.basic_data.data_collections.flat_net2pin_start_map,
-            self.basic_data.data_collections.pin2node_map,
-            self.basic_data.data_collections.net_weights,
-            self.placedb_2d.num_movable_nodes)
+        avg_cut_op = AvgCut(self.data_collections_2d.flat_net2pin_map,
+                            self.data_collections_2d.flat_net2pin_start_map,
+                            self.data_collections_2d.pin2node_map,
+                            self.data_collections_2d.net_weights,
+                            self.placedb_2d.num_movable_nodes)
 
         def build_avg_cut_op(pos_2d):
             return avg_cut_op(self.pin_pos_op(pos_2d), self.node_size_x,
@@ -343,10 +347,10 @@ class OpWrapper(object):
     def build_terminal_aux(self):
 
         terminal_aux_op = TerminalAux(
-            self.basic_data.data_collections.flat_net2pin_map,
-            self.basic_data.data_collections.flat_net2pin_start_map,
-            self.basic_data.data_collections.pin2node_map,
-            self.basic_data.data_collections.net_weights,
+            self.data_collections_2d.flat_net2pin_map,
+            self.data_collections_2d.flat_net2pin_start_map,
+            self.data_collections_2d.pin2node_map,
+            self.data_collections_2d.net_weights,
             self.placedb_2d.num_movable_nodes, self.placedb_2d.node_names,
             self.placedb_2d.net_names, self.node_size_x, self.node_size_y,
             self.pin_offset_x, self.pin_offset_y, self.die_size_x,
@@ -357,12 +361,12 @@ class OpWrapper(object):
         def build_terminal_aux_op(tier, pos_2d):
             pin_pos_x = torch.stack([
                 self.pin_pos_tier_op[tier_id](pos_2d)
-                [:self.basic_data.data_collections.pin2node_map.numel()]
+                [:self.data_collections_2d.pin2node_map.numel()]
                 for tier_id in range(self.num_tiers)
             ])
             pin_pos_y = torch.stack([
                 self.pin_pos_tier_op[tier_id](pos_2d)
-                [self.basic_data.data_collections.pin2node_map.numel():]
+                [self.data_collections_2d.pin2node_map.numel():]
                 for tier_id in range(self.num_tiers)
             ])
             pin_pos = torch.cat([pin_pos_x, pin_pos_y], dim=0)
@@ -373,10 +377,10 @@ class OpWrapper(object):
     def build_refinement(self):
 
         refinement_op = Refinement(
-            self.basic_data.data_collections.flat_net2pin_map,
-            self.basic_data.data_collections.flat_net2pin_start_map,
-            self.basic_data.data_collections.pin2node_map,
-            self.basic_data.data_collections.net_weights,
+            self.data_collections_2d.flat_net2pin_map,
+            self.data_collections_2d.flat_net2pin_start_map,
+            self.data_collections_2d.pin2node_map,
+            self.data_collections_2d.net_weights,
             self.placedb_2d.num_movable_nodes, self.placedb_2d.node_names,
             self.placedb_2d.net_names, self.node_size_x, self.node_size_y,
             self.pin_offset_x, self.pin_offset_y, self.die_size_x,
@@ -388,12 +392,12 @@ class OpWrapper(object):
                                 terminal_names):
             pin_pos_x = torch.stack([
                 self.pin_pos_tier_op[tier_id](pos_2d)
-                [:self.basic_data.data_collections.pin2node_map.numel()]
+                [:self.data_collections_2d.pin2node_map.numel()]
                 for tier_id in range(self.num_tiers)
             ])
             pin_pos_y = torch.stack([
                 self.pin_pos_tier_op[tier_id](pos_2d)
-                [self.basic_data.data_collections.pin2node_map.numel():]
+                [self.data_collections_2d.pin2node_map.numel():]
                 for tier_id in range(self.num_tiers)
             ])
             pin_pos = torch.cat([pin_pos_x, pin_pos_y], dim=0)
@@ -404,14 +408,14 @@ class OpWrapper(object):
 
     def build_hpwl_d2d(self):
 
-        hpwl_d2d_op = HPWLD2D(
-            self.basic_data.data_collections.flat_net2pin_map,
-            self.basic_data.data_collections.flat_net2pin_start_map,
-            self.basic_data.data_collections.pin2node_map,
-            self.basic_data.data_collections.net_weights,
-            self.die_spec.terminalSizeX, self.die_spec.terminalSizeY,
-            self.die_spec.terminalSpacing, self.placedb_2d.net_names,
-            self.num_tiers)
+        hpwl_d2d_op = HPWLD2D(self.data_collections_2d.flat_net2pin_map,
+                              self.data_collections_2d.flat_net2pin_start_map,
+                              self.data_collections_2d.pin2node_map,
+                              self.data_collections_2d.net_weights,
+                              self.die_spec.terminalSizeX,
+                              self.die_spec.terminalSizeY,
+                              self.die_spec.terminalSpacing,
+                              self.placedb_2d.net_names, self.num_tiers)
 
         def build_hpwl_d2d_op(pos_2d,
                               cut_net_mask,
@@ -421,12 +425,12 @@ class OpWrapper(object):
                               terminal_names=np.array([], dtype=np.string_)):
             pin_pos_x = torch.stack([
                 self.pin_pos_tier_op[tier_id](pos_2d)
-                [:self.basic_data.data_collections.pin2node_map.numel()]
+                [:self.data_collections_2d.pin2node_map.numel()]
                 for tier_id in range(self.num_tiers)
             ])
             pin_pos_y = torch.stack([
                 self.pin_pos_tier_op[tier_id](pos_2d)
-                [self.basic_data.data_collections.pin2node_map.numel():]
+                [self.data_collections_2d.pin2node_map.numel():]
                 for tier_id in range(self.num_tiers)
             ])
             pin_pos = torch.cat([pin_pos_x, pin_pos_y], dim=0)
@@ -438,10 +442,10 @@ class OpWrapper(object):
 
     def build_macro_balance(self):
         macro_balance_op = MacroBalance(
-            self.basic_data.data_collections.flat_net2pin_map,
-            self.basic_data.data_collections.flat_net2pin_start_map,
-            self.basic_data.data_collections.pin2node_map,
-            self.basic_data.data_collections.net_weights,
+            self.data_collections_2d.flat_net2pin_map,
+            self.data_collections_2d.flat_net2pin_start_map,
+            self.data_collections_2d.pin2node_map,
+            self.data_collections_2d.net_weights,
             self.placedb_2d.num_movable_nodes, self.placedb_2d.node_names,
             self.placedb_2d.net_names, self.node_size_x, self.node_size_y,
             self.pin_offset_x, self.pin_offset_y, self.die_size_x,
@@ -452,7 +456,6 @@ class OpWrapper(object):
         def build_macro_balance_op(tier, node_orient):
 
             return macro_balance_op(
-                tier, node_orient,
-                self.basic_data.data_collections.movable_macro_mask)
+                tier, node_orient, self.data_collections_2d.movable_macro_mask)
 
         return build_macro_balance_op

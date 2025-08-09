@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-07-17 14:31:37
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-08-06 18:02:22
+LastEditTime: 2025-08-10 04:23:53
 FilePath: /D2D-placer/placer/tools/dreamplace_data.py
 Description: 
 '''
@@ -11,28 +11,34 @@ import dreamplace.PlaceDB as PlaceDB
 import dreamplace.Timer as Timer
 import dreamplace.configure as configure
 import dreamplace.NonLinearPlace as NonLinearPlace
+import dreamplace.BasicPlace as BasicPlace
 import time
 import logging
 import numpy as np
 import os
+import re
 
 
 class DreamplaceData:
 
-    def __init__(self, num_tiers):
-        self.placedb_2d = None
-        self.placedb_tier = [None] * num_tiers
-        self.placedb_terminal = None
+    def __init__(self, params):
+        self.placedb = PlaceDB.PlaceDB()
+        self.basic_place = None
+        self.metrics = None
+        self.params = params
 
-        self.data_2d = None
-        self.data_tier = [None] * num_tiers
-        self.data_terminal = None
 
-        self.metrics_2d = None
-        self.metrics_tier = [None] * num_tiers
-        self.metrics_terminal = None
+class Dreamplace:
 
-    def database(params):
+    def __init__(self, num_tiers, params):
+        self.num_tiers = num_tiers
+        self.data_2d = DreamplaceData(params.flatten_2d)
+        self.data_tier = [
+            DreamplaceData(params.partition_tier[i]) for i in range(num_tiers)
+        ]
+        self.data_terminal = DreamplaceData(params.terminal)
+
+    def database(self, params):
         """
         @brief Data collection for placement.
         @param params parameters
@@ -49,27 +55,72 @@ class DreamplaceData:
         logging.info("reading database takes %.2f seconds" %
                      (time.time() - tt))
 
-        # Read timing constraints provided in the benchmarks into out timing analysis
-        # engine and then pass the timer into the placement core.
-        timer = None
-        if params.timing_opt_flag:
-            tt = time.time()
-            timer = Timer.Timer()
-            timer(params, placedb)
-            # This must be done to explicitly execute the parser builders.
-            # The parsers in OpenTimer are all in lazy mode.
-            timer.update_timing()
-            logging.info("reading timer takes %.2f seconds" %
-                         (time.time() - tt))
+        return placedb
 
-        return placedb, timer
+    def init_basic_place(self, params, timer):
+        self.data_2d.placedb = self.database(params.flatten_2d)
+        self.data_2d.basic_place = BasicPlace.BasicPlace(
+            params.flatten_2d, self.data_2d.placedb, timer)
 
-    def place(params, placedb, timer):
+        # save each tier's placedb for backup
+        for i in range(self.num_tiers):
+            self.data_tier[i].placedb(params.flattened_tier[i])
+            self.data_tier[i].basic_place = BasicPlace.BasicPlace(
+                params.flattened_tier[i], self.data_tier[i].placedb, timer)
+
+    def reload_die_basic_place(self, params, timer):
+        for i in range(self.num_tiers):
+            # update placedb_tier & data_tier using new terminal_insert result
+            self.data_tier[i].placedb = self.database(params.partition_tier[i])
+            self.data_tier[i].basic_place = BasicPlace.BasicPlace(
+                params.partition_tier[i], self.data_tier[i].placedb, timer)
+
+    def convert_terminal_ni_format(self, params):
+        """
+        ntuplace3 cannot recognize terminal_NI, so we need to convert it to terminal
+        change size.x size.y to 0 0
+        """
+        nodes_files = []
+        for root, dirs, files in os.walk(params.run_tmp_dir_root):
+            for file in files:
+                if file.endswith('.nodes'):
+                    nodes_files.append(os.path.join(root, file))
+
+        logger = logging.getLogger(__name__)
+        logger.info(f"find {len(nodes_files)} .nodes files to convert")
+
+        for nodes_file in nodes_files:
+            try:
+                with open(nodes_file, 'r', encoding='utf-8') as f:
+                    content = f.read()
+
+                # replace terminal_NI to terminal, and change size.x size.y to 0 0
+                # pattern: size.x size.y terminal_NI
+                pattern = r'(\d+\.?\d*)\s+(\d+\.?\d*)\s+terminal_NI'
+                replacement = '0 0 terminal'
+
+                new_content = re.sub(pattern, replacement, content)
+
+                if new_content != content:
+                    with open(nodes_file, 'w', encoding='utf-8') as f:
+                        f.write(new_content)
+
+                    matches = re.findall(pattern, content)
+                    logger.info(
+                        f"{nodes_file} converted, replaced {len(matches)} terminal_NI"
+                    )
+                else:
+                    logger.info(f"{nodes_file} no need to convert")
+
+            except Exception as e:
+                logger.error(f"error when converting {nodes_file}: {str(e)}")
+
+    def place(self, data, timer):
         """
         @brief Top API to run the entire placement flow.
         @param params parameters
         """
-
+        params, placedb = data.params, data.placedb
         # solve placement
         tt = time.time()
         placer = NonLinearPlace.NonLinearPlace(params, placedb, timer)
@@ -92,10 +143,13 @@ class DreamplaceData:
         # TODO: support more external placers, currently only support
         # 1. NTUplace3/NTUplace4h with Bookshelf format
         # 2. NTUplace_4dr with LEF/DEF format
-        if params.detailed_place_engine and os.path.exists(
+        if params.ntuplace_flag and params.detailed_place_flag and params.detailed_place_engine and os.path.exists(
                 params.detailed_place_engine):
             logging.info("Use external detailed placement engine %s" %
                          (params.detailed_place_engine))
+            self.convert_terminal_ni_format(params)
+            breakpoint()
+
             if params.solution_file_suffix() == "pl" and any(
                     dp_engine in params.detailed_place_engine
                     for dp_engine in ['ntuplace3', 'ntuplace4h']):
@@ -163,7 +217,7 @@ class DreamplaceData:
                 os.system(cmd)
                 logging.info("External detailed placement takes %.2f seconds" %
                              (time.time() - tt))
-                
+
             else:
                 logging.warning(
                     "External detailed placement only supports NTUplace3/NTUplace4dr API"
