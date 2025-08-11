@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-07-17 14:31:37
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-08-11 13:11:26
+LastEditTime: 2025-08-12 00:40:15
 FilePath: /D2D-placer/placer/tools/dreamplace_data.py
 Description: 
 '''
@@ -18,24 +18,13 @@ import os
 import re
 
 
-class DreamplaceData:
+class DreamplaceBase:
 
-    def __init__(self, params):
+    def __init__(self):
         self.placedb = PlaceDB.PlaceDB()
         self.basic_place = None
         self.metrics = None
-        self.params = params
-
-
-class Dreamplace:
-
-    def __init__(self, num_tiers, params):
-        self.num_tiers = num_tiers
-        self.data_2d = DreamplaceData(params.flatten_2d)
-        self.data_tier = [
-            DreamplaceData(params.partition_tier[i]) for i in range(num_tiers)
-        ]
-        self.data_terminal = DreamplaceData(params.terminal)
+        self.pos = None
 
     def database(self, params):
         """
@@ -49,30 +38,14 @@ class Dreamplace:
         np.random.seed(params.random_seed)
         # read database
         tt = time.time()
-        placedb = PlaceDB.PlaceDB()
-        placedb(params)
+        self.placedb(params)
         logging.info("reading database takes %.2f seconds" %
                      (time.time() - tt))
 
-        return placedb
-
     def init_basic_place(self, params, timer):
-        self.data_2d.placedb = self.database(params.flatten_2d)
-        self.data_2d.basic_place = NonLinearPlace.NonLinearPlace(
-            params.flatten_2d, self.data_2d.placedb, timer)
-
-        # save each tier's placedb for backup
-        for i in range(self.num_tiers):
-            self.data_tier[i].placedb(params.flattened_tier[i])
-            self.data_tier[i].basic_place = NonLinearPlace.NonLinearPlace(
-                params.flattened_tier[i], self.data_tier[i].placedb, timer)
-
-    def reload_die_basic_place(self, params, timer):
-        for i in range(self.num_tiers):
-            # update placedb_tier & data_tier using new terminal_insert result
-            self.data_tier[i].placedb = self.database(params.partition_tier[i])
-            self.data_tier[i].basic_place = NonLinearPlace.NonLinearPlace(
-                params.partition_tier[i], self.data_tier[i].placedb, timer)
+        self.database(params)
+        self.basic_place = NonLinearPlace.NonLinearPlace(
+            params, self.placedb, timer)
 
     def convert_terminal_ni_format(self, params):
         """
@@ -114,18 +87,17 @@ class Dreamplace:
             except Exception as e:
                 logger.error(f"error when converting {nodes_file}: {str(e)}")
 
-    def place(self, data, timer):
+    def place(self, params, timer):
         """
         @brief Top API to run the entire placement flow.
         @param params parameters
         """
-        params, placedb = data.params, data.placedb
         # solve placement
         tt = time.time()
-        placer = NonLinearPlace.NonLinearPlace(params, placedb, timer)
+        placer = NonLinearPlace.NonLinearPlace(params, self.placedb, timer)
         logging.info("non-linear placement initialization takes %.2f seconds" %
                      (time.time() - tt))
-        metrics = placer(params, placedb)
+        metrics = placer(params, self.placedb)
         logging.info("non-linear placement takes %.2f seconds" %
                      (time.time() - tt))
 
@@ -136,7 +108,7 @@ class Dreamplace:
         gp_out_file = os.path.join(
             path,
             "%s.gp.%s" % (params.design_name(), params.solution_file_suffix()))
-        placedb.write(params, gp_out_file)
+        self.placedb.write(params, gp_out_file)
 
         # call external detailed placement
         # TODO: support more external placers, currently only support
@@ -169,18 +141,19 @@ class Dreamplace:
 
                 if params.plot_flag:
                     # read solution and evaluate
-                    placedb.read_pl(params, dp_out_file + ".ntup.pl")
+                    self.placedb.read_pl(params, dp_out_file + ".ntup.pl")
                     iteration = len(metrics)
                     pos = placer.init_pos
-                    pos[0:placedb.num_physical_nodes] = placedb.node_x
-                    pos[placedb.num_nodes:placedb.num_nodes +
-                        placedb.num_physical_nodes] = placedb.node_y
+                    pos[0:self.placedb.
+                        num_physical_nodes] = self.placedb.node_x
+                    pos[self.placedb.num_nodes:self.placedb.num_nodes +
+                        self.placedb.num_physical_nodes] = self.placedb.node_y
                     # hpwl, density_overflow, max_density = placer.validate(
                     #     placedb, pos, iteration)
                     # logging.info(
                     #     "iteration %4d, HPWL %.3E, overflow %.3E, max density %.3E"
                     #     % (iteration, hpwl, density_overflow, max_density))
-                    placer.plot(params, placedb, iteration, pos)
+                    placer.plot(params, self.placedb, iteration, pos)
             elif 'ntuplace_4dr' in params.detailed_place_engine:
                 dp_out_file = gp_out_file.replace(".gp.def", "")
                 cmd = "%s" % (params.detailed_place_engine)
@@ -221,5 +194,27 @@ class Dreamplace:
                 logging.warning(
                     "External detailed placement only supports NTUplace3/NTUplace4dr API"
                 )
+        self.metrics = metrics
+        self.pos = placer.pos[0]
 
-        return metrics, placer.pos[0]
+
+class DreamplaceBaseCollection:
+
+    def __init__(self, num_tiers):
+        self.num_tiers = num_tiers
+        self.dp_2d = DreamplaceBase()
+        self.dp_tier = [DreamplaceBase() for i in range(num_tiers)]
+        self.dp_terminal = DreamplaceBase()
+
+    def init_all_basic_place(self, d2d_params, timer):
+        self.dp_2d.init_basic_place(d2d_params.flatten_2d, timer)
+        # save each tier's placedb for backup
+        for i in range(self.num_tiers):
+            self.dp_tier[i].init_basic_place(d2d_params.flattened_tier[i],
+                                             timer)
+
+    def reload_die_basic_place(self, d2d_params, timer):
+        for i in range(self.num_tiers):
+            # update placedb_tier & data_tier using new terminal_insert result
+            self.dp_tier[i].init_basic_place(d2d_params.partition_tier[i],
+                                             timer)

@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-08-09 23:53:41
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-08-11 23:46:20
+LastEditTime: 2025-08-12 00:33:26
 FilePath: /D2D-placer/placer/tools/specpart_date.py
 Description: 
 '''
@@ -14,7 +14,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-class SpecPart:
+class SpecPartBase:
 
     def __init__(self, run_tmp_dir):
         super().__init__()
@@ -60,4 +60,4 @@ class SpecPart:
 
 
 if __name__ == "__main__":
-    SpecPart().partitioning("case2")
+    SpecPartBase().partitioning("case2")
