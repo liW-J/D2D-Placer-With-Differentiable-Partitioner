@@ -10,8 +10,8 @@ from enum import Enum, auto
 
 
 class Format(Enum):
-    ICCAD2022 = "iccad2022"
-    ICCAD2023 = "iccad2023"
+    ICCAD2022 = "ICCAD2022"
+    ICCAD2023 = "ICCAD2023"
 
 
 class Orient(Enum):

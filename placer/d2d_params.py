@@ -2,22 +2,22 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-06-13 20:00:00
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-08-10 02:12:42
+LastEditTime: 2025-08-11 21:16:58
 FilePath: /D2D-placer/placer/d2d_params.py
 Description: 
 '''
 import dreamplace.Params as Params
 import time
 import os
-
+from configure import compile_configurations
 
 class D2DParams:
 
     def __init__(self, json_path):
         self.tt_format = time.strftime("%Y-%m-%d_%H-%M-%S", time.localtime())
         self.case_name = os.path.splitext(os.path.basename(json_path))[0]
-        self.run_tmp_dir_root = f"run_tmp/{self.case_name}"
-        self.result_dir_root = f"results/{self.case_name}/{self.tt_format}"
+        self.run_tmp_dir_root = f"{compile_configurations['PLACER_RUNTMP_DIR']}/{self.case_name}"
+        self.result_dir_root = f"{compile_configurations['PLACER_RESULT_DIR']}/{self.case_name}/{self.tt_format}"
 
         self.flatten_2d = Params.Params()
         self.terminal = Params.Params()

@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-07-19 17:57:28
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-08-10 04:56:50
+LastEditTime: 2025-08-11 23:46:41
 FilePath: /D2D-placer/placer/d2d_placer.py
 Description: 
 '''
@@ -25,7 +25,8 @@ from colorama import Fore, Style
 from placer.ops.parser_txt.parser_txt import ParserTxt
 from placer.op_wrapper import OpWrapper
 from placer.d2d_params import D2DParams
-from placer.tools.dreamplace_data import Dreamplace, DreamplaceData
+from placer.tools.dreamplace_data import Dreamplace
+from placer.tools.specpart_date import SpecPart
 from placer.constants import Format, Orient
 import torch
 
@@ -82,6 +83,8 @@ class D2Dplacer:
         self.params = D2DParams(input_params)
         self.num_tiers = self.params.flatten_2d.num_tiers
         self.dreamplace = Dreamplace(self.num_tiers, self.params)
+        self.specpart = SpecPart(self.params.run_tmp_dir_root)
+        self.op_wrapper = None
 
         self.format = Format.ICCAD2022
 
@@ -101,8 +104,6 @@ class D2Dplacer:
         self.tier = None
         self.timer = None
         self.die_spec = None
-
-        self.op_wrapper = None
 
     def hpwl_d2d(self, logger=logging):
         if self.pos_terminal is not None:
@@ -184,7 +185,10 @@ class D2Dplacer:
         # bin-based partition
         # temporarily call tier result from file
         # self.tier = torch.load('placer/die_tensor.pt')
-        self.tier = self.tier.to(torch.int32)
+        # self.tier = self.tier.to(torch.int32)
+        
+        self.specpart.flow(self.tier,
+                           self.op_wrapper.d2d_op_collections.part_reader_op)
 
         # return partition result but not receive now
         # pos_2d/2 beceuse of 3d-placer set flattened_die size as die_size*2

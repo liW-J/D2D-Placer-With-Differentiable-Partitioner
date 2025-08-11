@@ -6,3 +6,6 @@
 	path = thirdparty/DREAMPlace
 	url = https://github.com/liW-J/DREAMPlace.git
 	
+[submodule "thirdparty/HypergraphPartitioning"]
+	path = thirdparty/HypergraphPartitioning
+	url = https://github.com/liW-J/HypergraphPartitioning.git

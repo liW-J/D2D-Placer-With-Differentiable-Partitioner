@@ -9,6 +9,7 @@ add_subdirectory(multi_bipartition)
 add_subdirectory(refinement)
 add_subdirectory(hpwl_d2d)
 add_subdirectory(macro_balance)
+add_subdirectory(part_reader)
 
 file(GLOB INSTALL_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/*.py")
 install(

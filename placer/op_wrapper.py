@@ -2,10 +2,11 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-06-13 15:35:55
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-08-10 03:54:18
+LastEditTime: 2025-08-11 21:46:33
 FilePath: /D2D-placer/placer/op_wrapper.py
 Description:
 '''
+import configure
 from placer.ops.hmetis.hmetis import Hmetis
 from placer.ops.multi_bipartition.multi_bipartition import MultiBipartition
 from placer.ops.partition_aux.partition_aux import PartitionAux
@@ -14,6 +15,7 @@ from placer.ops.terminal_aux.terminal_aux import TerminalAux
 from placer.ops.refinement.refinement import Refinement
 from placer.ops.hpwl_d2d.hpwl_d2d import HPWLD2D
 from placer.ops.macro_balance.macro_balance import MacroBalance
+from placer.ops.part_reader.part_reader import PartReader
 
 from placer.tools.out_fmt_iccad import OutfmtICCAD
 from placer.tools.pos_flattened import PosFlattened
@@ -28,8 +30,8 @@ class D2DOpCollection(object):
     def __init__(self, hmetis_op, multi_bipartition_op, init_partition_op,
                  out_fmt_iccad_op, pos_flattened_op, terminal_insert_op,
                  pin_pos_op, pin_pos_tier_op, terminal_legalize_op, avg_cut_op,
-                 terminal_aux_op, refinement_op, hpwl_d2d_op,
-                 macro_balance_op):
+                 terminal_aux_op, refinement_op, hpwl_d2d_op, macro_balance_op,
+                 part_reader_op):
         self.hmetis_op = hmetis_op
         self.multi_bipartition_op = multi_bipartition_op
         self.init_partition_op = init_partition_op
@@ -44,6 +46,7 @@ class D2DOpCollection(object):
         self.refinement_op = refinement_op
         self.hpwl_d2d_op = hpwl_d2d_op
         self.macro_balance_op = macro_balance_op
+        self.part_reader_op = part_reader_op
 
 
 class OpWrapper(object):
@@ -108,6 +111,7 @@ class OpWrapper(object):
         self.refinement_op = self.build_refinement()
         self.hpwl_d2d_op = self.build_hpwl_d2d()
         self.macro_balance_op = self.build_macro_balance()
+        self.part_reader_op = self.build_part_reader()
 
         self.d2d_op_collections = D2DOpCollection(
             hmetis_op=self.hmetis_op,
@@ -123,7 +127,8 @@ class OpWrapper(object):
             terminal_aux_op=self.terminal_aux_op,
             refinement_op=self.refinement_op,
             hpwl_d2d_op=self.hpwl_d2d_op,
-            macro_balance_op=self.macro_balance_op)
+            macro_balance_op=self.macro_balance_op,
+            part_reader_op=self.part_reader_op)
 
     def build_hmetis(self):
 
@@ -459,3 +464,14 @@ class OpWrapper(object):
                 tier, node_orient, self.data_collections_2d.movable_macro_mask)
 
         return build_macro_balance_op
+
+    def build_part_reader(self):
+        part_reader_op = PartReader(
+            self.data_collections_2d.flat_net2pin_map,
+            self.data_collections_2d.flat_net2pin_start_map,
+            self.data_collections_2d.pin2node_map,
+            self.data_collections_2d.net_weights,
+            self.data_collections_2d.net_mask_all,
+            self.placedb_2d.num_movable_nodes)
+
+        return part_reader_op
