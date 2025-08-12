@@ -13,8 +13,8 @@ from placer.constants import Format, Orient
 
 class OutfmtICCAD:
 
-    def __init__(self, placedb_tier, params, die_spec):
-        self.placedb_tier = placedb_tier
+    def __init__(self, data_tier, params, die_spec):
+        self.data_tier = data_tier
         self.params = params
         self.die_spec = die_spec
         self.terminal_size_x = die_spec.terminalSizeX
@@ -40,13 +40,13 @@ class OutfmtICCAD:
             # write movable nodes in each tier
             for tier_id in range(num_tiers):
 
-                node_x, node_y = self.placedb_tier[tier_id].unscale_pl(
+                node_x, node_y = self.data_tier[tier_id].placedb.unscale_pl(
                     self.params.shift_factor, self.params.scale_factor)
                 dieName = "TopDiePlacement" if tier_id == 0 else "BottomDiePlacement"
 
-                num_movable_nodes = self.placedb_tier[
-                    tier_id].num_movable_nodes
-                rawdb = self.placedb_tier[tier_id].rawdb
+                num_movable_nodes = self.data_tier[
+                    tier_id].placedb.num_movable_nodes
+                rawdb = self.data_tier[tier_id].placedb.rawdb
 
                 content += f"{dieName} {num_movable_nodes}\n"
 

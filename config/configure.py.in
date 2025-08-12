@@ -1,9 +1,11 @@
-##
-# @file   configure.py
-# @author Yibo Lin
-# @date   Feb 2020
-# @brief  Record all configurations including compilation 
-#
+'''
+Author: JeanneWillis hi@jeannewillis.cn
+Date: 2025-02-24 18:32:05
+LastEditors: JeanneWillis hi@jeannewillis.cn
+LastEditTime: 2025-08-11 00:35:40
+FilePath: /D2D-placer/config/configure.py.in
+Description: 
+'''
 
 import sys
 
@@ -16,7 +18,8 @@ compile_configurations = {
         "CMAKE_CC_COMPILER" : "${CMAKE_CC_COMPILER}", 
         "CMAKE_BUILD_TYPE" : "${CMAKE_BUILD_TYPE}", 
         "CMAKE_CXX_ABI" : "${CMAKE_CXX_ABI}", 
-        "CMAKE_CXX_STANDARD" : "${CMAKE_CXX_STANDARD}", 
+        "CMAKE_CXX_STANDARD" : "${CMAKE_CXX_STANDARD}",
+        "CMAKE_INSTALL_PREFIX" : "${CMAKE_INSTALL_PREFIX}",
         "PYTHON" : "${PYTHON}", 
         "Boost_DIR" : "${Boost_DIR}", 
         "Boost_INCLUDE_DIRS" : "${Boost_INCLUDE_DIRS}", 
@@ -35,6 +38,7 @@ compile_configurations = {
         "PLACER_TEST_DIR" : "${PLACER_TEST_DIR}", 
         "PLACER_THIRDPARTY_DIR" : "${PLACER_THIRDPARTY_DIR}", 
         "PLACER_RESULT_DIR" : "${PLACER_RESULT_DIR}", 
+        "PLACER_RUNTMP_DIR" : "${PLACER_RUNTMP_DIR}",
         "PLACER_SOURCE_DIR" : "${PLACER_SOURCE_DIR}", 
         "PLACER_INSTALL_DIR" : "${PLACER_INSTALL_DIR}",
         "PLACER_BUILD_DIR" : "${PLACER_BUILD_DIR}",      
