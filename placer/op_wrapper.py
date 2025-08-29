@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-06-13 15:35:55
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-08-12 00:28:45
+LastEditTime: 2025-08-24 15:23:10
 FilePath: /D2D-placer/placer/op_wrapper.py
 Description:
 '''
@@ -15,7 +15,7 @@ from placer.ops.terminal_aux.terminal_aux import TerminalAux
 from placer.ops.refinement.refinement import Refinement
 from placer.ops.hpwl_d2d.hpwl_d2d import HPWLD2D
 from placer.ops.macro_balance.macro_balance import MacroBalance
-from placer.ops.part_reader.part_reader import PartReader
+from placer.ops.parts_reader.parts_reader import PartsReader
 
 from placer.tools.out_fmt_iccad import OutfmtICCAD
 from placer.tools.pos_flattened import PosFlattened
@@ -31,7 +31,7 @@ class D2DOpCollection(object):
                  out_fmt_iccad_op, pos_flattened_op, terminal_insert_op,
                  pin_pos_op, pin_pos_tier_op, terminal_legalize_op, avg_cut_op,
                  terminal_aux_op, refinement_op, hpwl_d2d_op, macro_balance_op,
-                 part_reader_op):
+                 parts_reader_op):
         self.hmetis_op = hmetis_op
         self.multi_bipartition_op = multi_bipartition_op
         self.init_partition_op = init_partition_op
@@ -46,7 +46,7 @@ class D2DOpCollection(object):
         self.refinement_op = refinement_op
         self.hpwl_d2d_op = hpwl_d2d_op
         self.macro_balance_op = macro_balance_op
-        self.part_reader_op = part_reader_op
+        self.parts_reader_op = parts_reader_op
 
 
 class OpWrapper(object):
@@ -111,7 +111,7 @@ class OpWrapper(object):
         self.refinement_op = self.build_refinement()
         self.hpwl_d2d_op = self.build_hpwl_d2d()
         self.macro_balance_op = self.build_macro_balance()
-        self.part_reader_op = self.build_part_reader()
+        self.parts_reader_op = self.build_parts_reader()
 
         self.d2d_op_collections = D2DOpCollection(
             hmetis_op=self.hmetis_op,
@@ -128,7 +128,7 @@ class OpWrapper(object):
             refinement_op=self.refinement_op,
             hpwl_d2d_op=self.hpwl_d2d_op,
             macro_balance_op=self.macro_balance_op,
-            part_reader_op=self.part_reader_op)
+            parts_reader_op=self.parts_reader_op)
 
     def build_hmetis(self):
 
@@ -465,8 +465,8 @@ class OpWrapper(object):
 
         return build_macro_balance_op
 
-    def build_part_reader(self):
-        part_reader_op = PartReader(
+    def build_parts_reader(self):
+        parts_reader_op = PartsReader(
             self.data_collections_2d.flat_net2pin_map,
             self.data_collections_2d.flat_net2pin_start_map,
             self.data_collections_2d.pin2node_map,
@@ -474,4 +474,4 @@ class OpWrapper(object):
             self.data_collections_2d.net_mask_all,
             self.placedb_2d.num_movable_nodes)
 
-        return part_reader_op
+        return parts_reader_op

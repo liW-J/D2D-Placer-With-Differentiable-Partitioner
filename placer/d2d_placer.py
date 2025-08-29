@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-07-19 17:57:28
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-08-12 00:48:47
+LastEditTime: 2025-08-29 17:54:30
 FilePath: /D2D-placer/placer/d2d_placer.py
 Description: 
 '''
@@ -27,6 +27,7 @@ from placer.op_wrapper import OpWrapper
 from placer.d2d_params import D2DParams
 from placer.tools.dreamplace_base import DreamplaceBaseCollection
 from placer.tools.specpart_base import SpecPartBase
+from placer.tools.graph_cutsize import GraphCutsize
 from placer.constants import Format, Orient
 import torch
 
@@ -180,7 +181,19 @@ class D2Dplacer:
         # self.tier = self.tier.to(torch.int32)
 
         self.specpart.flow(self.tier,
-                           self.op_wrapper.d2d_op_collections.part_reader_op)
+                           self.op_wrapper.d2d_op_collections.parts_reader_op)
+
+        graph_cutsize = GraphCutsize(
+            "/D2D-placer/install/run_tmp/case2_hidden/circuit.hgr",
+            "/D2D-placer/install/thirdparty/HypergraphPartitioning/SpecPart/circuit.hgr.part.2"
+        )
+        # new_clique_cut, new_cutnet = graph_cutsize.minimize_clique_cutsize_greedy(
+        # )
+        # graph_cutsize.save_partition_to_file(
+        #     "/D2D-placer/install/run_tmp/circuit.hgr.part.2")
+        # self.tier = self.op_wrapper.d2d_op_collections.parts_reader_op(
+        #     self.tier, "/D2D-placer/install/run_tmp")
+        self.tier = self.tier.to(torch.int32)
 
         # return partition result but not receive now
         # pos_2d/2 beceuse of 3d-placer set flattened_die size as die_size*2
@@ -190,17 +203,16 @@ class D2Dplacer:
             self.tier, self.dreamplace.dp_2d.pos / 2, self.node_orient)
 
         if self.format == Format.ICCAD2023:
-
             # update placedb_tier & data_tier using new terminal_insert result
             self.dreamplace.reload_die_basic_place(self.params, self.timer)
 
             self.tier = self.op_wrapper.d2d_op_collections.macro_balance_op(
                 self.tier, self.node_orient)
-
             self.cut_net_mask = self.op_wrapper.d2d_op_collections.terminal_insert_op(
                 self.tier, self.dreamplace.dp_2d.pos / 2, self.node_orient)
 
         self.num_terminal_NIs = int(self.cut_net_mask.sum().item())
+        breakpoint()
 
     def terminal_insert(self):
         self.op_wrapper.d2d_op_collections.terminal_insert_op(

@@ -51,12 +51,12 @@ class SpecPartBase:
         jl.cd(self.placer_dir)
         logger.info("Partitioning completed successfully")
 
-    def part_reader(self, tier, part_reader_op):
-        return part_reader_op(tier, self.specpart_path)
+    def part_reader(self, tier, parts_reader_op):
+        return parts_reader_op(tier, self.specpart_path)
 
-    def flow(self, tier, part_reader_op):
+    def flow(self, tier, parts_reader_op):
         self.partitioning()
-        return self.part_reader(tier, part_reader_op)
+        return self.part_reader(tier, parts_reader_op)
 
 
 if __name__ == "__main__":
