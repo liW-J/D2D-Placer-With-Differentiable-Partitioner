@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-07-19 17:57:28
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-08-29 17:54:30
+LastEditTime: 2025-09-08 11:04:08
 FilePath: /D2D-placer/placer/d2d_placer.py
 Description: 
 '''
@@ -25,11 +25,14 @@ from colorama import Fore, Style
 from placer.ops.parser_txt.parser_txt import ParserTxt
 from placer.op_wrapper import OpWrapper
 from placer.d2d_params import D2DParams
-from placer.tools.dreamplace_base import DreamplaceBaseCollection
-from placer.tools.specpart_base import SpecPartBase
+from placer.tools.thirdparty_api.dreamplace_base import DreamplaceBaseCollection
+from placer.tools.thirdparty_api.specpart_base import SpecPartBase
 from placer.tools.graph_cutsize import GraphCutsize
 from placer.constants import Format, Orient
 import torch
+
+# Import the analyzer (lazy import to avoid circular dependencies)
+from placer.tools.d2d_result_analyzer.d2d_result_analyzer import D2DResultAnalyzer
 
 
 def printWelcome():
@@ -180,13 +183,13 @@ class D2Dplacer:
         # self.tier = torch.load('placer/die_tensor.pt')
         # self.tier = self.tier.to(torch.int32)
 
-        self.specpart.flow(self.tier,
-                           self.op_wrapper.d2d_op_collections.parts_reader_op)
+        # self.specpart.flow(self.tier,
+        #                    self.op_wrapper.d2d_op_collections.parts_reader_op)
 
-        graph_cutsize = GraphCutsize(
-            "/D2D-placer/install/run_tmp/case2_hidden/circuit.hgr",
-            "/D2D-placer/install/thirdparty/HypergraphPartitioning/SpecPart/circuit.hgr.part.2"
-        )
+        # graph_cutsize = GraphCutsize(
+        #     "/D2D-placer/install/run_tmp/case2_hidden/circuit.hgr",
+        #     "/D2D-placer/install/thirdparty/HypergraphPartitioning/SpecPart/circuit.hgr.part.2"
+        # )
         # new_clique_cut, new_cutnet = graph_cutsize.minimize_clique_cutsize_greedy(
         # )
         # graph_cutsize.save_partition_to_file(
@@ -262,6 +265,40 @@ class D2Dplacer:
             self.dreamplace.dp_terminal.placedb, self.params.case_name,
             self.format, self.node_orient)
 
+    def analyze_results(self):
+        """
+        Analyze placement results using the integrated analysis tools
+        
+        """
+
+        def analyze_placer_output(benchmark_name: str,
+                                  result_dir: str,
+                                  logger=logging):
+            """
+            Analyze placer output for a specific benchmark
+            
+            Args:
+                benchmark_name: Name of the benchmark case
+                output_dir: Directory containing placement output
+                result_dir: Result directory 
+                
+            Returns:
+                Analysis summary
+            """
+            # Construct file paths
+            benchmark_file = f"benchmarks/iccad2022/{benchmark_name}.txt"
+            output_file = os.path.join(result_dir, "output.txt")
+
+            analyzer = D2DResultAnalyzer(benchmark_file=benchmark_file,
+                                         output_file=output_file,
+                                         result_dir=result_dir,
+                                         logger=logger)
+
+            return analyzer.run_comprehensive_analysis()
+
+        analyze_placer_output(self.params.case_name,
+                              self.params.result_dir_root)
+
 
 if __name__ == "__main__":
     """
@@ -302,3 +339,6 @@ if __name__ == "__main__":
                                 ntuplace_flag=True)
     d2d_placer.hpwl_d2d(d2d_logger)
     d2d_placer.output()
+
+    # Analyze placement results
+    d2d_placer.analyze_results()

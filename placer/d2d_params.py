@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-06-13 20:00:00
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-08-11 21:16:58
+LastEditTime: 2025-09-08 00:31:32
 FilePath: /D2D-placer/placer/d2d_params.py
 Description: 
 '''
@@ -47,9 +47,18 @@ class D2DParams:
                 i].aux_input = f"{self.run_tmp_dir_root}/partition/tier{i}.aux"
 
         # special params
-        self.terminal.random_center_init_flag = 0
+        self.terminal.random_center_init_flag = 1
         self.terminal.global_place_stages[0]["iteration"] = 500
         self.terminal.stop_overflow = 0.01
+        
+        self.terminal.global_place_flag = 0
+        self.terminal.legalize_flag = 0
+        self.terminal.detailed_place_flag = 0
+        
+        self.flatten_2d.global_place_flag = 0
+        self.flatten_2d.legalize_flag = 0
+        self.flatten_2d.detailed_place_flag = 0
+        
         self.flatten_2d.legalize_flag = 0
         # self.flatten_2d.target_density = 2.0
 
