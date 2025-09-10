@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-07-19 17:57:28
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-09-08 11:04:08
+LastEditTime: 2025-09-10 00:38:40
 FilePath: /D2D-placer/placer/d2d_placer.py
 Description: 
 '''
@@ -288,10 +288,12 @@ class D2Dplacer:
             # Construct file paths
             benchmark_file = f"benchmarks/iccad2022/{benchmark_name}.txt"
             output_file = os.path.join(result_dir, "output.txt")
+            flattened_pl_file = os.path.join(result_dir, "flattened-2d/flattened-2d.gp.pl")
 
             analyzer = D2DResultAnalyzer(benchmark_file=benchmark_file,
                                          output_file=output_file,
                                          result_dir=result_dir,
+                                         flattened_pl_file=flattened_pl_file,
                                          logger=logger)
 
             return analyzer.run_comprehensive_analysis()

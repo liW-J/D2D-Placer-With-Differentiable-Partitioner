@@ -11,8 +11,9 @@ This script analyses three types of nets:
 import re
 import json
 from collections import defaultdict
-import matplotlib.pyplot as plt
 import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.gridspec import GridSpec
 
 # Set matplotlib backend before importing pyplot
 import matplotlib
@@ -26,16 +27,21 @@ plt.rcParams['axes.unicode_minus'] = False
 
 class D2DNetAnalyzer:
 
-    def __init__(self, benchmark_file: str, output_file: str):
+    def __init__(self,
+                 benchmark_file: str,
+                 output_file: str,
+                 flattened_pl_file: str = None):
         """
         Initialize the analyzer
         
         Args:
             benchmark_file: benchmark file path (case2_hidden.txt)
             output_file: output file path (output.txt)
+            flattened_pl_file: flattened-2d placement file path (flattened-2d.gp.pl)
         """
         self.benchmark_file = benchmark_file
         self.output_file = output_file
+        self.flattened_pl_file = flattened_pl_file
 
         # store data
         self.nets = {}  # net name -> net information
@@ -71,6 +77,13 @@ class D2DNetAnalyzer:
 
         # Additional statistics for crossing nets
         self.crossing_net_details = {}  # net_name -> detailed information
+
+        # Flattened-2D analyzer
+        self.flattened_analyzer = None
+        if self.flattened_pl_file:
+            from .flattened_2d_analyzer import Flattened2DAnalyzer
+            self.flattened_analyzer = Flattened2DAnalyzer(
+                self.flattened_pl_file)
 
     def parse_benchmark_file(self):
         """Parse the benchmark file, extract net and instance information"""
@@ -614,13 +627,137 @@ class D2DNetAnalyzer:
         self.parse_output_file()
         self.classify_nets()
         self.calculate_all_hpwl()
+
+        # add flattened-2d analysis
+        if self.flattened_analyzer:
+            self.analyze_flattened_2d_hpwl()
+
         self.generate_statistics()
 
-        # 保存详细结果
+        # save detailed results
         self.save_detailed_results(
             f'{result_dir_root}/d2d_net_analysis_results.json')
 
         print("\nAnalysis completed!")
+
+    def analyze_flattened_2d_hpwl(self):
+        """Analyze HPWL in flattened-2d vs partitioned"""
+        if not self.flattened_analyzer:
+            return
+
+        # parse flattened-2d placement file
+        self.flattened_analyzer.parse_placement_file()
+
+        # analyze crossing nets' flattened-2d HPWL
+        crossing_nets = self.hpwl_stats['crossing']['nets']
+        enhanced_crossing_nets = self.flattened_analyzer.analyze_crossing_nets_flattened(
+            crossing_nets, self.net_instances, self.lib_cells,
+            self.instance_types)
+
+        # update crossing nets data
+        self.hpwl_stats['crossing']['nets'] = enhanced_crossing_nets
+
+        # calculate flattened-2d total HPWL statistics
+        total_hpwl_flattened = sum(
+            net.get('hpwl_flattened_2d', 0) for net in enhanced_crossing_nets)
+        total_hpwl_partitioned = sum(
+            net.get('hpwl_total_partitioned', 0)
+            for net in enhanced_crossing_nets)
+
+        # add flattened-2d statistics
+        self.hpwl_stats['crossing'][
+            'total_hpwl_flattened_2d'] = total_hpwl_flattened
+        self.hpwl_stats['crossing'][
+            'total_hpwl_partitioned'] = total_hpwl_partitioned
+        self.hpwl_stats['crossing'][
+            'hpwl_improvement'] = total_hpwl_partitioned - total_hpwl_flattened
+        self.hpwl_stats['crossing']['hpwl_improvement_ratio'] = (
+            (total_hpwl_partitioned - total_hpwl_flattened) /
+            total_hpwl_partitioned * 100 if total_hpwl_partitioned > 0 else 0)
+
+    def create_flattened_2d_comparison_visualization(self, results):
+        """Create flattened-2d HPWL comparison visualization"""
+        if not self.flattened_analyzer:
+            return
+
+        crossing_nets = results['hpwl_statistics']['crossing']['nets']
+        if not crossing_nets or 'hpwl_flattened_2d' not in crossing_nets[0]:
+            return
+
+        # prepare data
+        net_names = [net['net_name'] for net in crossing_nets]
+        hpwl_partitioned = [
+            net.get('hpwl_total_partitioned', 0) for net in crossing_nets
+        ]
+        hpwl_flattened = [
+            net.get('hpwl_flattened_2d', 0) for net in crossing_nets
+        ]
+        improvements = [
+            net.get('hpwl_improvement', 0) for net in crossing_nets
+        ]
+
+        # creat visualization
+        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(15, 12))
+        fig.suptitle('Flattened-2D vs Partitioned HPWL Comparison',
+                     fontsize=16)
+
+        # 1. HPWL comparison scatter plot
+        ax1.scatter(hpwl_flattened, hpwl_partitioned, alpha=0.6, s=50)
+        ax1.plot([0, max(max(hpwl_flattened), max(hpwl_partitioned))],
+                 [0, max(max(hpwl_flattened), max(hpwl_partitioned))],
+                 'r--',
+                 label='y=x')
+        ax1.set_xlabel('Flattened-2D HPWL')
+        ax1.set_ylabel('Partitioned HPWL')
+        ax1.set_title('HPWL Comparison: Flattened-2D vs Partitioned')
+        ax1.legend()
+        ax1.grid(True, alpha=0.3)
+
+        # 2. distribution of HPWL improvements
+        ax2.hist(improvements, bins=20, alpha=0.7, edgecolor='black')
+        ax2.set_xlabel('HPWL Improvement')
+        ax2.set_ylabel('Number of Nets')
+        ax2.set_title('Distribution of HPWL Improvements')
+        ax2.axvline(x=0, color='red', linestyle='--', label='No improvement')
+        ax2.legend()
+        ax2.grid(True, alpha=0.3)
+
+        # 3. distribution of HPWL improvement ratios
+        improvement_ratios = [
+            net.get('hpwl_improvement_ratio', 0) for net in crossing_nets
+        ]
+        ax3.hist(improvement_ratios, bins=20, alpha=0.7, edgecolor='black')
+        ax3.set_xlabel('HPWL Improvement Ratio (%)')
+        ax3.set_ylabel('Number of Nets')
+        ax3.set_title('Distribution of HPWL Improvement Ratios')
+        ax3.axvline(x=0, color='red', linestyle='--', label='No improvement')
+        ax3.legend()
+        ax3.grid(True, alpha=0.3)
+
+        # 4. top 20 nets with largest HPWL improvements
+        sorted_nets = sorted(zip(net_names, improvements),
+                             key=lambda x: x[1],
+                             reverse=True)
+        top_20_names = [net[0] for net in sorted_nets[:20]]
+        top_20_improvements = [net[1] for net in sorted_nets[:20]]
+
+        ax4.barh(range(len(top_20_names)), top_20_improvements)
+        ax4.set_yticks(range(len(top_20_names)))
+        ax4.set_yticklabels(top_20_names)
+        ax4.set_xlabel('HPWL Improvement')
+        ax4.set_title('Top 20 Nets with Largest HPWL Improvements')
+        ax4.grid(True, alpha=0.3)
+
+        plt.tight_layout()
+
+        # save visualization
+        output_file = 'flattened_2d_hpwl_comparison.png'
+        plt.savefig(output_file, dpi=300, bbox_inches='tight')
+        plt.close()
+
+        print(
+            f"Flattened-2D HPWL comparison visualization saved to: {output_file}"
+        )
 
     def load_analysis_results(self, file_path: str):
         """Load analysis results"""
@@ -649,7 +786,7 @@ class D2DNetAnalyzer:
             f"   Crossing net: {summary['crossing_nets_count']:,} ({summary['crossing_nets_count']/summary['total_nets']*100:.1f}%)"
         )
 
-        # HPWL统计
+        # HPWL statistics
         total_hpwl = hpwl_stats['top_die_only']['total_hpwl'] + hpwl_stats[
             'bottom_die_only']['total_hpwl'] + hpwl_stats['crossing'][
                 'total_hpwl']
@@ -806,6 +943,21 @@ class D2DNetAnalyzer:
             print(
                 f"   Median HPWL of crossing nets: {np.median(crossing_hpwl_list):.2f}"
             )
+
+        # Flattened-2D HPWL statistics
+        print(f"\n📊 Flattened-2D HPWL Statistics:")
+        print(
+            f"   Total HPWL of crossing nets in Flattened-2D: {hpwl_stats['crossing']['total_hpwl_flattened_2d']:,}"
+        )
+        print(
+            f"   Total HPWL of crossing nets in Partitioned: {hpwl_stats['crossing']['total_hpwl_partitioned']:,}"
+        )
+        print(
+            f"   HPWL improvement: {hpwl_stats['crossing']['hpwl_improvement']:,}"
+        )
+        print(
+            f"   HPWL improvement ratio: {hpwl_stats['crossing']['hpwl_improvement_ratio']:.2f}%"
+        )
 
     def create_visualizations(self, results):
         """Create comprehensive visualizations"""
@@ -1019,27 +1171,29 @@ class D2DNetAnalyzer:
             self.create_crossing_net_analysis(hpwl_stats['crossing']['nets'],
                                               results)
 
+        # create flattened-2d comparison visualization
+        if self.flattened_analyzer:
+            self.create_flattened_2d_comparison_visualization(results)
+
     def create_crossing_net_analysis(self, crossing_nets, results):
         """create detailed analysis chart for crossing nets"""
-        # 使用GridSpec创建自定义布局：上方3个图表，下方2个图表平均占满宽度
-        from matplotlib.gridspec import GridSpec
 
         fig = plt.figure(figsize=(24, 12))
         fig.suptitle('Crossing Net detailed analysis',
                      fontsize=16,
                      fontweight='bold')
 
-        # 创建GridSpec：2行，3列
+        # create GridSpec: 2 rows, 3 columns
         gs = GridSpec(2, 3, figure=fig)
 
-        # 上方3个图表：每个占1列
-        ax1 = fig.add_subplot(gs[0, 0])  # 第一行第一列
-        ax2 = fig.add_subplot(gs[0, 1])  # 第一行第二列
-        ax3 = fig.add_subplot(gs[0, 2])  # 第一行第三列
+        # 3 charts in the top row: each takes 1 column
+        ax1 = fig.add_subplot(gs[0, 0])
+        ax2 = fig.add_subplot(gs[0, 1])
+        ax3 = fig.add_subplot(gs[0, 2])
 
-        # 下方2个图表：第一个占1.5列，第二个占1.5列
-        ax4 = fig.add_subplot(gs[1, :1])  # 第二行，跨越前两列
-        ax5 = fig.add_subplot(gs[1, 1:])  # 第二行，跨越最后一列
+        # 2 charts in the bottom row: the first takes 1.5 columns, the second takes 1.5 columns
+        ax4 = fig.add_subplot(gs[1, :1])
+        ax5 = fig.add_subplot(gs[1, 1:])
 
         # extract data
         hpwl_top = [net['hpwl_top'] for net in crossing_nets]
@@ -1076,13 +1230,13 @@ class D2DNetAnalyzer:
                 # Create degree-based scatter plot with rolling legend
                 sorted_degrees = sorted(degree_analysis.keys())
 
-                # 滚动图例：优先显示最大的20个degree
+                # rolling legend: display the largest 20 degrees first
                 if len(sorted_degrees) > 20:
-                    # 选择最大的20个degree
+                    # select the largest 20 degrees
                     visible_degrees = sorted_degrees[-20:]
                     hidden_degrees = sorted_degrees[:-20]
 
-                    # 绘制可见的degree
+                    # plot the visible degrees
                     for degree in visible_degrees:
                         top_data = degree_analysis[degree]['top_hpwls']
                         bottom_data = degree_analysis[degree]['bottom_hpwls']
@@ -1095,7 +1249,7 @@ class D2DNetAnalyzer:
                                         s=50,
                                         label=f'Degree {degree}')
 
-                    # 绘制隐藏的degree（不显示在图例中）
+                    # plot the hidden degrees (not displayed in the legend)
                     for degree in hidden_degrees:
                         top_data = degree_analysis[degree]['top_hpwls']
                         bottom_data = degree_analysis[degree]['bottom_hpwls']
@@ -1105,19 +1259,20 @@ class D2DNetAnalyzer:
                             ax1.scatter(
                                 top_data[:min_len],
                                 bottom_data[:min_len],
-                                alpha=0.3,  # 降低透明度
-                                s=30,  # 减小点的大小
-                                color='gray',  # 使用灰色
-                                label='_nolegend_')  # 不显示在图例中
+                                alpha=0.3,  # decrease transparency
+                                s=30,  # decrease point size
+                                color='gray',  # use gray
+                                label='_nolegend_'
+                            )  # not displayed in the legend
 
-                    # 添加省略号说明
+                    # add ellipsis explanation
                     ax1.scatter(
                         [], [],
                         alpha=0,
                         label=f'... and {len(hidden_degrees)} more degrees')
 
                 else:
-                    # 正常显示所有degree
+                    # display all degrees
                     for degree in sorted_degrees:
                         top_data = degree_analysis[degree]['top_hpwls']
                         bottom_data = degree_analysis[degree]['bottom_hpwls']
@@ -1155,7 +1310,7 @@ class D2DNetAnalyzer:
                 ax1.set_title('Top vs Bottom HPWL by Degree')
                 ax1.grid(True, alpha=0.3)
 
-                # 根据degree数量调整图例布局
+                # adjust legend layout according to the number of degrees
                 if len(sorted_degrees) > 20:
                     ax1.legend(bbox_to_anchor=(1.05, 1),
                                loc='upper left',
@@ -1189,7 +1344,6 @@ class D2DNetAnalyzer:
         # 2. Degree vs HPWL scatter plot with rolling legend
         # Load degree information from the main results file
         try:
-            # with open('d2d_net_analysis_results.json', 'r', encoding='utf-8') as f:
             full_results = results
 
             if 'crossing_net_details' in full_results:
@@ -1209,11 +1363,11 @@ class D2DNetAnalyzer:
                 sorted_degrees = sorted(degree_data.keys())
 
                 if len(sorted_degrees) > 20:
-                    # 选择最大的20个degree
+                    # select the largest 20 degrees
                     visible_degrees = sorted_degrees[-20:]
                     hidden_degrees = sorted_degrees[:-20]
 
-                    # 绘制可见的degree
+                    # plot the visible degrees
                     for degree in visible_degrees:
                         hpwls = degree_data[degree]
                         ax2.scatter([degree] * len(hpwls),
@@ -1222,7 +1376,7 @@ class D2DNetAnalyzer:
                                     s=50,
                                     label=f'Degree {degree}')
 
-                    # 绘制隐藏的degree（不显示在图例中）
+                    # plot the hidden degrees (not displayed in the legend)
                     for degree in hidden_degrees:
                         hpwls = degree_data[degree]
                         ax2.scatter([degree] * len(hpwls),
@@ -1232,14 +1386,13 @@ class D2DNetAnalyzer:
                                     color='gray',
                                     label='_nolegend_')
 
-                    # 添加省略号说明
                     ax2.scatter(
                         [], [],
                         alpha=0,
                         label=f'... and {len(hidden_degrees)} more degrees')
 
                 else:
-                    # 正常显示所有degree
+                    # display all degrees
                     for degree in sorted_degrees:
                         hpwls = degree_data[degree]
                         ax2.scatter([degree] * len(hpwls),
@@ -1253,7 +1406,7 @@ class D2DNetAnalyzer:
                 ax2.set_title('Net Degree vs HPWL')
                 ax2.grid(True, alpha=0.3)
 
-                # 根据degree数量调整图例布局
+                # adjust legend layout according to the number of degrees
                 if len(sorted_degrees) > 20:
                     ax2.legend(bbox_to_anchor=(1.05, 1),
                                loc='upper left',
@@ -1302,12 +1455,10 @@ class D2DNetAnalyzer:
                 # Create scatter plot
                 sorted_total_degrees = sorted(degree_data.keys())
 
-                # 滚动图例：优先显示最大的20个total degree
                 if len(sorted_total_degrees) > 20:
                     visible_total_degrees = sorted_total_degrees[-20:]
                     hidden_total_degrees = sorted_total_degrees[:-20]
 
-                    # 绘制可见的total degree
                     for total_degree in visible_total_degrees:
                         top_degs = degree_data[total_degree]['top_degrees']
                         bottom_degs = degree_data[total_degree][
@@ -1321,7 +1472,7 @@ class D2DNetAnalyzer:
                                         s=50,
                                         label=f'Total Degree {total_degree}')
 
-                    # 绘制隐藏的total degree（不显示在图例中）
+                    # plot the hidden total degrees (not displayed in the legend)
                     for total_degree in hidden_total_degrees:
                         top_degs = degree_data[total_degree]['top_degrees']
                         bottom_degs = degree_data[total_degree][
@@ -1336,7 +1487,7 @@ class D2DNetAnalyzer:
                                         color='gray',
                                         label='_nolegend_')
 
-                    # 添加省略号说明
+                    # add ellipsis explanation
                     ax3.scatter(
                         [], [],
                         alpha=0,
@@ -1345,7 +1496,7 @@ class D2DNetAnalyzer:
                     )
 
                 else:
-                    # 正常显示所有total degree
+                    # display all total degrees
                     for total_degree in sorted_total_degrees:
                         top_degs = degree_data[total_degree]['top_degrees']
                         bottom_degs = degree_data[total_degree][
@@ -1385,7 +1536,7 @@ class D2DNetAnalyzer:
                 ax3.set_title('Top vs Bottom Degree by Total Degree')
                 ax3.grid(True, alpha=0.3)
 
-                # 根据total degree数量调整图例布局
+                # adjust legend layout according to the number of total degrees
                 if len(sorted_total_degrees) > 20:
                     ax3.legend(bbox_to_anchor=(1.05, 1),
                                loc='upper left',
@@ -1449,21 +1600,21 @@ class D2DNetAnalyzer:
                 # Create degree distribution bar chart with HPWL statistics
                 degrees = sorted(degree_stats.keys())
 
-                # 始终显示全部degree，不使用滚动图例
+                # display all degrees, no rolling legend
                 counts = [degree_stats[d]['count'] for d in degrees]
                 avg_hpwls = [
                     degree_stats[d]['total_hpwl'] / degree_stats[d]['count']
                     if degree_stats[d]['count'] > 0 else 0 for d in degrees
                 ]
 
-                # 创建柱状图
+                # create bar chart
                 bars = ax5.bar(degrees, counts, color='skyblue', alpha=0.7)
                 ax5.set_xlabel('Net Degree')
                 ax5.set_ylabel('Net Count', color='skyblue')
                 ax5.set_title('Degree Distribution and Average HPWL')
                 ax5.grid(True, alpha=0.3)
 
-                # 添加HPWL线图
+                # add HPWL line chart
                 ax5_twin = ax5.twinx()
                 line = ax5_twin.plot(degrees,
                                      avg_hpwls,
@@ -1474,7 +1625,7 @@ class D2DNetAnalyzer:
                 ax5_twin.set_ylabel('Average HPWL', color='red')
                 ax5_twin.tick_params(axis='y', labelcolor='red')
 
-                # 添加数值标签
+                # add value labels
                 for bar, count in zip(bars, counts):
                     height = bar.get_height()
                     ax5.text(bar.get_x() + bar.get_width() / 2.,
@@ -1493,7 +1644,7 @@ class D2DNetAnalyzer:
                                   va='bottom',
                                   color='red')
 
-                # 添加图例
+                # add legend
                 ax5_twin.legend(loc='upper right')
             else:
                 ax5.text(0.5,
@@ -1511,8 +1662,6 @@ class D2DNetAnalyzer:
                      va='center',
                      transform=ax5.transAxes)
             ax5.set_title('Degree Distribution and HPWL Statistics')
-
-        # 不再需要隐藏第6个子图，因为我们已经使用GridSpec自定义了布局
 
         plt.tight_layout()
         plt.savefig('crossing_net_analysis.png', dpi=300, bbox_inches='tight')

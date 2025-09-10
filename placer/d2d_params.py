@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-06-13 20:00:00
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-09-08 00:31:32
+LastEditTime: 2025-09-10 00:39:09
 FilePath: /D2D-placer/placer/d2d_params.py
 Description: 
 '''
@@ -10,6 +10,7 @@ import dreamplace.Params as Params
 import time
 import os
 from configure import compile_configurations
+
 
 class D2DParams:
 
@@ -50,15 +51,11 @@ class D2DParams:
         self.terminal.random_center_init_flag = 1
         self.terminal.global_place_stages[0]["iteration"] = 500
         self.terminal.stop_overflow = 0.01
-        
+
         self.terminal.global_place_flag = 0
         self.terminal.legalize_flag = 0
         self.terminal.detailed_place_flag = 0
-        
-        self.flatten_2d.global_place_flag = 0
-        self.flatten_2d.legalize_flag = 0
-        self.flatten_2d.detailed_place_flag = 0
-        
+
         self.flatten_2d.legalize_flag = 0
         # self.flatten_2d.target_density = 2.0
 

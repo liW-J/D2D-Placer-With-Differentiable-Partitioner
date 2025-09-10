@@ -1,8 +1,10 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 '''
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-08-31 20:29:01
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-09-08 14:59:39
+LastEditTime: 2025-09-09 00:23:55
 FilePath: /D2D-placer/placer/tools/d2d_result_analyzer/d2d_result_analyzer.py
 Description: 
 D2D Placement Result Analyzer - Unified Interface
@@ -40,6 +42,7 @@ class D2DResultAnalyzer:
                  benchmark_file: str,
                  output_file: str,
                  result_dir: str = None,
+                 flattened_pl_file: str = None,
                  logger: Optional[logging.Logger] = None):
         """
         Initialize the analyzer
@@ -48,10 +51,12 @@ class D2DResultAnalyzer:
             benchmark_file: Path to benchmark file (e.g., case2_hidden.txt)
             output_file: Path to placement output file
             result_dir: Directory to save analysis results (optional)
+            flattened_pl_file: Path to flattened-2d placement file (optional)
             logger: Logger instance for output (optional)
         """
         self.benchmark_file = benchmark_file
         self.output_file = output_file
+        self.flattened_pl_file = flattened_pl_file
         self.result_dir = result_dir or os.path.dirname(output_file)
         self.logger = logger or logging.getLogger(__name__)
 
@@ -69,6 +74,8 @@ class D2DResultAnalyzer:
                                      'd2d_net_analysis_visualization.png')
         self.crossing_viz = os.path.join(self.result_dir,
                                          'crossing_net_analysis.png')
+        self.flattened_2d_viz = os.path.join(self.result_dir,
+                                         'flattened_2d_hpwl_comparison.png')
         self.terminal_viz = os.path.join(self.result_dir,
                                          'terminal_impact_analysis.png')
 
@@ -89,7 +96,8 @@ class D2DResultAnalyzer:
         try:
             # Create and run the net analyzer
             self.net_analyzer = D2DNetAnalyzer(self.benchmark_file,
-                                               self.output_file)
+                                               self.output_file,
+                                               self.flattened_pl_file)
             self.net_analyzer.run_analysis(self.result_dir)
 
             # Load the results
@@ -167,6 +175,10 @@ class D2DResultAnalyzer:
             if os.path.exists('crossing_net_analysis.png'):
                 os.rename('crossing_net_analysis.png', self.crossing_viz)
                 created_files.append(self.crossing_viz)
+                
+            if os.path.exists('flattened_2d_hpwl_comparison.png'):
+                os.rename('flattened_2d_hpwl_comparison.png', self.flattened_2d_viz)
+                created_files.append(self.flattened_2d_viz)
 
             self.logger.info("Main visualizations created successfully")
 
@@ -315,7 +327,9 @@ class D2DResultAnalyzer:
             'files_created': [
                 os.path.basename(self.results_json),
                 os.path.basename(self.main_viz),
-                os.path.basename(self.crossing_viz)
+                os.path.basename(self.crossing_viz),
+                os.path.basename(self.flattened_2d_viz),
+                os.path.basename(self.terminal_viz)
             ]
         }
 
