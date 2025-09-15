@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-06-13 15:35:55
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-08-24 15:23:10
+LastEditTime: 2025-09-15 23:06:37
 FilePath: /D2D-placer/placer/op_wrapper.py
 Description:
 '''
@@ -19,6 +19,7 @@ from placer.ops.parts_reader.parts_reader import PartsReader
 
 from placer.tools.out_fmt_iccad import OutfmtICCAD
 from placer.tools.pos_flattened import PosFlattened
+from placer.tools.partitioner_manager import PartitionerManager
 from dreamplace.ops.pin_pos.pin_pos import PinPos
 
 import torch
@@ -31,7 +32,7 @@ class D2DOpCollection(object):
                  out_fmt_iccad_op, pos_flattened_op, terminal_insert_op,
                  pin_pos_op, pin_pos_tier_op, terminal_legalize_op, avg_cut_op,
                  terminal_aux_op, refinement_op, hpwl_d2d_op, macro_balance_op,
-                 parts_reader_op):
+                 parts_reader_op, hgr_generator_op):
         self.hmetis_op = hmetis_op
         self.multi_bipartition_op = multi_bipartition_op
         self.init_partition_op = init_partition_op
@@ -47,6 +48,7 @@ class D2DOpCollection(object):
         self.hpwl_d2d_op = hpwl_d2d_op
         self.macro_balance_op = macro_balance_op
         self.parts_reader_op = parts_reader_op
+        self.hgr_generator_op = hgr_generator_op
 
 
 class OpWrapper(object):
@@ -54,12 +56,14 @@ class OpWrapper(object):
     def __init__(self, data_2d, data_tier, d2d_params, die_spec):
         self.data_2d = data_2d
         self.data_tier = data_tier
+        self.d2d_params = d2d_params
+        self.die_spec = die_spec
+
         self.data_collections_2d = data_2d.basic_place.data_collections
         self.placedb_2d = data_2d.placedb
         self.placedb_tier = [data.placedb for data in data_tier]
         self.params = d2d_params.flatten_2d
         self.case_name = d2d_params.case_name
-        self.die_spec = die_spec
         self.num_tiers = d2d_params.flatten_2d.num_tiers
         self.data_collections_tier = [
             data.basic_place.data_collections for data in data_tier
@@ -112,6 +116,7 @@ class OpWrapper(object):
         self.hpwl_d2d_op = self.build_hpwl_d2d()
         self.macro_balance_op = self.build_macro_balance()
         self.parts_reader_op = self.build_parts_reader()
+        self.hgr_generator_op = self.build_hgr_generator()
 
         self.d2d_op_collections = D2DOpCollection(
             hmetis_op=self.hmetis_op,
@@ -128,7 +133,8 @@ class OpWrapper(object):
             refinement_op=self.refinement_op,
             hpwl_d2d_op=self.hpwl_d2d_op,
             macro_balance_op=self.macro_balance_op,
-            parts_reader_op=self.parts_reader_op)
+            parts_reader_op=self.parts_reader_op,
+            hgr_generator_op=self.hgr_generator_op)
 
     def build_hmetis(self):
 
@@ -465,13 +471,14 @@ class OpWrapper(object):
 
         return build_macro_balance_op
 
-    def build_parts_reader(self):
-        parts_reader_op = PartsReader(
-            self.data_collections_2d.flat_net2pin_map,
-            self.data_collections_2d.flat_net2pin_start_map,
-            self.data_collections_2d.pin2node_map,
-            self.data_collections_2d.net_weights,
-            self.data_collections_2d.net_mask_all,
-            self.placedb_2d.num_movable_nodes)
+    def build_hgr_generator(self):
+        partitioner_manager = PartitionerManager(
+            self.data_collections_2d, self.placedb_2d,
+            self.d2d_params.run_tmp_dir_root)
+        return partitioner_manager.hgr_generator
 
-        return parts_reader_op
+    def build_parts_reader(self):
+        partitioner_manager = PartitionerManager(
+            self.data_collections_2d, self.placedb_2d,
+            self.d2d_params.run_tmp_dir_root)
+        return partitioner_manager.parts_reader

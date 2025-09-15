@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-08-09 23:53:41
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-08-12 00:33:26
+LastEditTime: 2025-09-15 23:56:53
 FilePath: /D2D-placer/placer/tools/specpart_date.py
 Description: 
 '''
@@ -10,14 +10,17 @@ from juliacall import Main as jl
 from placer.configure import compile_configurations
 
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
 
 class SpecPartBase:
 
-    def __init__(self, run_tmp_dir):
+    def __init__(self, params):
         super().__init__()
+
+        self.params = params
         self.placer_dir = compile_configurations["CMAKE_INSTALL_PREFIX"]
 
         self.hg_partitioning_path = compile_configurations[
@@ -25,8 +28,10 @@ class SpecPartBase:
         self.specpart_path = self.hg_partitioning_path + "/SpecPart"
         self.specpart_jl_path = self.specpart_path + "/SpectralRefinement.jl"
 
-        self.hg = f"{run_tmp_dir}/circuit.hgr"
-        self.pfile = f"{run_tmp_dir}/circuit.hgr.part.2"
+        self.hg = f"{params.run_tmp_dir_root}/{params.case_name}.hgr"
+        self.pfile = f"{params.run_tmp_dir_root}/{params.case_name}.hgr.part.2"
+
+        self.hmetis_path = f"{self.placer_dir}/bin/hmetis"
 
     def partitioning(self):
         """
@@ -51,12 +56,25 @@ class SpecPartBase:
         jl.cd(self.placer_dir)
         logger.info("Partitioning completed successfully")
 
-    def part_reader(self, tier, parts_reader_op):
-        return parts_reader_op(tier, self.specpart_path)
+    def flow(self, hgr_generator_op, parts_reader_op):
+        hgr_generator_op(self.params.case_name)
+        # run hmetis
+        cmd = f"{self.hmetis_path} -ufactor=0.7 {self.hg} 2"
+        os.system(cmd)
 
-    def flow(self, tier, parts_reader_op):
         self.partitioning()
-        return self.part_reader(tier, parts_reader_op)
+        if os.path.exists(
+                f"{self.specpart_path}/{self.params.case_name}.hgr.part.2"):
+            os.rename(
+                f"{self.specpart_path}/{self.params.case_name}.hgr.part.2",
+                self.pfile)
+            tier = parts_reader_op(self.params.case_name)
+        else:
+            tier = parts_reader_op(self.params.case_name)
+            logger.info(
+                "SpecPart partition result file not found, use parts_reader_op to generate partition result"
+            )
+        return tier
 
 
 if __name__ == "__main__":

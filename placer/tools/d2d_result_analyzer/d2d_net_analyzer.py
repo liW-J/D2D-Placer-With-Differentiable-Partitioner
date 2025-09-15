@@ -833,7 +833,7 @@ class D2DNetAnalyzer:
         ax1.grid(True, alpha=0.3)
 
         # 2. distribution of HPWL improvements
-        ax2.hist(improvements, bins=20, alpha=0, edgecolor='black')
+        ax2.hist(improvements, bins=20, alpha=0.7, edgecolor='black')
         ax2.set_xlabel('HPWL Improvement')
         ax2.set_ylabel('Number of Nets')
         ax2.set_title('Distribution of HPWL Improvements')

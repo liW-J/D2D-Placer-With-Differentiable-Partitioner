@@ -302,34 +302,6 @@ class GraphCutsize:
         return cut
 
 
-    def save_partition_to_file(self, output_path: str) -> bool:
-        """
-        save partition result to .part
-        Args:
-            output_path: 输出文件路径，例如 "circuit.hgr.part.2"
-        
-        """
-        try:
-            # 确保输出目录存在
-            import os
-            output_dir = os.path.dirname(output_path)
-            if output_dir and not os.path.exists(output_dir):
-                os.makedirs(output_dir)
-
-            # 写入分区结果，每行一个分区值
-            with open(output_path, 'w') as f:
-                for part_value in self.parts:
-                    f.write(f"{part_value}\n")
-
-            print(f"分区结果已保存到: {output_path}")
-            print(f"共保存 {len(self.parts)} 个节点的分区信息")
-            return True
-
-        except Exception as e:
-            print(f"保存分区文件失败: {e}")
-            return False
-
-
 if __name__ == "__main__":
     hgr_path = "/Users/jeannewillis/Desktop/CODE/D2D-placer/install/run_tmp/case2_hidden/circuit.hgr"
     part_path = "/Users/jeannewillis/Desktop/CODE/D2D-placer/install/run_tmp/case2_hidden/circuit.hgr.part.2"

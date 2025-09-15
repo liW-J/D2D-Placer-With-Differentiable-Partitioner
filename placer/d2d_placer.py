@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-07-19 17:57:28
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-09-15 13:06:43
+LastEditTime: 2025-09-15 23:57:23
 FilePath: /D2D-placer/placer/d2d_placer.py
 Description: 
 '''
@@ -27,6 +27,7 @@ from placer.op_wrapper import OpWrapper
 from placer.d2d_params import D2DParams
 from placer.tools.thirdparty_api.dreamplace_base import DreamplaceBaseCollection
 from placer.tools.thirdparty_api.specpart_base import SpecPartBase
+from placer.tools.thirdparty_api.tritonpart_base import TritonPartBase
 from placer.tools.graph_cutsize import GraphCutsize
 from placer.constants import Format, Orient
 import torch
@@ -87,7 +88,8 @@ class D2Dplacer:
         self.params = D2DParams(input_params)
         self.num_tiers = self.params.flatten_2d.num_tiers
         self.dreamplace = DreamplaceBaseCollection(self.num_tiers)
-        self.specpart = SpecPartBase(self.params.run_tmp_dir_root)
+        self.specpart = SpecPartBase(self.params)
+        self.tritonpart = TritonPartBase(self.params)
         self.op_wrapper = None
 
         self.format = Format.ICCAD2022
@@ -175,25 +177,24 @@ class D2Dplacer:
         self.dreamplace.dp_2d.place(self.params.flatten_2d, self.timer)
 
     def partition(self, logger=logging):
-        self.tier = self.op_wrapper.d2d_op_collections.hmetis_op(
-            self.dreamplace.dp_2d.pos)
+        # self.tier = self.op_wrapper.d2d_op_collections.hmetis_op(
+        #     self.dreamplace.dp_2d.pos)
         # self.tier = self.op_wrapper.d2d_op_collections.avg_cut_op(self.dreamplace.dp_2d.pos)
 
         # temporarily call tier result from file
         # self.tier = torch.load('placer/die_tensor.pt')
         # self.tier = self.tier.to(torch.int32)
 
-        # self.specpart.flow(self.tier,
-        #                    self.op_wrapper.d2d_op_collections.parts_reader_op)
-
-        # graph_cutsize = GraphCutsize(
-        #     "/D2D-placer/install/run_tmp/case2_hidden/circuit.hgr",
-        #     "/D2D-placer/install/thirdparty/HypergraphPartitioning/SpecPart/circuit.hgr.part.2"
-        # )
+        # self.tier = self.specpart.flow(
+        #     self.op_wrapper.d2d_op_collections.hgr_generator_op,
+        #     self.op_wrapper.d2d_op_collections.parts_reader_op)
+        self.tier = self.tritonpart.flow(
+            self.op_wrapper.d2d_op_collections.hgr_generator_op,
+            self.op_wrapper.d2d_op_collections.parts_reader_op)
 
         graph_cutsize = GraphCutsize(
             "/home/placer/D2D-placer/install/run_tmp/" +
-            self.params.case_name + ".hgr",
+            self.params.case_name + "/" + self.params.case_name + ".hgr",
             "/home/placer/D2D-placer/install/run_tmp/" +
             self.params.case_name + "/" + self.params.case_name +
             ".hgr.part.2")
@@ -204,10 +205,7 @@ class D2Dplacer:
         new_clique_cut, new_cutnet = graph_cutsize.calculate()
         logger.info("clique graph cutsize: %d, hyperedge cutsize: %d" %
                     (new_clique_cut, new_cutnet))
-        # graph_cutsize.save_partition_to_file(
-        #     "/D2D-placer/install/run_tmp/circuit.hgr.part.2")
-        # self.tier = self.op_wrapper.d2d_op_collections.parts_reader_op(
-        #     self.tier, "/D2D-placer/install/run_tmp")
+
         self.tier = self.tier.to(torch.int32)
 
         # return partition result but not receive now
