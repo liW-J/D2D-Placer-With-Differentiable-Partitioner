@@ -4,13 +4,13 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-08-31 20:29:01
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-09-09 00:23:55
+LastEditTime: 2025-09-15 12:42:59
 FilePath: /D2D-placer/placer/tools/d2d_result_analyzer/d2d_result_analyzer.py
 Description: 
-D2D Placement Result Analyzer - Unified Interface
-This module provides a unified interface for analyzing D2D placement results,
-integrating all analysis functionalities including net analysis, detailed reports,
-and terminal impact analysis.
+    D2D Placement Result Analyzer - Unified Interface
+    This module provides a unified interface for analyzing D2D placement results,
+    integrating all analysis functionalities including net analysis, detailed reports,
+    and terminal impact analysis.
 '''
 
 import os
@@ -24,7 +24,7 @@ import matplotlib
 matplotlib.use('Agg')
 
 # Import analysis modules
-from placer.tools.d2d_result_analyzer.analyze_d2d_nets import D2DNetAnalyzer
+from placer.tools.d2d_result_analyzer.d2d_net_analyzer import D2DNetAnalyzer
 
 
 class D2DResultAnalyzer:

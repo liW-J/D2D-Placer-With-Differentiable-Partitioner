@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-06-13 20:00:00
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-09-10 00:39:09
+LastEditTime: 2025-09-15 13:09:07
 FilePath: /D2D-placer/placer/d2d_params.py
 Description: 
 '''
@@ -48,15 +48,19 @@ class D2DParams:
                 i].aux_input = f"{self.run_tmp_dir_root}/partition/tier{i}.aux"
 
         # special params
-        self.terminal.random_center_init_flag = 1
+        self.terminal.random_center_init_flag = True
         self.terminal.global_place_stages[0]["iteration"] = 500
         self.terminal.stop_overflow = 0.01
 
-        self.terminal.global_place_flag = 0
-        self.terminal.legalize_flag = 0
-        self.terminal.detailed_place_flag = 0
+        self.terminal.global_place_flag = True
+        self.terminal.legalize_flag = False
+        self.terminal.detailed_place_flag = False
+        self.terminal.ntuplace_flag = True
 
-        self.flatten_2d.legalize_flag = 0
+        self.flatten_2d.global_place_flag = True
+        self.flatten_2d.legalize_flag = False
+        self.flatten_2d.detailed_place_flag = False
+        self.flatten_2d.ntuplace_flag = True
         # self.flatten_2d.target_density = 2.0
 
     def set_die_place_flags(self,

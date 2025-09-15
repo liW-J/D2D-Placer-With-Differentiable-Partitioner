@@ -427,7 +427,7 @@ class OpWrapper(object):
                               tier,
                               pos_terminal=torch.empty(0),
                               num_terminal_NIs=0,
-                              terminal_names=np.array([], dtype=np.string_)):
+                              terminal_names=np.array([], dtype=np.bytes_)):
             pin_pos_x = torch.stack([
                 self.pin_pos_tier_op[tier_id](pos_2d)
                 [:self.data_collections_2d.pin2node_map.numel()]

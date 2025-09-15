@@ -701,20 +701,139 @@ class D2DNetAnalyzer:
         fig.suptitle('Flattened-2D vs Partitioned HPWL Comparison',
                      fontsize=16)
 
-        # 1. HPWL comparison scatter plot
-        ax1.scatter(hpwl_flattened, hpwl_partitioned, alpha=0.6, s=50)
-        ax1.plot([0, max(max(hpwl_flattened), max(hpwl_partitioned))],
-                 [0, max(max(hpwl_flattened), max(hpwl_partitioned))],
-                 'r--',
-                 label='y=x')
+        # 1. HPWL comparison scatter plot with degree legend
+        # Check if degree information is available
+        if 'crossing_net_details' in results:
+            # Collect data for each degree
+            degree_analysis = {}
+            for net_name, net_info in results['crossing_net_details'].items():
+                degree = net_info['total_degree']
+                if degree not in degree_analysis:
+                    degree_analysis[degree] = {
+                        'flattened_hpwls': [],
+                        'partitioned_hpwls': []
+                    }
+
+                # Find corresponding HPWL data
+                for net in crossing_nets:
+                    if net['net_name'] == net_name:
+                        degree_analysis[degree]['flattened_hpwls'].append(
+                            net.get('hpwl_flattened_2d', 0))
+                        degree_analysis[degree]['partitioned_hpwls'].append(
+                            net.get('hpwl_total_partitioned', 0))
+                        break
+
+            # Plot by degree
+            sorted_degrees = sorted(degree_analysis.keys())
+
+            # Rolling legend: display the largest 20 degrees first
+            if len(sorted_degrees) > 20:
+                # Select the largest 20 degrees
+                visible_degrees = sorted_degrees[-20:]
+                hidden_degrees = sorted_degrees[:-20]
+
+                # Plot the visible degrees
+                for degree in visible_degrees:
+                    flattened_data = degree_analysis[degree]['flattened_hpwls']
+                    partitioned_data = degree_analysis[degree][
+                        'partitioned_hpwls']
+
+                    if flattened_data and partitioned_data:
+                        min_len = min(len(flattened_data),
+                                      len(partitioned_data))
+                        ax1.scatter(flattened_data[:min_len],
+                                    partitioned_data[:min_len],
+                                    alpha=0.6,
+                                    s=50,
+                                    label=f'Degree {degree}')
+
+                # Plot the hidden degrees (not displayed in the legend)
+                for degree in hidden_degrees:
+                    flattened_data = degree_analysis[degree]['flattened_hpwls']
+                    partitioned_data = degree_analysis[degree][
+                        'partitioned_hpwls']
+
+                    if flattened_data and partitioned_data:
+                        min_len = min(len(flattened_data),
+                                      len(partitioned_data))
+                        ax1.scatter(
+                            flattened_data[:min_len],
+                            partitioned_data[:min_len],
+                            alpha=0.3,  # decrease transparency
+                            s=30,  # decrease point size
+                            color='gray',  # use gray
+                            label='_nolegend_')  # not displayed in the legend
+
+                # Add ellipsis explanation
+                ax1.scatter(
+                    [], [],
+                    alpha=0,
+                    label=f'... and {len(hidden_degrees)} more degrees')
+
+            else:
+                # Display all degrees
+                for degree in sorted_degrees:
+                    flattened_data = degree_analysis[degree]['flattened_hpwls']
+                    partitioned_data = degree_analysis[degree][
+                        'partitioned_hpwls']
+
+                    if flattened_data and partitioned_data:
+                        min_len = min(len(flattened_data),
+                                      len(partitioned_data))
+                        ax1.scatter(flattened_data[:min_len],
+                                    partitioned_data[:min_len],
+                                    alpha=0.6,
+                                    s=50,
+                                    label=f'Degree {degree}')
+
+            # Add diagonal line
+            all_flattened = [
+                item for sublist in [
+                    degree_analysis[d]['flattened_hpwls']
+                    for d in sorted_degrees
+                ] for item in sublist
+            ]
+            all_partitioned = [
+                item for sublist in [
+                    degree_analysis[d]['partitioned_hpwls']
+                    for d in sorted_degrees
+                ] for item in sublist
+            ]
+
+            if all_flattened and all_partitioned:
+                max_val = max(max(all_flattened), max(all_partitioned))
+                ax1.plot([0, max_val], [0, max_val],
+                         'r--',
+                         alpha=0.7,
+                         label='y=x')
+
+            # Adjust legend layout according to the number of degrees
+            if len(sorted_degrees) > 20:
+                ax1.legend(bbox_to_anchor=(1.05, 1),
+                           loc='upper left',
+                           fontsize=7,
+                           ncol=2)
+            else:
+                ax1.legend(bbox_to_anchor=(1.05, 1),
+                           loc='upper left',
+                           fontsize=8)
+
+        else:
+            # Fallback to simple scatter plot if degree information is not available
+            ax1.scatter(hpwl_flattened, hpwl_partitioned, alpha=0.6, s=50)
+            ax1.plot([0, max(max(hpwl_flattened), max(hpwl_partitioned))],
+                     [0, max(max(hpwl_flattened), max(hpwl_partitioned))],
+                     'r--',
+                     label='y=x')
+            ax1.legend()
+
         ax1.set_xlabel('Flattened-2D HPWL')
         ax1.set_ylabel('Partitioned HPWL')
         ax1.set_title('HPWL Comparison: Flattened-2D vs Partitioned')
-        ax1.legend()
         ax1.grid(True, alpha=0.3)
 
         # 2. distribution of HPWL improvements
-        ax2.hist(improvements, bins=20, alpha=0.7, edgecolor='black')
+        ax2.hist(improvements, bins=20, alpha=0, edgecolor='black')
         ax2.set_xlabel('HPWL Improvement')
         ax2.set_ylabel('Number of Nets')
         ax2.set_title('Distribution of HPWL Improvements')

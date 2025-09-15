@@ -45,8 +45,8 @@ class Flattened2DAnalyzer:
             parts = line.split()
             if len(parts) >= 3:
                 instance_name = parts[0]
-                x = int(parts[1])
-                y = int(parts[2])
+                x = float(parts[1])
+                y = float(parts[2])
                 self.instance_positions[instance_name] = (x, y)
                 data_started = True
 

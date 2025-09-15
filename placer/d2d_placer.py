@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-07-19 17:57:28
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-09-10 00:38:40
+LastEditTime: 2025-09-15 13:06:43
 FilePath: /D2D-placer/placer/d2d_placer.py
 Description: 
 '''
@@ -174,7 +174,7 @@ class D2Dplacer:
     def flatten_2d_place(self):
         self.dreamplace.dp_2d.place(self.params.flatten_2d, self.timer)
 
-    def partition(self):
+    def partition(self, logger=logging):
         self.tier = self.op_wrapper.d2d_op_collections.hmetis_op(
             self.dreamplace.dp_2d.pos)
         # self.tier = self.op_wrapper.d2d_op_collections.avg_cut_op(self.dreamplace.dp_2d.pos)
@@ -190,8 +190,20 @@ class D2Dplacer:
         #     "/D2D-placer/install/run_tmp/case2_hidden/circuit.hgr",
         #     "/D2D-placer/install/thirdparty/HypergraphPartitioning/SpecPart/circuit.hgr.part.2"
         # )
+
+        graph_cutsize = GraphCutsize(
+            "/home/placer/D2D-placer/install/run_tmp/" +
+            self.params.case_name + ".hgr",
+            "/home/placer/D2D-placer/install/run_tmp/" +
+            self.params.case_name + "/" + self.params.case_name +
+            ".hgr.part.2")
+
+        self.tier = torch.tensor(graph_cutsize.parts)
         # new_clique_cut, new_cutnet = graph_cutsize.minimize_clique_cutsize_greedy(
         # )
+        new_clique_cut, new_cutnet = graph_cutsize.calculate()
+        logger.info("clique graph cutsize: %d, hyperedge cutsize: %d" %
+                    (new_clique_cut, new_cutnet))
         # graph_cutsize.save_partition_to_file(
         #     "/D2D-placer/install/run_tmp/circuit.hgr.part.2")
         # self.tier = self.op_wrapper.d2d_op_collections.parts_reader_op(
@@ -256,8 +268,8 @@ class D2Dplacer:
             self.dreamplace.dp_terminal.placedb.node_names, self.node_orient)
 
     def macro_rotation(self):
-        # self.dreamplace.placedb_terminal.node_orient = np.array(self.dreamplace.placedb_terminal.node_orient, dtype=np.string_)
-        # self.dreamplace.placedb_terminal.node_orient = np.array(self.dreamplace.placedb_terminal.node_orient, dtype=np.string_)
+        # self.dreamplace.placedb_terminal.node_orient = np.array(self.dreamplace.placedb_terminal.node_orient, dtype=np.bytes_)
+        # self.dreamplace.placedb_terminal.node_orient = np.array(self.dreamplace.placedb_terminal.node_orient, dtype=np.bytes_)
         pass
 
     def output(self):
@@ -288,7 +300,8 @@ class D2Dplacer:
             # Construct file paths
             benchmark_file = f"benchmarks/iccad2022/{benchmark_name}.txt"
             output_file = os.path.join(result_dir, "output.txt")
-            flattened_pl_file = os.path.join(result_dir, "flattened-2d/flattened-2d.gp.pl")
+            flattened_pl_file = os.path.join(
+                result_dir, "flattened-2d/flattened-2d.gp.pl")
 
             analyzer = D2DResultAnalyzer(benchmark_file=benchmark_file,
                                          output_file=output_file,
@@ -318,7 +331,7 @@ if __name__ == "__main__":
     d2d_placer.flatten_2d_place()
     d2d_placer.init_op_wrapper()
 
-    d2d_placer.partition()
+    d2d_placer.partition(d2d_logger)
     d2d_placer.die_by_die_place(global_place_flag=True,
                                 legalize_flag=False,
                                 detailed_place_flag=False,
@@ -329,7 +342,7 @@ if __name__ == "__main__":
     d2d_placer.die_by_die_place(global_place_flag=True,
                                 legalize_flag=False,
                                 detailed_place_flag=False,
-                                random_center_init_flag=False,
+                                random_center_init_flag=True,
                                 ntuplace_flag=False)
 
     d2d_placer.macro_rotation()
