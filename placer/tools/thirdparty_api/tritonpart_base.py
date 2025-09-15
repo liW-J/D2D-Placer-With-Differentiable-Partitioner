@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-09-10 15:19:57
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-09-15 22:51:16
+LastEditTime: 2025-09-16 00:25:13
 FilePath: /D2D-placer/placer/tools/thirdparty_api/tritonpart_base.py
 Description: 
 '''
@@ -22,21 +22,23 @@ class TritonPartBase:
         self.tritonpart_tcl_path = compile_configurations[
             "PLACER_SOURCE_DIR"] + "/scripts/tritonpart.tcl"
 
+        self.placement_file = f"{params.run_tmp_dir_root}/{params.case_name}.flattened-2d.embedding.dat"
+        self.pl_file = f"{params.result_dir_root}/flattened-2d/flattened-2d.ntup.pl"
+
         os.environ["TRITONPART_CASE_NAME"] = params.case_name
         os.environ["PLACER_RUNTMP_DIR"] = params.run_tmp_dir_root
 
-    def convert_gp_pl_to_embedding(self, input_file: str):
+    def convert_gp_pl_to_embedding(self):
         """
         convert .gp.pl to .embedding.dat
         
         Args:
-            input_file: input .gp.pl file path
-            output_file: output .embedding.dat file path (optional)
+            output_file: output .embedding.dat file path
         """
 
         # check if input file exists
-        if not os.path.exists(input_file):
-            print(f"error: input file {input_file} does not exist")
+        if not os.path.exists(self.pl_file):
+            print(f"error: input file {self.pl_file} does not exist")
             return False
 
         # determine output file path
@@ -45,7 +47,7 @@ class TritonPartBase:
 
         # read and parse .gp.pl file
         try:
-            with open(input_file, 'r') as f:
+            with open(self.pl_file, 'r') as f:
                 for line_num, line in enumerate(f, 1):
                     line = line.strip()
 
@@ -74,8 +76,6 @@ class TritonPartBase:
             print(f"error: failed to read file: {e}")
             return False
 
-        print(f"successfully parsed {len(coordinates)} nodes")
-
         if not coordinates:
             print("error: no valid coordinates found")
             return False
@@ -87,10 +87,6 @@ class TritonPartBase:
         x_min, x_max = min(x_coords), max(x_coords)
         y_min, y_max = min(y_coords), max(y_coords)
 
-        print(f"coordinate range:")
-        print(f"  X: [{x_min:.2f}, {x_max:.2f}]")
-        print(f"  Y: [{y_min:.2f}, {y_max:.2f}]")
-
         # normalize coordinates to [0, 1] range
         normalized_coords = []
         for x, y in coordinates:
@@ -99,19 +95,11 @@ class TritonPartBase:
             normalized_coords.append((norm_x, norm_y))
 
         # write to output file
-        try:
-            with open(output_file, 'w') as f:
-                for x, y in normalized_coords:
-                    f.write(f"{x:.15e}, {y:.15e}\n")
+        with open(output_file, 'w') as f:
+            for x, y in normalized_coords:
+                f.write(f"{x:.15e}, {y:.15e}\n")
 
-            print(
-                f"successfully wrote {len(normalized_coords)} normalized coordinates to {output_file}"
-            )
-            return True
-
-        except Exception as e:
-            print(f"error: failed to write file: {e}")
-            return False
+        return True
 
     def partitioning(self):
 
@@ -123,6 +111,7 @@ class TritonPartBase:
 
     def flow(self, hgr_generator_op, parts_reader_op):
         hgr_generator_op(self.params.case_name)
+        self.convert_gp_pl_to_embedding()
         self.partitioning()
         tier = parts_reader_op(self.params.case_name)
         return tier
