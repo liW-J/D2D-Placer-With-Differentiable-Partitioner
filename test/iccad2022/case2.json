@@ -15,9 +15,9 @@
 "enable_fillers" : 1,
 "gp_noise_ratio" : 0.025,
 "global_place_flag" : 1,
-"legalize_flag" : 0,
-"detailed_place_flag" : 0,
-"detailed_place_engine" : "thirdparty/ntuplace3", 
+"legalize_flag" : 1,
+"detailed_place_flag" : 1,
+"detailed_place_engine" : "", 
 "detailed_place_command" : "", 
 "stop_overflow" : 0.07, 
 "dtype" : "float32", 
@@ -26,6 +26,5 @@
 "gift_init_flag" : 0, 
 "sort_nets_by_degree" : 0, 
 "num_threads" : 8,
-"deterministic_flag" : 1,
-"ntuplace_flag" : 0
+"deterministic_flag" : 1
 }

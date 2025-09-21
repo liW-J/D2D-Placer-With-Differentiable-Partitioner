@@ -60,7 +60,7 @@ class HPWLD2D(object):
                  tier,
                  pos_terminal_legalized=torch.empty(0),
                  num_terminals=0,
-                 terminal_names=np.array([], dtype=np.bytes_)):
+                 terminal_names=np.array([], dtype=np.string_)):
 
         return HPWLD2DFunction.forward(
             pin_pos, self.flat_netpin, self.netpin_start, self.pin2node_map,
