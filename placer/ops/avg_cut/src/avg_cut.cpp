@@ -2,7 +2,7 @@
  * @Author: JeanneWillis hi@jeannewillis.cn
  * @Date: 2025-04-08 12:35:48
  * @LastEditors: JeanneWillis hi@jeannewillis.cn
- * @LastEditTime: 2025-07-27 18:02:28
+ * @LastEditTime: 2025-09-17 02:11:13
  * @FilePath: /D2D-placer/placer/ops/hmetis/src/hmetis.cpp
  * @Description:
  */
@@ -27,8 +27,9 @@ void tier_assign(T *tier, const T *x, const T *y, const int *flat_netpin,
   LOG(WARN, "tier_assign");
 
   int reassign_count = 0;
-  int bottom_cout = 0;
-  int top_count = 0;
+  // int bottom_cout = 0;
+  // int top_count = 0;
+  vector<int> net_count(num_tiers, 0);
   for (int net_id = 0; net_id < num_nets; net_id++) {
     int net_degree = netpin_start[net_id + 1] - netpin_start[net_id];
 
@@ -53,6 +54,8 @@ void tier_assign(T *tier, const T *x, const T *y, const int *flat_netpin,
     // outer_max_y: %f", min_x, max_x, min_y, max_y);
     T cut_x = (min_x + max_x) / 2;
     T cut_y = (min_y + max_y) / 2;
+    int tier_assign = net_count[1] > net_count[0] ? BOTTOM_TIER : TOP_TIER;
+
     if (net_degree > 3) {
       // LOG(WARN, "net_id: %d, cut_x: %f, cut_y: %f", net_id, cut_x, cut_y);
       for (int pin_id = netpin_start[net_id]; pin_id < netpin_start[net_id + 1];
@@ -62,19 +65,18 @@ void tier_assign(T *tier, const T *x, const T *y, const int *flat_netpin,
         // LOG(ERROR, "pin_id: %d, x: %f, tier: %f, node_id: %d", pin_id,
         // x[pin_id], tier[node_id], node_id);
         if (x[pin_id] < cut_x) {
-          tier[node_id] = BOTTOM_TIER;
-          bottom_cout += 1;
+          tier[node_id] = tier_assign;
+          net_count[tier_assign] += 1;
         } else if (x[pin_id] >= cut_x) {
-          tier[node_id] = TOP_TIER;
-          top_count += 1;
+          tier[node_id] = 1 - tier_assign;
+          net_count[1 - tier_assign] += 1;
         } else {
           // LOG(DEBUG, "have assigned");
           reassign_count++;
         }
       }
-    }
-    else {
-      int tier_assign = top_count>bottom_cout ? BOTTOM_TIER : TOP_TIER;
+    } else {
+
       for (int pin_id = netpin_start[net_id]; pin_id < netpin_start[net_id + 1];
            pin_id++) {
         int node_id = pin2node_map[flat_netpin[pin_id]];
@@ -122,7 +124,7 @@ int avgCutPartitionLauncher(T *tier, const int *flat_netpin,
     //   1]; pin_id++)
     //   {
     //     int node_id = pin2node_map[flat_netpin[pin_id]];
-    //     if (no_cut_count < 1500)
+    //     if (no_cut_count < 500)
     //     {
     //       tier[node_id] = BOTTOM_TIER;
     //       no_cut_count++;

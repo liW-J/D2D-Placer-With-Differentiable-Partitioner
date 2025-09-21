@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-07-17 14:31:37
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-08-12 00:40:15
+LastEditTime: 2025-09-15 00:32:23
 FilePath: /D2D-placer/placer/tools/dreamplace_data.py
 Description: 
 '''
@@ -53,10 +53,13 @@ class DreamplaceBase:
         change size.x size.y to 0 0
         """
         nodes_files = []
+        pl_files = []
         for root, dirs, files in os.walk(os.path.dirname(params.aux_input)):
             for file in files:
                 if file.endswith('.nodes'):
                     nodes_files.append(os.path.join(root, file))
+                if file.endswith('.pl'):
+                    pl_files.append(os.path.join(root, file))
 
         logger = logging.getLogger(__name__)
         logger.info(f"find {len(nodes_files)} .nodes files to convert")
@@ -86,6 +89,29 @@ class DreamplaceBase:
 
             except Exception as e:
                 logger.error(f"error when converting {nodes_file}: {str(e)}")
+
+        for pl_file in pl_files:
+            try:
+                with open(pl_file, 'r', encoding='utf-8') as f:
+                    content = f.read()
+
+                pattern = 'FIXED_NI'
+                replacement = 'FIXED'
+                new_content = re.sub(pattern, replacement, content)
+
+                if new_content != content:
+                    with open(pl_file, 'w', encoding='utf-8') as f:
+                        f.write(new_content)
+
+                    matches = re.findall(pattern, content)
+                    logger.info(
+                        f"{pl_file} converted, replaced {len(matches)} FIXED_NI"
+                    )
+                else:
+                    logger.info(f"{pl_file} no need to convert")
+
+            except Exception as e:
+                logger.error(f"error when converting {pl_file}: {str(e)}")
 
     def place(self, params, timer):
         """
@@ -119,7 +145,6 @@ class DreamplaceBase:
             logging.info("Use external detailed placement engine %s" %
                          (params.detailed_place_engine))
             self.convert_terminal_ni_format(params)
-            breakpoint()
 
             if params.solution_file_suffix() == "pl" and any(
                     dp_engine in params.detailed_place_engine
