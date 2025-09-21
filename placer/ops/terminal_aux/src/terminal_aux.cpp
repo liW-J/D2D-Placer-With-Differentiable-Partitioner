@@ -2,7 +2,7 @@
  * @Author: JeanneWillis hi@jeannewillis.cn
  * @Date: 2025-03-19 11:49:04
  * @LastEditors: JeanneWillis hi@jeannewillis.cn
- * @LastEditTime: 2025-09-20 22:49:49
+ * @LastEditTime: 2025-08-06 19:58:37
  * @FilePath: /D2D-placer/src/ops/partition/src/partition.cpp
  * @Description: partition
  */
@@ -20,15 +20,14 @@ PLACER_BEGIN_NAMESPACE
 enum NodeType { MOVABLE, TERMINAL, TERMINAL_NI };
 
 template <typename T>
-void terminal_insert(
-    const int *tier, const T *pin_x, const T *pin_y, const int *flat_netpin,
-    const int *netpin_start, const int *pin2node_map, int num_movable_nodes,
-    int num_nets, int num_pins, int num_tiers, const int *cut_net_mask,
-    AUX &terminalAuxRef, int terminal_size_x, int terminal_size_y,
-    int terminal_spacing, const std::vector<std::string> &node_names,
-    const std::vector<std::string> &net_names, bool terminal_legalize_flag,
-    const T *terminal_x, const T *terminal_y, int num_terminals,
-    const std::vector<std::string> &terminal_names) {
+void terminal_insert(const int *tier, const T *pin_x, const T *pin_y,
+                     const int *flat_netpin, const int *netpin_start,
+                     const int *pin2node_map, int num_movable_nodes,
+                     int num_nets, int num_pins, int num_tiers, const int *cut_net_mask,
+                     AUX &terminalAuxRef, int terminal_size_x,
+                     int terminal_size_y, int terminal_spacing,
+                     const std::vector<std::string> &node_names,
+                     const std::vector<std::string> &net_names) {
   LOG(WARN, "terminal_insert");
 
   int terminal_count = 0;
@@ -61,34 +60,17 @@ void terminal_insert(
       T inner_min_y = *inner_min_y_it;
       T inner_max_y = *inner_max_y_it;
       // LOG(WARN,
-      //     "inner_min_x: %f, inner_max_x: %f, inner_min_y: %f, inner_max_y:
-      //     %f", inner_min_x, inner_max_x, inner_min_y, inner_max_y);
+      //     "inner_min_x: %f, inner_max_x: %f, inner_min_y: %f, inner_max_y: %f",
+      //     inner_min_x, inner_max_x, inner_min_y, inner_max_y);
       T center_x = (inner_min_x + inner_max_x) / 2;
       T center_y = (inner_min_y + inner_max_y) / 2;
 
       terminal_count++;
       // LOG(INFO, "terminal_count: %d", terminal_count);
-      if (terminal_legalize_flag) {
-        int x, y;
-        // LOG(INFO, "net_names[net_id]: %s", net_names[net_id]);
-        for (int terminal_id = 0; terminal_id < num_terminals; ++terminal_id) {
-          if (net_names[net_id] == terminal_names[terminal_id]) {
-            // dreamplace pos is left-bottom corner
-            x = terminal_x[terminal_id];
-            y = terminal_y[terminal_id];
-            // LOG(INFO, "net_id: %d, terminal_count: %d, i: %d", net_id,
-            //     terminal_count, i);
-            break;
-          }
-        }
-        terminalAuxRef.add_node(
-            net_names[net_id], terminal_size_x + terminal_spacing,
-            terminal_size_y + terminal_spacing, x, y, MOVABLE);
-      } else {
-        terminalAuxRef.add_node(
-            net_names[net_id], terminal_size_x + terminal_spacing,
-            terminal_size_y + terminal_spacing, center_x, center_y, MOVABLE);
-      }
+
+      terminalAuxRef.add_node(
+          net_names[net_id], terminal_size_x + terminal_spacing,
+          terminal_size_y + terminal_spacing, center_x, center_y, MOVABLE);
       for (int tier_id = 0; tier_id < num_tiers; ++tier_id) {
         string tier_net_name = net_names[net_id] + "_" + to_string(tier_id);
 
@@ -108,11 +90,10 @@ void terminalAuxLauncher(
     const T *pin_offset_x, const T *pin_offset_y, float die_size_x,
     float die_size_y, pybind11::list row_height, int terminal_size_x,
     int terminal_size_y, int terminal_spacing, int *cut_net_mask,
-    const T *pin_x, const T *pin_y, const std::vector<std::string> &node_names,
+    const T *pin_x, const T *pin_y,
+    const std::vector<std::string> &node_names,
     const std::vector<std::string> &net_names, const T *pos_2d_x,
-    const T *pos_2d_y, std::string case_name, bool terminal_legalize_flag,
-    const T *terminal_x, const T *terminal_y, int num_terminals,
-    const std::vector<std::string> &terminal_names) {
+    const T *pos_2d_y, std::string case_name) {
   string aux_dir = "./run_tmp/" + case_name + "/terminal/";
   char IO_type;
 
@@ -166,9 +147,9 @@ void terminalAuxLauncher(
                 terminal_aux.add_pin(
                     tier_net_name, node_names[node_id], IO_type,
                     static_cast<float>(pin_offset_x[index_pin] -
-                                       ceil(node_size_x[index_node] / 2)),
+                                       ceil(node_size_x[index_node]/2)),
                     static_cast<float>(pin_offset_y[index_pin] -
-                                       ceil(node_size_y[index_node] / 2)));
+                                       ceil(node_size_y[index_node]/2)));
               }
             }
           }
@@ -177,12 +158,10 @@ void terminalAuxLauncher(
     }
   }
 
-  terminal_insert(tier, pin_x, pin_y, flat_netpin, netpin_start, pin2node_map,
-                  num_movable_nodes, num_nets, num_pins, num_tiers,
+  terminal_insert(tier, pin_x, pin_y, flat_netpin, netpin_start,
+                  pin2node_map, num_movable_nodes, num_nets, num_pins, num_tiers,
                   cut_net_mask, terminal_aux, terminal_size_x, terminal_size_y,
-                  terminal_spacing, node_names, net_names,
-                  terminal_legalize_flag, terminal_x, terminal_y, num_terminals,
-                  terminal_names);
+                  terminal_spacing, node_names, net_names);
 
   // write aux files
   int tier_row_height = terminal_size_y + terminal_spacing;
@@ -193,18 +172,18 @@ void terminalAuxLauncher(
   terminal_aux.write_files();
 }
 
-at::Tensor terminal_aux_forward(
-    at::Tensor tier, at::Tensor flat_netpin, at::Tensor netpin_start,
-    at::Tensor pin2node_map, at::Tensor net_weights, int num_movable_nodes,
-    at::Tensor node_size_x, at::Tensor node_size_y, at::Tensor pin_offset_x,
-    at::Tensor pin_offset_y, float die_size_x, float die_size_y,
-    pybind11::list row_height, int terminal_size_x, int terminal_size_y,
-    int terminal_spacing, at::Tensor pin_pos,
-    const std::vector<std::string> &node_names,
-    const std::vector<std::string> &net_names, at::Tensor pos_2d,
-    std::string case_name, bool terminal_legalize_flag,
-    at::Tensor pos_terminal_legalized, int num_terminals,
-    const std::vector<std::string> &terminal_names) {
+at::Tensor terminal_aux_forward(at::Tensor tier, at::Tensor flat_netpin,
+                                at::Tensor netpin_start,
+                                at::Tensor pin2node_map, at::Tensor net_weights,
+                                int num_movable_nodes, at::Tensor node_size_x,
+                                at::Tensor node_size_y, at::Tensor pin_offset_x,
+                                at::Tensor pin_offset_y, float die_size_x,
+                                float die_size_y, pybind11::list row_height,
+                                int terminal_size_x, int terminal_size_y,
+                                int terminal_spacing, at::Tensor pin_pos,
+                                const std::vector<std::string> &node_names,
+                                const std::vector<std::string> &net_names,
+                                at::Tensor pos_2d, std::string case_name) {
   CHECK_FLAT_CPU(flat_netpin);
   CHECK_CONTIGUOUS(flat_netpin);
   CHECK_FLAT_CPU(netpin_start);
@@ -227,10 +206,6 @@ at::Tensor terminal_aux_forward(
   CHECK_FLAT_CPU(pos_2d);
   CHECK_EVEN(pos_2d);
   CHECK_CONTIGUOUS(pos_2d);
-
-  CHECK_FLAT_CPU(pos_terminal_legalized);
-  CHECK_EVEN(pos_terminal_legalized);
-  CHECK_CONTIGUOUS(pos_terminal_legalized);
 
   int num_nets = netpin_start.numel() - 1;
   int num_pins = pin2node_map.numel();
@@ -256,11 +231,7 @@ at::Tensor terminal_aux_forward(
         DREAMPLACE_TENSOR_DATA_PTR(pin_pos, scalar_t) + pin_pos.numel() / 2,
         node_names, net_names, DREAMPLACE_TENSOR_DATA_PTR(pos_2d, scalar_t),
         DREAMPLACE_TENSOR_DATA_PTR(pos_2d, scalar_t) + pos_2d.numel() / 2,
-        case_name, terminal_legalize_flag,
-        DREAMPLACE_TENSOR_DATA_PTR(pos_terminal_legalized, scalar_t),
-        DREAMPLACE_TENSOR_DATA_PTR(pos_terminal_legalized, scalar_t) +
-            pos_terminal_legalized.numel() / 2,
-        num_terminals, terminal_names);
+        case_name);
   });
 
   return cut_net_mask;

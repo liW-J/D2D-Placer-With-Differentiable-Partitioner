@@ -1,4 +1,4 @@
-set(OP_NAME parts_reader)
+set(OP_NAME part_reader)
 
 set(TARGET_NAME ${OP_NAME})
 
@@ -20,7 +20,7 @@ set(LINK_LIBS
   )
 
 add_pytorch_extension(${TARGET_NAME}_cpp 
-  src/parts_reader.cpp
+  src/part_reader.cpp
   EXTRA_INCLUDE_DIRS ${INCLUDE_DIRS}
   EXTRA_LINK_LIBRARIES ${LINK_LIBS})
 
