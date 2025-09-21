@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-06-13 15:35:55
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-09-15 23:06:37
+LastEditTime: 2025-09-21 00:31:44
 FilePath: /D2D-placer/placer/op_wrapper.py
 Description:
 '''
@@ -31,8 +31,9 @@ class D2DOpCollection(object):
     def __init__(self, hmetis_op, multi_bipartition_op, init_partition_op,
                  out_fmt_iccad_op, pos_flattened_op, terminal_insert_op,
                  pin_pos_op, pin_pos_tier_op, terminal_legalize_op, avg_cut_op,
-                 terminal_aux_op, refinement_op, hpwl_d2d_op, macro_balance_op,
-                 parts_reader_op, hgr_generator_op):
+                 terminal_insert_aux_op, terminal_legaliza_aux_op,
+                 refinement_op, hpwl_d2d_op, macro_balance_op, parts_reader_op,
+                 hgr_generator_op):
         self.hmetis_op = hmetis_op
         self.multi_bipartition_op = multi_bipartition_op
         self.init_partition_op = init_partition_op
@@ -43,7 +44,8 @@ class D2DOpCollection(object):
         self.pin_pos_tier_op = pin_pos_tier_op
         self.terminal_legalize_op = terminal_legalize_op
         self.avg_cut_op = avg_cut_op
-        self.terminal_aux_op = terminal_aux_op
+        self.terminal_insert_aux_op = terminal_insert_aux_op
+        self.terminal_legaliza_aux_op = terminal_legaliza_aux_op
         self.refinement_op = refinement_op
         self.hpwl_d2d_op = hpwl_d2d_op
         self.macro_balance_op = macro_balance_op
@@ -111,7 +113,8 @@ class OpWrapper(object):
         self.pin_pos_tier_op = self.build_pin_pos_tier()
         self.terminal_legalize_op = self.build_terminal_legalize()
         self.avg_cut_op = self.build_avg_cut()
-        self.terminal_aux_op = self.build_terminal_aux()
+        self.terminal_insert_aux_op = self.build_terminal_insert_aux()
+        self.terminal_legaliza_aux_op = self.build_terminal_legaliza_aux()
         self.refinement_op = self.build_refinement()
         self.hpwl_d2d_op = self.build_hpwl_d2d()
         self.macro_balance_op = self.build_macro_balance()
@@ -129,7 +132,8 @@ class OpWrapper(object):
             pin_pos_tier_op=self.pin_pos_tier_op,
             terminal_legalize_op=self.terminal_legalize_op,
             avg_cut_op=self.avg_cut_op,
-            terminal_aux_op=self.terminal_aux_op,
+            terminal_insert_aux_op=self.terminal_insert_aux_op,
+            terminal_legaliza_aux_op=self.terminal_legaliza_aux_op,
             refinement_op=self.refinement_op,
             hpwl_d2d_op=self.hpwl_d2d_op,
             macro_balance_op=self.macro_balance_op,
@@ -355,21 +359,30 @@ class OpWrapper(object):
 
         return build_avg_cut_op
 
-    def build_terminal_aux(self):
+    def build_terminal_insert_aux(self):
 
-        terminal_aux_op = TerminalAux(
+        terminal_insert_aux_op = TerminalAux(
             self.data_collections_2d.flat_net2pin_map,
             self.data_collections_2d.flat_net2pin_start_map,
             self.data_collections_2d.pin2node_map,
             self.data_collections_2d.net_weights,
-            self.placedb_2d.num_movable_nodes, self.placedb_2d.node_names,
-            self.placedb_2d.net_names, self.node_size_x, self.node_size_y,
-            self.pin_offset_x, self.pin_offset_y, self.die_size_x,
-            self.die_size_y, self.row_height, self.die_spec.terminalSizeX,
-            self.die_spec.terminalSizeY, self.die_spec.terminalSpacing,
-            self.case_name)
+            self.placedb_2d.num_movable_nodes,
+            self.placedb_2d.node_names,
+            self.placedb_2d.net_names,
+            self.node_size_x,
+            self.node_size_y,
+            self.pin_offset_x,
+            self.pin_offset_y,
+            self.die_size_x,
+            self.die_size_y,
+            self.row_height,
+            self.die_spec.terminalSizeX,
+            self.die_spec.terminalSizeY,
+            self.die_spec.terminalSpacing,
+            self.case_name,
+            terminal_legalize_flag=False)
 
-        def build_terminal_aux_op(tier, pos_2d):
+        def build_terminal_insert_aux_op(tier, pos_2d):
             pin_pos_x = torch.stack([
                 self.pin_pos_tier_op[tier_id](pos_2d)
                 [:self.data_collections_2d.pin2node_map.numel()]
@@ -381,9 +394,50 @@ class OpWrapper(object):
                 for tier_id in range(self.num_tiers)
             ])
             pin_pos = torch.cat([pin_pos_x, pin_pos_y], dim=0)
-            return terminal_aux_op(tier, pin_pos, pos_2d)
+            return terminal_insert_aux_op(tier, pin_pos, pos_2d)
 
-        return build_terminal_aux_op
+        return build_terminal_insert_aux_op
+
+    def build_terminal_legaliza_aux(self):
+
+        terminal_legaliza_aux_op = TerminalAux(
+            self.data_collections_2d.flat_net2pin_map,
+            self.data_collections_2d.flat_net2pin_start_map,
+            self.data_collections_2d.pin2node_map,
+            self.data_collections_2d.net_weights,
+            self.placedb_2d.num_movable_nodes,
+            self.placedb_2d.node_names,
+            self.placedb_2d.net_names,
+            self.node_size_x,
+            self.node_size_y,
+            self.pin_offset_x,
+            self.pin_offset_y,
+            self.die_size_x,
+            self.die_size_y,
+            self.row_height,
+            self.die_spec.terminalSizeX,
+            self.die_spec.terminalSizeY,
+            self.die_spec.terminalSpacing,
+            self.case_name,
+            terminal_legalize_flag=True)
+
+        def build_terminal_legaliza_aux_op(tier, pos_2d, pos_terminal,
+                                           num_terminal_NIs, terminal_names):
+            pin_pos_x = torch.stack([
+                self.pin_pos_tier_op[tier_id](pos_2d)
+                [:self.data_collections_2d.pin2node_map.numel()]
+                for tier_id in range(self.num_tiers)
+            ])
+            pin_pos_y = torch.stack([
+                self.pin_pos_tier_op[tier_id](pos_2d)
+                [self.data_collections_2d.pin2node_map.numel():]
+                for tier_id in range(self.num_tiers)
+            ])
+            pin_pos = torch.cat([pin_pos_x, pin_pos_y], dim=0)
+            return terminal_legaliza_aux_op(tier, pin_pos, pos_2d, pos_terminal,
+                                       num_terminal_NIs, terminal_names)
+
+        return build_terminal_legaliza_aux_op
 
     def build_refinement(self):
 

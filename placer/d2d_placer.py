@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-07-19 17:57:28
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-09-15 23:57:23
+LastEditTime: 2025-09-21 14:46:07
 FilePath: /D2D-placer/placer/d2d_placer.py
 Description: 
 '''
@@ -182,12 +182,19 @@ class D2Dplacer:
         # self.tier = self.op_wrapper.d2d_op_collections.avg_cut_op(self.dreamplace.dp_2d.pos)
 
         # temporarily call tier result from file
-        # self.tier = torch.load('placer/die_tensor.pt')
+        # self.tier = torch.load('/home/placer/D2D-placer/install/placer/partition_tensor/case2-hmetis.pt')
         # self.tier = self.tier.to(torch.int32)
 
         # self.tier = self.specpart.flow(
         #     self.op_wrapper.d2d_op_collections.hgr_generator_op,
         #     self.op_wrapper.d2d_op_collections.parts_reader_op)
+
+        # self.tier = self.tritonpart.flow(
+        #     self.op_wrapper.d2d_op_collections.hgr_generator_op,
+        #     self.op_wrapper.d2d_op_collections.parts_reader_op,
+        #     pos=self.dreamplace.dp_2d.pos,
+        #     num_movable_nodes=self.dreamplace.dp_2d.placedb.num_movable_nodes)
+
         self.tier = self.tritonpart.flow(
             self.op_wrapper.d2d_op_collections.hgr_generator_op,
             self.op_wrapper.d2d_op_collections.parts_reader_op)
@@ -199,7 +206,9 @@ class D2Dplacer:
             self.params.case_name + "/" + self.params.case_name +
             ".hgr.part.2")
 
-        self.tier = torch.tensor(graph_cutsize.parts)
+        # self.tier = torch.tensor(graph_cutsize.parts)
+        graph_cutsize.parts = self.tier.tolist()
+
         # new_clique_cut, new_cutnet = graph_cutsize.minimize_clique_cutsize_greedy(
         # )
         new_clique_cut, new_cutnet = graph_cutsize.calculate()
@@ -207,11 +216,12 @@ class D2Dplacer:
                     (new_clique_cut, new_cutnet))
 
         self.tier = self.tier.to(torch.int32)
+        torch.save(self.tier, self.params.result_dir_root + "/tier.pt")
 
         # return partition result but not receive now
         # pos_2d/2 beceuse of 3d-placer set flattened_die size as die_size*2
         # self.cut_net_mask = self.op_wrapper.d2d_op_collections.init_partition_op(
-        #     self.tier, self.pos_2d / 2, self.node_orient)
+        #     self.tier, self.dreamplace.dp_2d.pos / 2, self.node_orient)
         self.cut_net_mask = self.op_wrapper.d2d_op_collections.terminal_insert_op(
             self.tier, self.dreamplace.dp_2d.pos / 2, self.node_orient)
 
@@ -228,15 +238,30 @@ class D2Dplacer:
         breakpoint()
 
     def terminal_insert(self):
-        self.op_wrapper.d2d_op_collections.terminal_insert_op(
-            self.tier, self.dreamplace.dp_2d.pos, self.node_orient)
-
         # create terminal aux for collaborative optimization by tier[0]
-        self.op_wrapper.d2d_op_collections.terminal_aux_op(
+        self.op_wrapper.d2d_op_collections.terminal_insert_aux_op(
             self.tier, self.dreamplace.dp_2d.pos)
 
         self.dreamplace.dp_terminal.database(self.params.terminal)
         self.dreamplace.dp_terminal.place(self.params.terminal, self.timer)
+
+        self.op_wrapper.d2d_op_collections.terminal_legalize_op(
+            self.tier, self.dreamplace.dp_2d.pos,
+            self.dreamplace.dp_terminal.pos, self.num_terminal_NIs,
+            self.dreamplace.dp_terminal.placedb.node_names, self.node_orient)
+
+    def terminal_legalize(self):
+        # create terminal aux for collaborative optimization by tier[0]
+        self.op_wrapper.d2d_op_collections.terminal_legaliza_aux_op(
+            self.tier, self.dreamplace.dp_2d.pos,
+            self.dreamplace.dp_terminal.pos, self.num_terminal_NIs,
+            self.dreamplace.dp_terminal.placedb.node_names)
+        # breakpoint()
+
+        self.params.terminal.global_place_flag = False
+        self.dreamplace.dp_terminal.database(self.params.terminal)
+        self.dreamplace.dp_terminal.place(self.params.terminal, self.timer)
+        self.params.terminal.global_place_flag = True
 
         self.op_wrapper.d2d_op_collections.terminal_legalize_op(
             self.tier, self.dreamplace.dp_2d.pos,
@@ -254,7 +279,7 @@ class D2Dplacer:
         self.num_terminal_NIs = int(self.cut_net_mask.sum().item())
 
         # create terminal aux for collaborative optimization by tier[0]
-        self.op_wrapper.d2d_op_collections.terminal_aux_op(
+        self.op_wrapper.d2d_op_collections.terminal_insert_aux_op(
             self.tier, self.dreamplace.dp_2d.pos)
 
         self.dreamplace.dp_terminal.database(self.params.terminal)

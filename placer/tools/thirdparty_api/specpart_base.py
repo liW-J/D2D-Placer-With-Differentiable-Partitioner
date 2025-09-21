@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-08-09 23:53:41
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-09-15 23:56:53
+LastEditTime: 2025-09-16 14:53:28
 FilePath: /D2D-placer/placer/tools/specpart_date.py
 Description: 
 '''
@@ -59,7 +59,7 @@ class SpecPartBase:
     def flow(self, hgr_generator_op, parts_reader_op):
         hgr_generator_op(self.params.case_name)
         # run hmetis
-        cmd = f"{self.hmetis_path} -ufactor=0.7 {self.hg} 2"
+        cmd =  f"{self.hmetis_path} {self.hg} 2 2 10 1 1 0 1 0"
         os.system(cmd)
 
         self.partitioning()

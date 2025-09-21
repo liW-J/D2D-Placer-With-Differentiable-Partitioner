@@ -27,5 +27,6 @@
 "sort_nets_by_degree" : 0, 
 "num_threads" : 8,
 "deterministic_flag" : 1,
-"ntuplace_flag" : 0
+"ntuplace_flag" : 0,
+"tier_path" : "/home/placer/D2D-placer/install/placer/partition_tensor/case3-tp-16*16-0.pt"
 }

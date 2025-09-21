@@ -24,7 +24,7 @@ puts "Start TritonPart for hypergraph partitioning with placement"
 triton_part_hypergraph -hypergraph_file $hypergraph_file -num_parts $num_parts \
   -balance_constraint $balance_constraint \
   -seed $seed \
-  -placement_file ${placement_file} -placement_wt_factors { 10.0000 10.0000 } \
+  -placement_file ${placement_file} -placement_wt_factors { 0.0000 0.0000 } \
   -placement_dimension 2
 
 exit
