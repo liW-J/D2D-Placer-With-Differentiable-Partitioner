@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-07-19 17:57:28
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-09-21 14:46:07
+LastEditTime: 2025-09-21 22:39:11
 FilePath: /D2D-placer/placer/d2d_placer.py
 Description: 
 '''
@@ -182,7 +182,9 @@ class D2Dplacer:
         # self.tier = self.op_wrapper.d2d_op_collections.avg_cut_op(self.dreamplace.dp_2d.pos)
 
         # temporarily call tier result from file
-        # self.tier = torch.load('/home/placer/D2D-placer/install/placer/partition_tensor/case2-hmetis.pt')
+        self.tier = torch.load(
+            '/home/placer/D2D-placer/install/placer/partition_tensor/case2-hmetis.pt'
+        )
         # self.tier = self.tier.to(torch.int32)
 
         # self.tier = self.specpart.flow(
@@ -195,9 +197,9 @@ class D2Dplacer:
         #     pos=self.dreamplace.dp_2d.pos,
         #     num_movable_nodes=self.dreamplace.dp_2d.placedb.num_movable_nodes)
 
-        self.tier = self.tritonpart.flow(
-            self.op_wrapper.d2d_op_collections.hgr_generator_op,
-            self.op_wrapper.d2d_op_collections.parts_reader_op)
+        # self.tier = self.tritonpart.flow(
+        #     self.op_wrapper.d2d_op_collections.hgr_generator_op,
+        #     self.op_wrapper.d2d_op_collections.parts_reader_op)
 
         graph_cutsize = GraphCutsize(
             "/home/placer/D2D-placer/install/run_tmp/" +
@@ -242,7 +244,9 @@ class D2Dplacer:
         self.op_wrapper.d2d_op_collections.terminal_insert_aux_op(
             self.tier, self.dreamplace.dp_2d.pos)
 
-        self.dreamplace.dp_terminal.database(self.params.terminal)
+        self.dreamplace.dp_terminal.init_basic_place(self.params.terminal,
+                                                     self.timer)
+        # self.dreamplace.dp_terminal.database(self.params.terminal)
         self.dreamplace.dp_terminal.place(self.params.terminal, self.timer)
 
         self.op_wrapper.d2d_op_collections.terminal_legalize_op(
@@ -259,7 +263,9 @@ class D2Dplacer:
         # breakpoint()
 
         self.params.terminal.global_place_flag = False
-        self.dreamplace.dp_terminal.database(self.params.terminal)
+        self.dreamplace.dp_terminal.init_basic_place(self.params.terminal,
+                                                     self.timer)
+        # self.dreamplace.dp_terminal.database(self.params.terminal)
         self.dreamplace.dp_terminal.place(self.params.terminal, self.timer)
         self.params.terminal.global_place_flag = True
 
@@ -282,7 +288,9 @@ class D2Dplacer:
         self.op_wrapper.d2d_op_collections.terminal_insert_aux_op(
             self.tier, self.dreamplace.dp_2d.pos)
 
-        self.dreamplace.dp_terminal.database(self.params.terminal)
+        self.dreamplace.dp_terminal.init_basic_place(self.params.terminal,
+                                                     self.timer)
+        # self.dreamplace.dp_terminal.database(self.params.terminal)
         self.dreamplace.dp_terminal.place(self.params.terminal, self.timer)
 
         self.op_wrapper.d2d_op_collections.terminal_legalize_op(
@@ -358,7 +366,7 @@ if __name__ == "__main__":
     d2d_placer.die_by_die_place(global_place_flag=True,
                                 legalize_flag=False,
                                 detailed_place_flag=False,
-                                random_center_init_flag=False,
+                                random_center_init_flag=True,
                                 ntuplace_flag=False)
 
     d2d_placer.terminal_insert()

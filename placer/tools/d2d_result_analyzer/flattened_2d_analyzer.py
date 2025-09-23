@@ -76,25 +76,24 @@ class Flattened2DAnalyzer:
 
             instance_x, instance_y = self.instance_positions[instance_name]
 
-            # 获取lib cell类型
+            # obtain the lib cell type from the instance name
             lib_cell_type = instance_types.get(instance_name)
             if not lib_cell_type or lib_cell_type not in lib_cells:
-                # 如果没有lib cell信息，使用instance中心位置
+                # if there is no lib cell information, use the instance center position
                 pin_positions.append((instance_x, instance_y))
                 continue
 
             lib_cell = lib_cells[lib_cell_type]
             
-            # 获取pin信息
             if lib_cell.get('pins'):
-                # 使用第一个pin的偏移位置
+                # use the first pin's offset position
                 first_pin_name = list(lib_cell['pins'].keys())[0]
                 pin_offset = lib_cell['pins'][first_pin_name]
                 pin_x = instance_x + pin_offset['x_offset']
                 pin_y = instance_y + pin_offset['y_offset']
                 pin_positions.append((pin_x, pin_y))
             else:
-                # 如果没有pin信息，使用instance中心
+                # if there is no pin information, use the instance center position
                 cell_width = lib_cell.get('width', 0)
                 cell_height = lib_cell.get('height', 0)
                 center_x = instance_x + cell_width / 2

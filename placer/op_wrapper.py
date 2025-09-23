@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-06-13 15:35:55
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-09-21 00:31:44
+LastEditTime: 2025-09-22 13:26:07
 FilePath: /D2D-placer/placer/op_wrapper.py
 Description:
 '''
@@ -15,7 +15,7 @@ from placer.ops.terminal_aux.terminal_aux import TerminalAux
 from placer.ops.refinement.refinement import Refinement
 from placer.ops.hpwl_d2d.hpwl_d2d import HPWLD2D
 from placer.ops.macro_balance.macro_balance import MacroBalance
-from placer.ops.parts_reader.parts_reader import PartsReader
+from placer.ops.bin_based_fm.bin_based_fm import BinBasedFM
 
 from placer.tools.out_fmt_iccad import OutfmtICCAD
 from placer.tools.pos_flattened import PosFlattened
@@ -30,10 +30,11 @@ class D2DOpCollection(object):
 
     def __init__(self, hmetis_op, multi_bipartition_op, init_partition_op,
                  out_fmt_iccad_op, pos_flattened_op, terminal_insert_op,
-                 pin_pos_op, pin_pos_tier_op, terminal_legalize_op, avg_cut_op,
-                 terminal_insert_aux_op, terminal_legaliza_aux_op,
-                 refinement_op, hpwl_d2d_op, macro_balance_op, parts_reader_op,
-                 hgr_generator_op):
+                 pin_pos_op, pin_pos_tier_op, pin_pos_terminal_op,
+                 terminal_legalize_op, avg_cut_op, terminal_insert_aux_op,
+                 terminal_legaliza_aux_op, refinement_op, hpwl_d2d_op,
+                 macro_balance_op, parts_reader_op, hgr_generator_op,
+                 bin_based_fm_op):
         self.hmetis_op = hmetis_op
         self.multi_bipartition_op = multi_bipartition_op
         self.init_partition_op = init_partition_op
@@ -42,6 +43,7 @@ class D2DOpCollection(object):
         self.terminal_insert_op = terminal_insert_op
         self.pin_pos_op = pin_pos_op
         self.pin_pos_tier_op = pin_pos_tier_op
+        self.pin_pos_terminal_op = pin_pos_terminal_op
         self.terminal_legalize_op = terminal_legalize_op
         self.avg_cut_op = avg_cut_op
         self.terminal_insert_aux_op = terminal_insert_aux_op
@@ -51,6 +53,7 @@ class D2DOpCollection(object):
         self.macro_balance_op = macro_balance_op
         self.parts_reader_op = parts_reader_op
         self.hgr_generator_op = hgr_generator_op
+        self.bin_based_fm_op = bin_based_fm_op
 
 
 class OpWrapper(object):
@@ -111,6 +114,7 @@ class OpWrapper(object):
         self.terminal_insert_op = self.build_terminal_insert()
         self.pin_pos_op = self.build_pin_pos()
         self.pin_pos_tier_op = self.build_pin_pos_tier()
+        self.pin_pos_terminal_op = self.build_pin_pos_terminal()
         self.terminal_legalize_op = self.build_terminal_legalize()
         self.avg_cut_op = self.build_avg_cut()
         self.terminal_insert_aux_op = self.build_terminal_insert_aux()
@@ -120,6 +124,7 @@ class OpWrapper(object):
         self.macro_balance_op = self.build_macro_balance()
         self.parts_reader_op = self.build_parts_reader()
         self.hgr_generator_op = self.build_hgr_generator()
+        self.bin_based_fm_op = self.build_bin_based_fm()
 
         self.d2d_op_collections = D2DOpCollection(
             hmetis_op=self.hmetis_op,
@@ -130,6 +135,7 @@ class OpWrapper(object):
             terminal_insert_op=self.terminal_insert_op,
             pin_pos_op=self.pin_pos_op,
             pin_pos_tier_op=self.pin_pos_tier_op,
+            pin_pos_terminal_op=self.pin_pos_terminal_op,
             terminal_legalize_op=self.terminal_legalize_op,
             avg_cut_op=self.avg_cut_op,
             terminal_insert_aux_op=self.terminal_insert_aux_op,
@@ -138,7 +144,8 @@ class OpWrapper(object):
             hpwl_d2d_op=self.hpwl_d2d_op,
             macro_balance_op=self.macro_balance_op,
             parts_reader_op=self.parts_reader_op,
-            hgr_generator_op=self.hgr_generator_op)
+            hgr_generator_op=self.hgr_generator_op,
+            bin_based_fm_op=self.bin_based_fm_op)
 
     def build_hmetis(self):
 
@@ -278,6 +285,24 @@ class OpWrapper(object):
             algorithm="node-by-node")
 
         return pin_pos_op
+
+    def build_pin_pos_terminal(self):
+
+        def build_pin_pos_terminal_op(data_collections_terminal,
+                                      num_terminal_NIs):
+            pin_pos_terminal_op = PinPos(
+                pin_offset_x=data_collections_terminal.pin_offset_x,
+                pin_offset_y=data_collections_terminal.pin_offset_y,
+                pin2node_map=data_collections_terminal.pin2node_map,
+                flat_node2pin_map=data_collections_terminal.flat_node2pin_map,
+                flat_node2pin_start_map=data_collections_terminal.
+                flat_node2pin_start_map,
+                num_physical_nodes=num_terminal_NIs,
+                algorithm="node-by-node")
+
+            return pin_pos_terminal_op
+
+        return build_pin_pos_terminal_op
 
     def build_pin_pos_tier(self):
 
@@ -434,8 +459,10 @@ class OpWrapper(object):
                 for tier_id in range(self.num_tiers)
             ])
             pin_pos = torch.cat([pin_pos_x, pin_pos_y], dim=0)
-            return terminal_legaliza_aux_op(tier, pin_pos, pos_2d, pos_terminal,
-                                       num_terminal_NIs, terminal_names)
+
+            return terminal_legaliza_aux_op(tier, pin_pos, pos_2d,
+                                            pos_terminal, num_terminal_NIs,
+                                            terminal_names)
 
         return build_terminal_legaliza_aux_op
 
@@ -470,6 +497,38 @@ class OpWrapper(object):
                                  num_terminal_NIs, terminal_names)
 
         return build_refinement_op
+
+    def build_bin_based_fm(self):
+
+        bin_based_fm_op = BinBasedFM(
+            self.data_collections_2d.flat_net2pin_map,
+            self.data_collections_2d.flat_net2pin_start_map,
+            self.data_collections_2d.pin2node_map,
+            self.data_collections_2d.net_weights,
+            self.placedb_2d.num_movable_nodes, self.placedb_2d.node_names,
+            self.placedb_2d.net_names, self.node_size_x, self.node_size_y,
+            self.pin_offset_x, self.pin_offset_y, self.die_size_x,
+            self.die_size_y, self.row_height, self.die_spec.terminalSizeX,
+            self.die_spec.terminalSizeY, self.die_spec.terminalSpacing,
+            self.case_name)
+
+        def build_bin_based_fm_op(tier, pos_2d, pos_terminal, num_terminal_NIs,
+                                  terminal_names):
+            pin_pos_x = torch.stack([
+                self.pin_pos_tier_op[tier_id](pos_2d)
+                [:self.data_collections_2d.pin2node_map.numel()]
+                for tier_id in range(self.num_tiers)
+            ])
+            pin_pos_y = torch.stack([
+                self.pin_pos_tier_op[tier_id](pos_2d)
+                [self.data_collections_2d.pin2node_map.numel():]
+                for tier_id in range(self.num_tiers)
+            ])
+            pin_pos = torch.cat([pin_pos_x, pin_pos_y], dim=0)
+            return bin_based_fm_op(tier, pin_pos, pos_2d, pos_terminal,
+                                   num_terminal_NIs, terminal_names)
+
+        return build_bin_based_fm_op
 
     def build_hpwl_d2d(self):
 

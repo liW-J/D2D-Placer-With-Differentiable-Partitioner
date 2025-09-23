@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 class TritonPartBase:
 
-    def __init__(self, params, bin_size=(4, 4), enable_bin_based=False):
+    def __init__(self, params, bin_size=(4, 4), enable_bin_based=True):
         super().__init__()
 
         self.params = params

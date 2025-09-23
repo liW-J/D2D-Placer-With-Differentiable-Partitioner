@@ -2,7 +2,7 @@
  * @Author: JeanneWillis hi@jeannewillis.cn
  * @Date: 2025-03-19 11:49:04
  * @LastEditors: JeanneWillis hi@jeannewillis.cn
- * @LastEditTime: 2025-06-19 21:54:52
+ * @LastEditTime: 2025-09-22 12:58:09
  * @FilePath: /D2D-placer/src/ops/partition/src/partition.cpp
  * @Description: partition
  */
@@ -49,10 +49,14 @@ void refinementLauncher(
   int refinement_flag = 1;
 
   while (refinement_flag) {
-    int hpwl_gain_max = -std::numeric_limits<int>::max();
-    int node_id_max = 0;
-    int hpwl_gain = 0;
+    // int hpwl_gain_max = -std::numeric_limits<int>::max();
+    int gain_max = -std::numeric_limits<int>::max();
+    int node_id_max = -1;
+    int hpwl_gain, terminal_gain, gain = 0;
     int hpwl_base = hpwl;
+    int num_terminals_base = num_terminals;
+    int init_num_terminals = num_terminals;
+
     for (int node_id = 0; node_id < num_movable_nodes; ++node_id) {
       if (!locked_node_mask[node_id]) {
 
@@ -60,7 +64,7 @@ void refinementLauncher(
         std::vector<int> cut_net_mask_tmp(num_nets, 0);
         tier_tmp[node_id] = 1 - tier_tmp[node_id];
 
-        int num_terminals = Partitioner::getCutNetMask(
+        int num_terminals_tmp = Partitioner::getCutNetMask(
             cut_net_mask_tmp.data(), num_nets, num_tiers, tier_tmp.data(),
             flat_netpin, netpin_start, pin2node_map, num_movable_nodes);
 
@@ -68,26 +72,31 @@ void refinementLauncher(
             pin_x, pin_y, flat_netpin, netpin_start, pin2node_map,
             cut_net_mask_tmp.data(), num_nets, num_pins, tier_tmp.data(),
             num_tiers, terminal_x, terminal_y, terminal_size_x, terminal_size_y,
-            terminal_spacing, num_terminals, net_names, terminal_names,
+            terminal_spacing, init_num_terminals, net_names, terminal_names,
             num_threads);
         hpwl_gain = hpwl - hpwl_tmp;
-        // LOG(INFO, "HPWL_GAIN: %d", hpwl_gain[node_id]);
-        if (hpwl_gain > hpwl_gain_max) {
-          hpwl_gain_max = hpwl_gain;
+        terminal_gain = num_terminals - num_terminals_tmp;
+        gain =
+            (hpwl_gain + 1000 * terminal_gain) * (num_nets - num_terminals_tmp);
+
+        if (gain > gain_max) {
+          gain_max = gain;
           node_id_max = node_id;
           hpwl_base = hpwl_tmp;
-          LOG(INFO, "HPWL_GAIN: %d, HPWL: %d, HPWL_TMP: %d", hpwl_gain, hpwl,
-              hpwl_tmp);
+          num_terminals_base = num_terminals_tmp;
+          LOG(INFO, "GAIN: %d; HPWL: %d, HPWL_TMP: %d; TERMINAL_TMP: %d", gain,
+              hpwl, hpwl_tmp, num_terminals_tmp);
         }
       }
     }
 
-    refinement_flag = hpwl_gain_max > 0 ? 1 : 0;
+    refinement_flag = gain_max > 0 ? 1 : 0;
 
     if (!locked_node_mask[node_id_max] && refinement_flag) {
       locked_node_mask[node_id_max] = 1;
       tier[node_id_max] = 1 - tier[node_id_max];
       hpwl = hpwl_base;
+      num_terminals = num_terminals_base;
     }
   }
 }

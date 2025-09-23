@@ -2,7 +2,7 @@
  * @Author: JeanneWillis hi@jeannewillis.cn
  * @Date: 2025-06-17 13:30:24
  * @LastEditors: JeanneWillis hi@jeannewillis.cn
- * @LastEditTime: 2025-06-19 13:13:30
+ * @LastEditTime: 2025-09-21 22:14:06
  * @FilePath: /D2D-placer/placer/ops/hpwl_d2d/hpwl_d2d.cpp
  * @Description:
  */
@@ -114,6 +114,7 @@ int computeHPWLD2DLauncher(
                             (terminal_size_x + terminal_spacing) / 2;
       T terminal_y_center = terminal_y[cur_terminal_id] +
                             (terminal_size_y + terminal_spacing) / 2;
+
 
       for (int tier_id = 0; tier_id < num_tiers; ++tier_id) {
         for (int pin_id = netpin_start[net_id];
