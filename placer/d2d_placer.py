@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-07-19 17:57:28
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-09-21 22:39:11
+LastEditTime: 2025-10-06 18:58:50
 FilePath: /D2D-placer/placer/d2d_placer.py
 Description: 
 '''
@@ -182,9 +182,10 @@ class D2Dplacer:
         # self.tier = self.op_wrapper.d2d_op_collections.avg_cut_op(self.dreamplace.dp_2d.pos)
 
         # temporarily call tier result from file
-        self.tier = torch.load(
-            '/home/placer/D2D-placer/install/placer/partition_tensor/case2-hmetis.pt'
-        )
+        # self.tier = torch.load(
+        #     '/home/placer/D2D-placer/install/placer/partition_tensor/case2-hmetis.pt'
+        # )
+        # self.tier = torch.load(self.params.flatten_2d.tier_path)
         # self.tier = self.tier.to(torch.int32)
 
         # self.tier = self.specpart.flow(
@@ -197,9 +198,9 @@ class D2Dplacer:
         #     pos=self.dreamplace.dp_2d.pos,
         #     num_movable_nodes=self.dreamplace.dp_2d.placedb.num_movable_nodes)
 
-        # self.tier = self.tritonpart.flow(
-        #     self.op_wrapper.d2d_op_collections.hgr_generator_op,
-        #     self.op_wrapper.d2d_op_collections.parts_reader_op)
+        self.tier = self.tritonpart.flow(
+            self.op_wrapper.d2d_op_collections.hgr_generator_op,
+            self.op_wrapper.d2d_op_collections.parts_reader_op)
 
         graph_cutsize = GraphCutsize(
             "/home/placer/D2D-placer/install/run_tmp/" +
@@ -275,7 +276,7 @@ class D2Dplacer:
             self.dreamplace.dp_terminal.placedb.node_names, self.node_orient)
 
     def refinement(self):
-        self.tier = self.op_wrapper.d2d_op_collections.refinement_op(
+        self.tier = self.op_wrapper.d2d_op_collections.bin_based_fm_op(
             self.tier, self.dreamplace.dp_2d.pos,
             self.dreamplace.dp_terminal.pos, self.num_terminal_NIs,
             self.dreamplace.dp_terminal.placedb.node_names)
@@ -297,6 +298,8 @@ class D2Dplacer:
             self.tier, self.dreamplace.dp_2d.pos,
             self.dreamplace.dp_terminal.pos, self.num_terminal_NIs,
             self.dreamplace.dp_terminal.placedb.node_names, self.node_orient)
+        
+        torch.save(self.tier, self.params.result_dir_root + "/tier-refinement.pt")
 
     def macro_rotation(self):
         # self.dreamplace.placedb_terminal.node_orient = np.array(self.dreamplace.placedb_terminal.node_orient, dtype=np.bytes_)
@@ -344,6 +347,8 @@ class D2Dplacer:
 
         analyze_placer_output(self.params.case_name,
                               self.params.result_dir_root)
+        
+        self.op_wrapper.d2d_op_collections.draw_layout_result_op() 
 
 
 if __name__ == "__main__":
@@ -378,10 +383,10 @@ if __name__ == "__main__":
 
     d2d_placer.macro_rotation()
     d2d_placer.refinement()
-    d2d_placer.die_by_die_place(global_place_flag=False,
+    d2d_placer.die_by_die_place(global_place_flag=True,
                                 legalize_flag=False,
                                 detailed_place_flag=False,
-                                random_center_init_flag=False,
+                                random_center_init_flag=True,
                                 ntuplace_flag=True)
     d2d_placer.hpwl_d2d(d2d_logger)
     d2d_placer.output()

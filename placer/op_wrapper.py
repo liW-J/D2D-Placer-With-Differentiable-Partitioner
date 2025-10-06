@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-06-13 15:35:55
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-09-22 13:26:07
+LastEditTime: 2025-10-07 03:31:49
 FilePath: /D2D-placer/placer/op_wrapper.py
 Description:
 '''
@@ -16,6 +16,7 @@ from placer.ops.refinement.refinement import Refinement
 from placer.ops.hpwl_d2d.hpwl_d2d import HPWLD2D
 from placer.ops.macro_balance.macro_balance import MacroBalance
 from placer.ops.bin_based_fm.bin_based_fm import BinBasedFM
+from placer.ops.draw_layout_result.draw_layout_result import DrawLayoutResult
 
 from placer.tools.out_fmt_iccad import OutfmtICCAD
 from placer.tools.pos_flattened import PosFlattened
@@ -34,7 +35,7 @@ class D2DOpCollection(object):
                  terminal_legalize_op, avg_cut_op, terminal_insert_aux_op,
                  terminal_legaliza_aux_op, refinement_op, hpwl_d2d_op,
                  macro_balance_op, parts_reader_op, hgr_generator_op,
-                 bin_based_fm_op):
+                 bin_based_fm_op, draw_layout_result_op):
         self.hmetis_op = hmetis_op
         self.multi_bipartition_op = multi_bipartition_op
         self.init_partition_op = init_partition_op
@@ -54,6 +55,7 @@ class D2DOpCollection(object):
         self.parts_reader_op = parts_reader_op
         self.hgr_generator_op = hgr_generator_op
         self.bin_based_fm_op = bin_based_fm_op
+        self.draw_layout_result_op = draw_layout_result_op
 
 
 class OpWrapper(object):
@@ -91,6 +93,9 @@ class OpWrapper(object):
             data_collections.pin_offset_y
             for data_collections in self.data_collections_tier
         ])
+        
+        self.top_die_max_util = self.die_spec.topDieMaxUtil / 100
+        self.bottom_die_max_util = self.die_spec.bottomDieMaxUtil / 100
 
         # 3d-placer set flattened_die size as die_size*2
         if self.num_tiers == 2:
@@ -125,6 +130,7 @@ class OpWrapper(object):
         self.parts_reader_op = self.build_parts_reader()
         self.hgr_generator_op = self.build_hgr_generator()
         self.bin_based_fm_op = self.build_bin_based_fm()
+        self.draw_layout_result_op = self.build_draw_layout_result()
 
         self.d2d_op_collections = D2DOpCollection(
             hmetis_op=self.hmetis_op,
@@ -145,7 +151,8 @@ class OpWrapper(object):
             macro_balance_op=self.macro_balance_op,
             parts_reader_op=self.parts_reader_op,
             hgr_generator_op=self.hgr_generator_op,
-            bin_based_fm_op=self.bin_based_fm_op)
+            bin_based_fm_op=self.bin_based_fm_op,
+            draw_layout_result_op=self.draw_layout_result_op)
 
     def build_hmetis(self):
 
@@ -510,7 +517,7 @@ class OpWrapper(object):
             self.pin_offset_x, self.pin_offset_y, self.die_size_x,
             self.die_size_y, self.row_height, self.die_spec.terminalSizeX,
             self.die_spec.terminalSizeY, self.die_spec.terminalSpacing,
-            self.case_name)
+            self.case_name, self.top_die_max_util, self.bottom_die_max_util)
 
         def build_bin_based_fm_op(tier, pos_2d, pos_terminal, num_terminal_NIs,
                                   terminal_names):
@@ -595,3 +602,8 @@ class OpWrapper(object):
             self.data_collections_2d, self.placedb_2d,
             self.d2d_params.run_tmp_dir_root)
         return partitioner_manager.parts_reader
+
+    def build_draw_layout_result(self):
+        draw_layout_result_op = DrawLayoutResult(
+            self.params.txt_input, self.params.result_dir)
+        return draw_layout_result_op

@@ -2,12 +2,14 @@
  * @Author: JeanneWillis hi@jeannewillis.cn
  * @Date: 2025-09-21 17:01:58
  * @LastEditors: JeanneWillis hi@jeannewillis.cn
- * @LastEditTime: 2025-09-23 12:50:31
+ * @LastEditTime: 2025-10-07 04:44:43
  * @FilePath: /D2D-placer/placer/ops/bin_based_fm/src/bin_based_fm.cpp
  * @Description: fm refinement
  */
 
 #include <pybind11/pybind11.h>
+#include <queue>
+#include <unordered_set>
 // dreamplace
 #include "utility/src/torch.h"
 #include "utility/src/utils.h"
@@ -19,6 +21,11 @@
 #include "utils_3d/src/partitioner.h"
 
 PLACER_BEGIN_NAMESPACE
+
+struct Item {
+  int gain;
+  int node_id;
+};
 
 template <typename T>
 void binBasedFMLauncher(
@@ -32,11 +39,67 @@ void binBasedFMLauncher(
     const std::vector<std::string> &net_names, const T *pos_2d_x,
     const T *pos_2d_y, const T *terminal_x, const T *terminal_y,
     std::string case_name, int num_terminals,
-    const std::vector<std::string> &terminal_names, int num_threads) {
+    const std::vector<std::string> &terminal_names, float top_die_max_util,
+    float bottom_die_max_util, int num_threads) {
 
-  Partitioner::getCutNetMask(cut_net_mask, num_nets, num_tiers, tier,
-                             flat_netpin, netpin_start, pin2node_map,
-                             num_movable_nodes);
+  int num_terminals_tmp = Partitioner::getCutNetMask(
+      cut_net_mask, num_nets, num_tiers, tier, flat_netpin, netpin_start,
+      pin2node_map, num_movable_nodes);
+
+  int hpwl = Partitioner::computeHPWLD2D(
+      pin_x, pin_y, flat_netpin, netpin_start, pin2node_map, cut_net_mask,
+      num_nets, num_pins, tier, num_tiers, terminal_x, terminal_y,
+      terminal_size_x, terminal_size_y, terminal_spacing, num_terminals,
+      net_names, terminal_names, num_threads);
+  LOG(INFO, "HPWL: %d", hpwl);
+
+  // build node -> nets adjacency
+  std::vector<std::vector<int>> node_to_nets(num_movable_nodes);
+  for (int net_id = 0; net_id < num_nets; ++net_id) {
+    for (int pin_id = netpin_start[net_id]; pin_id < netpin_start[net_id + 1];
+         ++pin_id) {
+      int node_id = pin2node_map[flat_netpin[pin_id]];
+      if (node_id >= 0 && node_id < num_movable_nodes) {
+        node_to_nets[node_id].push_back(net_id);
+      }
+    }
+  }
+
+  // FM database
+  std::vector<std::vector<int>> net_to_nodes(num_nets);
+  for (int net_id = 0; net_id < num_nets; ++net_id) {
+    for (int pin_id = netpin_start[net_id]; pin_id < netpin_start[net_id + 1];
+         ++pin_id) {
+      int node_id = pin2node_map[flat_netpin[pin_id]];
+      if (node_id >= 0 && node_id < num_movable_nodes) {
+        net_to_nodes[net_id].push_back(node_id);
+      }
+    }
+  }
+
+  std::vector<std::vector<int>> net_count(num_nets,
+                                          std::vector<int>(num_tiers, 0));
+  for (int net_id = 0; net_id < num_nets; ++net_id) {
+    for (int node_id : net_to_nodes[net_id]) {
+      int t = tier[node_id];
+      net_count[net_id][t]++;
+    }
+    // sync cut_net_mask
+    bool is_cut = false;
+    int total = 0;
+    for (int t = 0; t < num_tiers; ++t)
+      total += net_count[net_id][t];
+    for (int t = 0; t < num_tiers; ++t) {
+      if (net_count[net_id][t] == total) {
+        is_cut = false;
+        break;
+      }
+      if (net_count[net_id][t] > 0 && net_count[net_id][t] < total) {
+        is_cut = true;
+      }
+    }
+    cut_net_mask[net_id] = is_cut ? 1 : 0;
+  }
 
   auto compute_single_net_hpwl = [&](int net_id, const int *tier_ptr) -> int {
     int hpwl_net = 0;
@@ -125,181 +188,216 @@ void binBasedFMLauncher(
     return hpwl_net;
   };
 
-  // initial total HPWL
-  int hpwl = 0;
-  for (int net_id = 0; net_id < num_nets; ++net_id) {
-    hpwl += compute_single_net_hpwl(net_id, tier);
-  }
-  LOG(INFO, "HPWL: %d", hpwl);
+  auto compute_node_gain = [&](int node_id) -> int {
+    std::vector<int> tier_tmp(tier, tier + num_movable_nodes);
+    std::vector<int> cut_net_mask_tmp(num_nets, 0);
+    tier_tmp[node_id] = 1 - tier_tmp[node_id];
 
-  // build node -> nets adjacency
-  std::vector<std::vector<int>> node_to_nets(num_movable_nodes);
-  for (int net_id = 0; net_id < num_nets; ++net_id) {
-    for (int pin_id = netpin_start[net_id]; pin_id < netpin_start[net_id + 1];
-         ++pin_id) {
-      int node_id = pin2node_map[flat_netpin[pin_id]];
-      if (node_id >= 0 && node_id < num_movable_nodes) {
-        node_to_nets[node_id].push_back(net_id);
+    int num_terminals_new = Partitioner::getCutNetMask(
+        cut_net_mask_tmp.data(), num_nets, num_tiers, tier_tmp.data(),
+        flat_netpin, netpin_start, pin2node_map, num_movable_nodes);
+
+    // using num_terminal because terminal_pos saved before construct fm
+    int hpwl_new = Partitioner::computeHPWLD2D(
+        pin_x, pin_y, flat_netpin, netpin_start, pin2node_map,
+        cut_net_mask_tmp.data(), num_nets, num_pins, tier_tmp.data(), num_tiers,
+        terminal_x, terminal_y, terminal_size_x, terminal_size_y,
+        terminal_spacing, num_terminals, net_names, terminal_names,
+        num_threads);
+    int hpwl_gain = hpwl - hpwl_new;
+    int terminal_gain = num_terminals_tmp - num_terminals_new;
+    int g = (hpwl_gain + 1000 * terminal_gain) * (num_nets - num_terminals_new);
+    return g;
+  };
+
+  // helper: rebuild net_count and cut mark based on current tier
+  auto rebuild_counts_and_cut = [&]() {
+    for (int net_id = 0; net_id < num_nets; ++net_id) {
+      std::fill(net_count[net_id].begin(), net_count[net_id].end(), 0);
+      for (int node_id : net_to_nodes[net_id]) {
+        int t = tier[node_id];
+        if (t >= 0 && t < num_tiers)
+          net_count[net_id][t]++;
       }
+      int total = 0;
+      for (int t = 0; t < num_tiers; ++t)
+        total += net_count[net_id][t];
+      bool is_cut = true;
+      for (int t = 0; t < num_tiers; ++t) {
+        if (net_count[net_id][t] == total) {
+          is_cut = false;
+          break;
+        }
+      }
+      cut_net_mask[net_id] = is_cut ? 1 : 0;
     }
-  }
+  };
+  const double die_area =
+      static_cast<double>(die_size_x) * static_cast<double>(die_size_y);
+  std::vector<double> tier_area(num_tiers, 0.0);
 
-  // build spatial bin (simple grid, bucket the candidates by location)
-  int bins_x =
-      std::max(1, static_cast<int>(std::sqrt(
-                      static_cast<double>(num_movable_nodes) / 128.0)));
-  int bins_y = bins_x;
-  T bin_w = die_size_x / bins_x;
-  T bin_h = die_size_y / bins_y;
-  std::vector<std::vector<int>> bins(bins_x * bins_y);
-  auto node_pos_x = pos_2d_x;
-  auto node_pos_y = pos_2d_y;
-  for (int node_id = 0; node_id < num_movable_nodes; ++node_id) {
-    int bx = std::min(
-        bins_x - 1, std::max(0, static_cast<int>(node_pos_x[node_id] / bin_w)));
-    int by = std::min(
-        bins_y - 1, std::max(0, static_cast<int>(node_pos_y[node_id] / bin_h)));
-    bins[by * bins_x + bx].push_back(node_id);
-  }
+  bool pass_flag = true;
+  while (pass_flag) {
 
-  std::vector<int> locked_node_mask(num_movable_nodes, 0);
-  int refinement_flag = 1;
-  int remaining_unlocked = num_movable_nodes;
-
-  while (refinement_flag) {
-    if (remaining_unlocked <= 0) {
-      break;
+    for (int n = 0; n < num_movable_nodes; ++n) {
+      int t = tier[n];
+      assert(t >= 0 && t < num_tiers);
+      double node_area = static_cast<double>(node_size_x[n]) *
+                         static_cast<double>(node_size_y[n]);
+      tier_area[t] += node_area;
     }
-    int gain_max = -std::numeric_limits<int>::max();
-    int node_id_max = -1;
-    int hpwl_after_best = hpwl;
-    int num_terminals_after_best = num_terminals;
+    std::vector<int> gain(num_movable_nodes, 0);
+    // for (int node_id = 0; node_id < num_movable_nodes; ++node_id) {
+    //   gain[node_id] = compute_node_gain(node_id);
+    // }
 
-    // scan the candidates bin by bin, evaluate the incremental gain
-    for (size_t b = 0; b < bins.size(); ++b) {
-      for (int node_id : bins[b]) {
-        if (locked_node_mask[node_id])
+    auto cmp = [](const Item &a, const Item &b) { return a.gain < b.gain; };
+    std::priority_queue<Item, std::vector<Item>, decltype(cmp)> pq(cmp);
+    for (int node_id = 0; node_id < num_movable_nodes; ++node_id) {
+      gain[node_id] = compute_node_gain(node_id);
+      pq.push({gain[node_id], node_id});
+    }
+
+    // clear locked each pass
+    std::vector<char> locked(num_movable_nodes, 0);
+    std::vector<int> move_order;
+    move_order.reserve(num_movable_nodes);
+    std::vector<int> move_from;
+    move_from.reserve(num_movable_nodes);
+    std::vector<int> move_gain;
+    move_gain.reserve(num_movable_nodes);
+
+    int cumulative_gain = 0;
+    int best_prefix_gain = 0;
+    int best_prefix_idx = -1;
+
+    // switch until all nodes are locked
+    for (int step = 0; step < num_movable_nodes; ++step) {
+      int pick = -1;
+      int pick_gain = std::numeric_limits<int>::min();
+      while (!pq.empty()) {
+        Item it = pq.top();
+        pq.pop();
+        int node_id = it.node_id;
+        if (locked[node_id] || gain[node_id] != it.gain) {
           continue;
-
-        // assume moving the node: only recalculate the HPWL of the adjacent
-        // networks and estimate the cut change
-        int delta_hpwl_sum = 0;
-        int delta_terminals_sum = 0;
-
-        // construct a temporary tier view: only used once, pass to lambda
-        // to avoid copying large arrays, here we use a small stack array to
-        // cover the tier of the current node implemented as: first remember the
-        // old tier, modify, calculate again and then restore
-        int old_tier = tier[node_id];
-        int new_tier = 1 - old_tier;
-        tier[node_id] = new_tier;
-
-        for (int net_id : node_to_nets[node_id]) {
-          // calculate the HPWL and cut state before and after
-          // before: restore the old tier and calculate the HPWL
-          tier[node_id] = old_tier;
-          int hpwl_before = compute_single_net_hpwl(net_id, tier);
-          bool was_cut = cut_net_mask[net_id] != 0;
-
-          // after: change to the new tier and calculate the HPWL
-          tier[node_id] = new_tier;
-          int hpwl_after = compute_single_net_hpwl(net_id, tier);
-
-          // cut determination: recalculate once (cost is the same as HPWL)
-          // simplified: use the layer participation of hpwl_after and
-          // hpwl_before as the cut determination, here we directly reuse the
-          // logic: use the cut determination inside compute_single_net_hpwl
-          // consistent with tier_ptr, recalculate the flag to avoid duplicate
-          // code, here we approximate the cut change by the difference of HPWL
-          // and the layer change of the node: if hpwl_after < hpwl_before and
-          // the layer interaction decreases, the cut may decrease. more secure:
-          // explicitly recalculate the cut: determine the cut: count the number
-          // of nodes in each layer
-          int num_nodes_in_net = 0;
-          std::vector<int> node_count(num_tiers, 0);
-          for (int pin_id = netpin_start[net_id];
-               pin_id < netpin_start[net_id + 1]; ++pin_id) {
-            int nid = pin2node_map[flat_netpin[pin_id]];
-            node_count[tier[nid]]++;
-            num_nodes_in_net++;
-          }
-          bool now_cut = true;
-          for (int t = 0; t < num_tiers; ++t) {
-            if (node_count[t] == num_nodes_in_net) {
-              now_cut = false;
-              break;
-            }
-          }
-
-          // restore the node tier to the new tier to accumulate the delta
-          tier[node_id] = new_tier;
-
-          delta_hpwl_sum += (hpwl_before - hpwl_after);
-          if (was_cut != now_cut) {
-            delta_terminals_sum += now_cut ? 1 : -1;
-          }
         }
-
-        // restore the real tier
-        tier[node_id] = old_tier;
-
-        int hpwl_gain = delta_hpwl_sum;
-        int num_terminals_tmp = num_terminals + delta_terminals_sum;
-        int terminal_gain = (num_terminals - num_terminals_tmp);
-        int gain =
-            (hpwl_gain + 2000 * terminal_gain) * (num_nets - num_terminals_tmp);
-
-        if (gain > gain_max) {
-          gain_max = gain;
-          node_id_max = node_id;
-          hpwl_after_best = hpwl - hpwl_gain; // hpwl - delta
-          num_terminals_after_best = num_terminals_tmp;
-          LOG(INFO, "GAIN: %d; dHPWL: %d; dTERM: %d", gain, hpwl_gain,
-              terminal_gain);
+        // hard constraint check: whether the area exceeds the limit
+        int from_t_chk = tier[node_id];
+        int to_t_chk = 1 - from_t_chk;
+        double area_u = static_cast<double>(node_size_x[node_id]) *
+                        static_cast<double>(node_size_y[node_id]);
+        double to_after = tier_area[to_t_chk] + area_u;
+        float max_util = to_t_chk == 0 ? top_die_max_util : bottom_die_max_util;
+        if (to_after > max_util * die_area) {
+          continue;
         }
+        pick = node_id;
+        pick_gain = it.gain;
+        break;
       }
-    }
+      if (pick == -1)
+        break;
 
-    refinement_flag = gain_max > 0 ? 1 : 0;
+      int u = pick;
+      int from_t = tier[u];
+      int to_t = 1 - from_t;
 
-    if (refinement_flag && node_id_max >= 0 && !locked_node_mask[node_id_max]) {
-      // actually apply the move: update the cut of the networks related to the
-      // node and the global HPWL
-      int old_tier = tier[node_id_max];
-      int new_tier = 1 - old_tier;
-      tier[node_id_max] = new_tier;
+      // execute move and lock
+      locked[u] = 1;
+      tier[u] = to_t;
+      // sync area count
+      double area_u = static_cast<double>(node_size_x[u]) *
+                      static_cast<double>(node_size_y[u]);
+      tier_area[from_t] -= area_u;
+      tier_area[to_t] += area_u;
 
-      for (int net_id : node_to_nets[node_id_max]) {
-        // update the cut flag
-        int num_nodes_in_net = 0;
-        std::vector<int> node_count(num_tiers, 0);
-        for (int pin_id = netpin_start[net_id];
-             pin_id < netpin_start[net_id + 1]; ++pin_id) {
-          int nid = pin2node_map[flat_netpin[pin_id]];
-          node_count[tier[nid]]++;
-          num_nodes_in_net++;
+      move_order.push_back(u);
+      move_from.push_back(from_t);
+      move_gain.push_back(pick_gain);
+      cumulative_gain += pick_gain;
+      if (cumulative_gain > best_prefix_gain) {
+        best_prefix_gain = cumulative_gain;
+        best_prefix_idx = static_cast<int>(move_order.size()) - 1;
+      }
+
+      // update net count and cut mark of the node, and collect affected
+      std::unordered_set<int> affected;
+      for (int net_id : node_to_nets[u]) {
+        // collect all nodes on the net
+        for (int v : net_to_nodes[net_id]) {
+          if (!locked[v] && v != u)
+            affected.insert(v);
         }
-        bool now_cut = true;
-        for (int t = 0; t < num_tiers; ++t) {
-          if (node_count[t] == num_nodes_in_net) {
-            now_cut = false;
-            break;
-          }
-        }
-        int before_flag = cut_net_mask[net_id];
+        // update net count of the node
+        net_count[net_id][from_t]--;
+        net_count[net_id][to_t]++;
+        // recompute cut mark
+        int total = net_count[net_id][0] + net_count[net_id][1];
+        bool now_cut =
+            !(net_count[net_id][0] == total || net_count[net_id][1] == total);
         cut_net_mask[net_id] = now_cut ? 1 : 0;
-        if (before_flag != cut_net_mask[net_id]) {
-          num_terminals += (cut_net_mask[net_id] ? 1 : -1);
-        }
       }
 
-      // update the global HPWL: recalculate the affected nets and replace the
-      // contribution to avoid storing hpwl for each net, here we approximate:
-      // use hpwl_after_best
-      hpwl = hpwl_after_best;
-      locked_node_mask[node_id_max] = 1;
-      remaining_unlocked--;
+      // after move, compute global HPWL based on latest tier/cut
+      num_terminals_tmp = Partitioner::getCutNetMask(
+          cut_net_mask, num_nets, num_tiers, tier, flat_netpin, netpin_start,
+          pin2node_map, num_movable_nodes);
+
+      hpwl = Partitioner::computeHPWLD2D(
+          pin_x, pin_y, flat_netpin, netpin_start, pin2node_map, cut_net_mask,
+          num_nets, num_pins, tier, num_tiers, terminal_x, terminal_y,
+          terminal_size_x, terminal_size_y, terminal_spacing, num_terminals,
+          net_names, terminal_names, num_threads);
+
+      // recompute gain based on HPWL for affected neighbors, and update
+      // priority queue
+      for (int v : affected) {
+        int old = gain[v];
+        gain[v] = compute_node_gain(v);
+        if (gain[v] != old) {
+          pq.push({gain[v], v});
+        }
+      }
     }
+
+    // rollback to best prefix
+    for (int i = static_cast<int>(move_order.size()) - 1; i > best_prefix_idx;
+         --i) {
+      int u = move_order[i];
+      int from_t = move_from[i];
+      int to_t = 1 - from_t;
+      tier[u] = from_t;
+      // rollback area count
+      double area_u = static_cast<double>(node_size_x[u]) *
+                      static_cast<double>(node_size_y[u]);
+      tier_area[from_t] += area_u;
+      tier_area[to_t] -= area_u;
+
+      for (int net_id : node_to_nets[u]) {
+        net_count[net_id][from_t]++;
+        net_count[net_id][to_t]--;
+        int total = net_count[net_id][0] + net_count[net_id][1];
+        bool now_cut =
+            !(net_count[net_id][0] == total || net_count[net_id][1] == total);
+        cut_net_mask[net_id] = now_cut ? 1 : 0;
+      }
+    }
+
+    // update net_count/cut and hpwl with new tier
+    rebuild_counts_and_cut();
+    num_terminals_tmp = Partitioner::getCutNetMask(
+        cut_net_mask, num_nets, num_tiers, tier, flat_netpin, netpin_start,
+        pin2node_map, num_movable_nodes);
+    LOG(INFO, "num_terminals_tmp: %d", num_terminals_tmp);
+    hpwl = Partitioner::computeHPWLD2D(
+        pin_x, pin_y, flat_netpin, netpin_start, pin2node_map, cut_net_mask,
+        num_nets, num_pins, tier, num_tiers, terminal_x, terminal_y,
+        terminal_size_x, terminal_size_y, terminal_spacing, num_terminals,
+        net_names, terminal_names, num_threads);
+    LOG(INFO, "hpwl: %d", hpwl);
+
+    pass_flag = best_prefix_gain > 0 ? true : false;
   }
 }
 
@@ -313,7 +411,8 @@ at::Tensor bin_based_fm_forward(
     const std::vector<std::string> &node_names,
     const std::vector<std::string> &net_names, at::Tensor pos_2d,
     at::Tensor pos_terminal_legalized, std::string case_name, int num_terminals,
-    const std::vector<std::string> &terminal_names) {
+    const std::vector<std::string> &terminal_names, float top_die_max_util,
+    float bottom_die_max_util) {
   CHECK_FLAT_CPU(flat_netpin);
   CHECK_CONTIGUOUS(flat_netpin);
   CHECK_FLAT_CPU(netpin_start);
@@ -363,7 +462,8 @@ at::Tensor bin_based_fm_forward(
         DREAMPLACE_TENSOR_DATA_PTR(pos_terminal_legalized, scalar_t),
         DREAMPLACE_TENSOR_DATA_PTR(pos_terminal_legalized, scalar_t) +
             pos_terminal_legalized.numel() / 2,
-        case_name, num_terminals, terminal_names, at::get_num_threads());
+        case_name, num_terminals, terminal_names, top_die_max_util,
+        bottom_die_max_util, at::get_num_threads());
   });
 
   return tier;
