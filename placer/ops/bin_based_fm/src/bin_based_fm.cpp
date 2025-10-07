@@ -2,7 +2,7 @@
  * @Author: JeanneWillis hi@jeannewillis.cn
  * @Date: 2025-09-21 17:01:58
  * @LastEditors: JeanneWillis hi@jeannewillis.cn
- * @LastEditTime: 2025-10-07 21:56:08
+ * @LastEditTime: 2025-10-08 00:35:30
  * @FilePath: /D2D-placer/placer/ops/bin_based_fm/src/bin_based_fm.cpp
  * @Description: fm refinement
  */
@@ -68,30 +68,6 @@ void binBasedFMLauncher(
         net_to_nodes[net_id].push_back(node_id);
       }
     }
-  }
-
-  std::vector<std::vector<int>> net_count(num_nets,
-                                          std::vector<int>(num_tiers, 0));
-  for (int net_id = 0; net_id < num_nets; ++net_id) {
-    for (int node_id : net_to_nodes[net_id]) {
-      int t = tier[node_id];
-      net_count[net_id][t]++;
-    }
-    // sync cut_net_mask
-    bool is_cut = false;
-    int total = 0;
-    for (int t = 0; t < num_tiers; ++t)
-      total += net_count[net_id][t];
-    for (int t = 0; t < num_tiers; ++t) {
-      if (net_count[net_id][t] == total) {
-        is_cut = false;
-        break;
-      }
-      if (net_count[net_id][t] > 0 && net_count[net_id][t] < total) {
-        is_cut = true;
-      }
-    }
-    cut_net_mask[net_id] = is_cut ? 1 : 0;
   }
 
   auto compute_single_net_hpwl = [&](int net_id, const int *tier_ptr) -> int {
@@ -190,7 +166,7 @@ void binBasedFMLauncher(
   }
 
   auto compute_node_gain = [&](int node_id) -> int {
-    // 仅对受影响的 nets 做增量 HPWL 计算
+    // incremental HPWL calculation
     int hpwl_delta = 0;
     int old_tier = tier[node_id];
     tier[node_id] = 1 - old_tier;
@@ -201,42 +177,19 @@ void binBasedFMLauncher(
     }
     tier[node_id] = old_tier;
 
-    // terminal 相关保持原逻辑
     std::vector<int> tier_tmp(tier, tier + num_movable_nodes);
     std::vector<int> cut_net_mask_tmp(num_nets, 0);
     tier_tmp[node_id] = 1 - tier_tmp[node_id];
-    int num_terminals_new = Partitioner::getCutNetMask(
+    int num_terminals_after = Partitioner::getCutNetMask(
         cut_net_mask_tmp.data(), num_nets, num_tiers, tier_tmp.data(),
         flat_netpin, netpin_start, pin2node_map, num_movable_nodes);
 
-    int terminal_gain = num_terminals_tmp - num_terminals_new;
+    int terminal_gain = num_terminals_tmp - num_terminals_after;
     int g =
-        (hpwl_delta + 1000 * terminal_gain) * (num_nets - num_terminals_new);
+        (hpwl_delta + 1000 * terminal_gain) * (num_nets - num_terminals_after);
     return g;
   };
 
-  // helper: rebuild net_count and cut mark based on current tier
-  auto rebuild_counts_and_cut = [&]() {
-    for (int net_id = 0; net_id < num_nets; ++net_id) {
-      std::fill(net_count[net_id].begin(), net_count[net_id].end(), 0);
-      for (int node_id : net_to_nodes[net_id]) {
-        int t = tier[node_id];
-        if (t >= 0 && t < num_tiers)
-          net_count[net_id][t]++;
-      }
-      int total = 0;
-      for (int t = 0; t < num_tiers; ++t)
-        total += net_count[net_id][t];
-      bool is_cut = true;
-      for (int t = 0; t < num_tiers; ++t) {
-        if (net_count[net_id][t] == total) {
-          is_cut = false;
-          break;
-        }
-      }
-      cut_net_mask[net_id] = is_cut ? 1 : 0;
-    }
-  };
   const double die_area =
       static_cast<double>(die_size_x) * static_cast<double>(die_size_y);
   std::vector<double> tier_area(num_tiers, 0.0);
@@ -330,14 +283,6 @@ void binBasedFMLauncher(
           if (!locked[v] && v != node_id)
             affected.insert(v);
         }
-        // update net count of the node
-        net_count[net_id][from_t]--;
-        net_count[net_id][to_t]++;
-        // recompute cut mark
-        int total = net_count[net_id][0] + net_count[net_id][1];
-        bool now_cut =
-            !(net_count[net_id][0] == total || net_count[net_id][1] == total);
-        cut_net_mask[net_id] = now_cut ? 1 : 0;
       }
 
       // update hpwl_sum and net_hpwl by the node
@@ -377,20 +322,9 @@ void binBasedFMLauncher(
                       static_cast<double>(node_size_y[rollback_id]);
       tier_area[from_t] += area_u;
       tier_area[to_t] -= area_u;
-
-      for (int net_id : node_to_nets[rollback_id]) {
-        net_count[net_id][from_t]++;
-        net_count[net_id][to_t]--;
-        int total = net_count[net_id][0] + net_count[net_id][1];
-        bool now_cut =
-            !(net_count[net_id][0] == total || net_count[net_id][1] == total);
-        cut_net_mask[net_id] = now_cut ? 1 : 0;
-      }
     }
 
     // update net_count/cut and hpwl with new tier
-    rebuild_counts_and_cut();
-
     num_terminals_tmp = Partitioner::getCutNetMask(
         cut_net_mask, num_nets, num_tiers, tier, flat_netpin, netpin_start,
         pin2node_map, num_movable_nodes);
