@@ -2,13 +2,16 @@
  * @Author: JeanneWillis hi@jeannewillis.cn
  * @Date: 2025-09-21 17:01:58
  * @LastEditors: JeanneWillis hi@jeannewillis.cn
- * @LastEditTime: 2025-10-08 00:35:30
+ * @LastEditTime: 2025-10-14 16:02:30
  * @FilePath: /D2D-placer/placer/ops/bin_based_fm/src/bin_based_fm.cpp
  * @Description: fm refinement
  */
 
+#include <chrono>
+#include <map>
 #include <pybind11/pybind11.h>
 #include <queue>
+#include <string>
 #include <unordered_set>
 // dreamplace
 #include "utility/src/torch.h"
@@ -23,7 +26,7 @@
 PLACER_BEGIN_NAMESPACE
 
 struct Item {
-  int gain;
+  long long gain;
   int node_id;
 };
 
@@ -157,7 +160,7 @@ void binBasedFMLauncher(
     return hpwl_net;
   };
 
-  // 缓存每条 net 的 HPWL 贡献，并用其求和校准全局 hpwl
+  // calculate the hpwl of each net
   std::vector<int> net_hpwl(num_nets, 0);
   int hpwl_sum = 0;
   for (int net_id = 0; net_id < num_nets; ++net_id) {
@@ -165,9 +168,9 @@ void binBasedFMLauncher(
     hpwl_sum += net_hpwl[net_id];
   }
 
-  auto compute_node_gain = [&](int node_id) -> int {
+  auto compute_node_gain = [&](int node_id) -> long long {
     // incremental HPWL calculation
-    int hpwl_delta = 0;
+    long long hpwl_delta = 0;
     int old_tier = tier[node_id];
     tier[node_id] = 1 - old_tier;
     for (int net_id : node_to_nets[node_id]) {
@@ -184,9 +187,8 @@ void binBasedFMLauncher(
         cut_net_mask_tmp.data(), num_nets, num_tiers, tier_tmp.data(),
         flat_netpin, netpin_start, pin2node_map, num_movable_nodes);
 
-    int terminal_gain = num_terminals_tmp - num_terminals_after;
-    int g =
-        (hpwl_delta + 1000 * terminal_gain) * (num_nets - num_terminals_after);
+    long long terminal_gain = num_terminals_tmp - num_terminals_after;
+    long long g = hpwl_delta + 1000 * terminal_gain;
     return g;
   };
 
@@ -194,9 +196,30 @@ void binBasedFMLauncher(
       static_cast<double>(die_size_x) * static_cast<double>(die_size_y);
   std::vector<double> tier_area(num_tiers, 0.0);
 
-  bool pass_flag = true;
-  while (pass_flag) {
+  // Bin state tracking for optimization
+  std::vector<bool> bin_converged;
+  std::vector<std::vector<int>> bin_to_nodes;
+  int num_fm_bins_x = 0, num_fm_bins_x = 0;
+  double bin_w = 0, bin_h = 0;
+  auto get_bin_index = [&](double x, double y) -> int {
+    int bx = static_cast<int>(std::floor(
+        std::max(0.0, std::min(x, static_cast<double>(die_size_x - 1e-3))) /
+        bin_w));
+    int by = static_cast<int>(std::floor(
+        std::max(0.0, std::min(y, static_cast<double>(die_size_y - 1e-3))) /
+        bin_h));
+    bx = std::max(0, std::min(bx, num_fm_bins_x - 1));
+    by = std::max(0, std::min(by, num_fm_bins_x - 1));
+    return by * num_fm_bins_x + bx;
+  };
 
+  bool pass_flag = true;
+  int pass_count = 0;
+  bool first_pass = true;
+
+  while (pass_flag) {
+    pass_count++;
+    std::fill(tier_area.begin(), tier_area.end(), 0.0);
     for (int n = 0; n < num_movable_nodes; ++n) {
       int t = tier[n];
       assert(t >= 0 && t < num_tiers);
@@ -204,140 +227,232 @@ void binBasedFMLauncher(
                          static_cast<double>(node_size_y[n]);
       tier_area[t] += node_area;
     }
-    std::vector<int> gain(num_movable_nodes, 0);
 
-    auto cmp = [](const Item &a, const Item &b) { return a.gain < b.gain; };
-    std::priority_queue<Item, std::vector<Item>, decltype(cmp)> pq(cmp);
-    for (int node_id = 0; node_id < num_movable_nodes; ++node_id) {
-      gain[node_id] = compute_node_gain(node_id);
-      pq.push({gain[node_id], node_id});
+    // --- build bin grid only on first pass ---
+    if (first_pass) {
+      int target_bins = std::max(1, num_movable_nodes / 500);
+      int grid_k = std::max(
+          1, static_cast<int>(std::sqrt(static_cast<double>(target_bins))));
+      num_fm_bins_x = std::max(1, grid_k);
+      num_fm_bins_x = std::max(1, grid_k);
+      bin_w =
+          static_cast<double>(die_size_x) / static_cast<double>(num_fm_bins_x);
+      bin_h =
+          static_cast<double>(die_size_y) / static_cast<double>(num_fm_bins_x);
+
+      bin_to_nodes.resize(num_fm_bins_x * num_fm_bins_x);
+      bin_converged.resize(num_fm_bins_x * num_fm_bins_x, false);
+
+      // node center from flattened 2D
+      for (int n = 0; n < num_movable_nodes; ++n) {
+        double x = static_cast<double>(pos_2d_x[n]);
+        double y = static_cast<double>(pos_2d_y[n]);
+        int b = get_bin_index(x, y);
+        bin_to_nodes[b].push_back(n);
+      }
+      first_pass = false;
     }
 
-    // clear locked each pass
-    std::vector<char> locked(num_movable_nodes, 0);
-    std::vector<int> move_order;
-    move_order.reserve(num_movable_nodes);
-    std::vector<int> move_from;
-    move_from.reserve(num_movable_nodes);
-    std::vector<int> move_gain;
-    move_gain.reserve(num_movable_nodes);
+    long long best_pass_gain = 0;
+    int total_moves = 0;
+    int total_bins_processed = 0;
 
-    int cumulative_gain = 0;
-    int best_prefix_gain = 0;
-    int best_prefix_idx = -1;
+    // process each bin independently; locked only within bin
+    int converged_bins = 0;
+    for (int by = 0; by < num_fm_bins_x; ++by) {
+      for (int bx = 0; bx < num_fm_bins_x; ++bx) {
+        int bidx = by * num_fm_bins_x + bx;
+        auto &nodes = bin_to_nodes[bidx];
+        if (nodes.empty())
+          continue;
 
-    // switch until all nodes are locked
-    for (int step = 0; step < num_movable_nodes; ++step) {
-      int pick = -1;
-      int pick_gain = std::numeric_limits<int>::min();
-      while (!pq.empty()) {
-        Item it = pq.top();
-        pq.pop();
-        int node_id = it.node_id;
-        if (locked[node_id] || gain[node_id] != it.gain) {
+        // Skip converged bins
+        if (bin_converged[bidx]) {
+          converged_bins++;
           continue;
         }
-        // hard constraint check: whether the area exceeds the limit
-        int from_t_chk = tier[node_id];
-        int to_t_chk = 1 - from_t_chk;
-        double area_u = static_cast<double>(node_size_x[node_id]) *
-                        static_cast<double>(node_size_y[node_id]);
-        double to_after = tier_area[to_t_chk] + area_u;
-        float max_util = to_t_chk == 0 ? top_die_max_util : bottom_die_max_util;
-        if (to_after > max_util * die_area) {
-          continue;
+
+        total_bins_processed++;
+
+        // local gain map and priority queue
+        std::unordered_set<int> node_set(nodes.begin(), nodes.end());
+        std::vector<long long> local_gain(nodes.size(), 0);
+        auto cmp = [](const Item &a, const Item &b) { return a.gain < b.gain; };
+        std::priority_queue<Item, std::vector<Item>, decltype(cmp)> pq(cmp);
+
+        for (size_t i = 0; i < nodes.size(); ++i) {
+          int nid = nodes[i];
+          long long g = compute_node_gain(nid);
+          local_gain[i] = g;
+          pq.push({g, nid});
         }
-        pick = node_id;
-        pick_gain = it.gain;
-        break;
-      }
-      if (pick == -1)
-        break;
 
-      int node_id = pick;
-      int from_t = tier[node_id];
-      int to_t = 1 - from_t;
+        std::vector<char> locked_local(nodes.size(), 0);
+        std::vector<int> index_in_bin(num_movable_nodes, -1);
+        for (size_t i = 0; i < nodes.size(); ++i)
+          index_in_bin[nodes[i]] = static_cast<int>(i);
 
-      // execute move and lock
-      locked[node_id] = 1;
-      tier[node_id] = to_t;
-      // sync area count
-      double area_u = static_cast<double>(node_size_x[node_id]) *
-                      static_cast<double>(node_size_y[node_id]);
-      tier_area[from_t] -= area_u;
-      tier_area[to_t] += area_u;
-      move_order.push_back(node_id);
-      move_from.push_back(from_t);
-      move_gain.push_back(pick_gain);
-      cumulative_gain += pick_gain;
-      if (cumulative_gain > best_prefix_gain) {
-        best_prefix_gain = cumulative_gain;
-        best_prefix_idx = static_cast<int>(move_order.size()) - 1;
-      }
+        std::vector<int> move_order;
+        std::vector<int> move_from;
+        std::vector<long long> move_gain;
+        move_order.reserve(nodes.size());
+        move_from.reserve(nodes.size());
+        move_gain.reserve(nodes.size());
 
-      // update net count and cut mark of the node, and collect affected
-      std::unordered_set<int> affected;
-      for (int net_id : node_to_nets[node_id]) {
-        // collect all nodes on the net
-        for (int v : net_to_nodes[net_id]) {
-          if (!locked[v] && v != node_id)
-            affected.insert(v);
+        long long cumulative_gain = 0;
+        long long best_prefix_gain = 0;
+        int best_prefix_idx = -1;
+
+        // select within bin
+        int moves_in_bin = 0;
+        for (size_t step = 0; step < nodes.size(); ++step) {
+          int pick = -1;
+          long long pick_gain = std::numeric_limits<long long>::min();
+          while (!pq.empty()) {
+            Item it = pq.top();
+            pq.pop();
+            int node_id = it.node_id;
+            int li = (node_id >= 0 && node_id < num_movable_nodes)
+                         ? index_in_bin[node_id]
+                         : -1;
+            if (li < 0)
+              continue; // not in this bin
+            if (locked_local[li] || local_gain[li] != it.gain)
+              continue;
+
+            // die-level hard area check
+            int from_t_chk = tier[node_id];
+            int to_t_chk = 1 - from_t_chk;
+            double area_u = static_cast<double>(node_size_x[node_id]) *
+                            static_cast<double>(node_size_y[node_id]);
+            double to_after = tier_area[to_t_chk] + area_u;
+            float max_util =
+                to_t_chk == 0 ? top_die_max_util : bottom_die_max_util;
+            if (to_after > max_util * die_area) {
+              continue;
+            }
+            pick = node_id;
+            pick_gain = it.gain;
+            break;
+          }
+          if (pick == -1)
+            break;
+
+          int node_id = pick;
+          int from_t = tier[node_id];
+          int to_t = 1 - from_t;
+
+          // apply move
+          int li = index_in_bin[node_id];
+          locked_local[li] = 1;
+          tier[node_id] = to_t;
+
+          double area_u = static_cast<double>(node_size_x[node_id]) *
+                          static_cast<double>(node_size_y[node_id]);
+          tier_area[from_t] -= area_u;
+          tier_area[to_t] += area_u;
+
+          move_order.push_back(node_id);
+          move_from.push_back(from_t);
+          move_gain.push_back(pick_gain);
+          cumulative_gain += pick_gain;
+          if (cumulative_gain > best_prefix_gain) {
+            best_prefix_gain = cumulative_gain;
+            best_prefix_idx = static_cast<int>(move_order.size()) - 1;
+          }
+
+          // update global hpwl and terminal count incrementally
+          int hpwl_delta_apply = 0;
+          std::unordered_set<int> affected;
+          for (int net_id : node_to_nets[node_id]) {
+            int before = net_hpwl[net_id];
+            int after = compute_single_net_hpwl(net_id, tier);
+            net_hpwl[net_id] = after;
+            hpwl_delta_apply += (after - before);
+            for (int v : net_to_nodes[net_id])
+              if (v != node_id && node_set.count(v))
+                affected.insert(v);
+          }
+          hpwl_sum += hpwl_delta_apply;
+
+          num_terminals_tmp = Partitioner::getCutNetMask(
+              cut_net_mask, num_nets, num_tiers, tier, flat_netpin,
+              netpin_start, pin2node_map, num_movable_nodes);
+
+          // refresh gains for affected nodes in this bin
+
+          for (int v : affected) {
+            int li_v = index_in_bin[v];
+            if (li_v < 0)
+              continue;
+            long long old = local_gain[li_v];
+            local_gain[li_v] = compute_node_gain(v);
+            if (local_gain[li_v] != old)
+              pq.push({local_gain[li_v], v});
+          }
+
+          moves_in_bin++;
         }
-      }
 
-      // update hpwl_sum and net_hpwl by the node
-      int hpwl_delta_apply = 0;
-      for (int net_id : node_to_nets[node_id]) {
-        int before = net_hpwl[net_id];
-        int after = compute_single_net_hpwl(net_id, tier);
-        net_hpwl[net_id] = after;
-        hpwl_delta_apply += (after - before);
-      }
-      hpwl_sum += hpwl_delta_apply;
+        // rollback tail moves beyond best prefix
+        for (int i = static_cast<int>(move_order.size()) - 1;
+             i > best_prefix_idx; --i) {
+          int rollback_id = move_order[i];
+          int from_t = move_from[i];
+          int to_t = 1 - from_t;
+          tier[rollback_id] = from_t;
+          double area_u = static_cast<double>(node_size_x[rollback_id]) *
+                          static_cast<double>(node_size_y[rollback_id]);
+          tier_area[from_t] += area_u;
+          tier_area[to_t] -= area_u;
+        }
 
-      num_terminals_tmp = Partitioner::getCutNetMask(
-          cut_net_mask, num_nets, num_tiers, tier, flat_netpin, netpin_start,
-          pin2node_map, num_movable_nodes);
+        // resync hpwl and terminals after bin
+        num_terminals_tmp = Partitioner::getCutNetMask(
+            cut_net_mask, num_nets, num_tiers, tier, flat_netpin, netpin_start,
+            pin2node_map, num_movable_nodes);
+        hpwl_sum = 0;
+        for (int net_id = 0; net_id < num_nets; ++net_id) {
+          net_hpwl[net_id] = compute_single_net_hpwl(net_id, tier);
+          hpwl_sum += net_hpwl[net_id];
+        }
 
-      // recompute gain based on HPWL for affected neighbors, and update
-      // priority queue
-      for (int v : affected) {
-        int old = gain[v];
-        gain[v] = compute_node_gain(v);
-        if (gain[v] != old) {
-          pq.push({gain[v], v});
+        best_pass_gain += best_prefix_gain;
+        total_moves += moves_in_bin;
+
+        // Check if bin has converged (no improvement or very small improvement)
+        if (best_prefix_gain <= 0 || moves_in_bin == 0) {
+          bin_converged[bidx] = true;
         }
       }
     }
 
-    // rollback to best prefix
-    for (int i = static_cast<int>(move_order.size()) - 1; i > best_prefix_idx;
-         --i) {
-      int rollback_id = move_order[i];
-      int from_t = move_from[i];
-      int to_t = 1 - from_t;
-      tier[rollback_id] = from_t;
-      // rollback area count
-      double area_u = static_cast<double>(node_size_x[rollback_id]) *
-                      static_cast<double>(node_size_y[rollback_id]);
-      tier_area[from_t] += area_u;
-      tier_area[to_t] -= area_u;
-    }
-
-    // update net_count/cut and hpwl with new tier
-    num_terminals_tmp = Partitioner::getCutNetMask(
-        cut_net_mask, num_nets, num_tiers, tier, flat_netpin, netpin_start,
-        pin2node_map, num_movable_nodes);
+    LOG(INFO,
+        "Pass %d Summary: processed %d bins (%d converged), %d total moves, "
+        "best gain: %d",
+        pass_count, total_bins_processed, converged_bins, total_moves,
+        best_pass_gain);
     LOG(INFO, "num_terminals_tmp: %d", num_terminals_tmp);
-
-    hpwl_sum = 0;
-    for (int net_id = 0; net_id < num_nets; ++net_id) {
-      net_hpwl[net_id] = compute_single_net_hpwl(net_id, tier);
-      hpwl_sum += net_hpwl[net_id];
-    }
     LOG(INFO, "hpwl: %d", hpwl_sum);
 
-    pass_flag = best_prefix_gain > 0 ? true : false;
+    pass_flag = best_pass_gain > 0 ? true : false;
+
+    // Early termination if all bins have converged
+    int total_non_empty_bins = 0;
+    for (int i = 0; i < num_fm_bins_x * num_fm_bins_x; ++i) {
+      if (!bin_to_nodes[i].empty()) {
+        total_non_empty_bins++;
+      }
+    }
+
+    if (converged_bins >= total_non_empty_bins) {
+      LOG(INFO, "All bins converged (%d/%d), terminating early", converged_bins,
+          total_non_empty_bins);
+      pass_flag = false;
+    }
+
+    LOG(INFO, "Pass %d termination check: best_pass_gain=%d, pass_flag=%s",
+        pass_count, best_pass_gain, pass_flag ? "true" : "false");
   }
 }
 

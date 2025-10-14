@@ -12,6 +12,7 @@ add_subdirectory(macro_balance)
 add_subdirectory(parts_reader)
 add_subdirectory(bin_based_fm)
 add_subdirectory(draw_layout_result)
+add_subdirectory(draw_block)
 
 file(GLOB INSTALL_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/*.py")
 install(
