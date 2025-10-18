@@ -2,12 +2,14 @@
  * @Author: JeanneWillis hi@jeannewillis.cn
  * @Date: 2025-09-21 17:01:58
  * @LastEditors: JeanneWillis hi@jeannewillis.cn
- * @LastEditTime: 2025-10-14 16:02:30
+ * @LastEditTime: 2025-10-15 13:05:26
  * @FilePath: /D2D-placer/placer/ops/bin_based_fm/src/bin_based_fm.cpp
  * @Description: fm refinement
  */
 
+#include <algorithm>
 #include <chrono>
+#include <climits>
 #include <map>
 #include <pybind11/pybind11.h>
 #include <queue>
@@ -21,9 +23,19 @@
 #include "include/common.h"
 #include "placer/placer.h"
 
+#include "bin_based_fm/src/density_map.h"
 #include "utils_3d/src/partitioner.h"
 
 PLACER_BEGIN_NAMESPACE
+
+template <typename T, typename AtomicOp>
+int computeDensityMapLauncher(const T *x_tensor, const T *y_tensor,
+                              const T *node_size_x_tensor,
+                              const T *node_size_y_tensor, const int num_nodes,
+                              const T num_bins_x, const T num_bins_y,
+                              const T xl, const T yl, const T xh, const T yh,
+                              int num_threads, AtomicOp atomic_add_op,
+                              typename AtomicOp::type *buf_map);
 
 struct Item {
   long long gain;
@@ -43,11 +55,40 @@ void binBasedFMLauncher(
     const T *pos_2d_y, const T *terminal_x, const T *terminal_y,
     std::string case_name, int num_terminals,
     const std::vector<std::string> &terminal_names, float top_die_max_util,
-    float bottom_die_max_util, int num_threads) {
+    float bottom_die_max_util, int num_threads, int num_nodes,
+    const int num_bins_x, const int num_bins_y, const T xl, const T yl,
+    const T xh, const T yh) {
 
   int num_terminals_tmp = Partitioner::getCutNetMask(
       cut_net_mask, num_nets, num_tiers, tier, flat_netpin, netpin_start,
       pin2node_map, num_movable_nodes);
+
+  int num_bins = num_bins_x * num_bins_y;
+  std::vector<long> buf_map(num_bins, 0);
+  DREAMPLACE_NAMESPACE::AtomicAdd<long> atomic_add_op;
+
+  computeDensityMapLauncher(pos_2d_x, pos_2d_y, node_size_x, node_size_y,
+                            num_nodes, num_bins_x, num_bins_y, xl, yl, xh, yh,
+                            num_threads, atomic_add_op, buf_map.data());
+
+  // 正确打印buf_map的内容
+  LOG(INFO, "buf_map size: %d (dimensions: %dx%d)", (int)buf_map.size(),
+      num_bins_x, num_bins_y);
+
+  // 打印前10个元素
+  LOG(INFO, "buf_map first 10 elements:");
+  for (int i = 0; i < std::min(10, (int)buf_map.size()); ++i) {
+    LOG(INFO, "  [%d] = %ld", i, buf_map[i]);
+  }
+
+  // 打印统计信息
+  long sum = 0, max_val = 0;
+  for (int i = 0; i < (int)buf_map.size(); ++i) {
+    sum += buf_map[i];
+    max_val = std::max(max_val, buf_map[i]);
+  }
+  LOG(INFO, "buf_map stats: sum=%ld, max=%ld, avg=%.2f", sum, max_val,
+      (double)sum / buf_map.size());
 
   // build node -> nets adjacency
   std::vector<std::vector<int>> node_to_nets(num_movable_nodes);
@@ -199,7 +240,7 @@ void binBasedFMLauncher(
   // Bin state tracking for optimization
   std::vector<bool> bin_converged;
   std::vector<std::vector<int>> bin_to_nodes;
-  int num_fm_bins_x = 0, num_fm_bins_x = 0;
+  int num_fm_bins_x = 0, num_fm_bins_y = 0;
   double bin_w = 0, bin_h = 0;
   auto get_bin_index = [&](double x, double y) -> int {
     int bx = static_cast<int>(std::floor(
@@ -209,7 +250,7 @@ void binBasedFMLauncher(
         std::max(0.0, std::min(y, static_cast<double>(die_size_y - 1e-3))) /
         bin_h));
     bx = std::max(0, std::min(bx, num_fm_bins_x - 1));
-    by = std::max(0, std::min(by, num_fm_bins_x - 1));
+    by = std::max(0, std::min(by, num_fm_bins_y - 1));
     return by * num_fm_bins_x + bx;
   };
 
@@ -234,14 +275,14 @@ void binBasedFMLauncher(
       int grid_k = std::max(
           1, static_cast<int>(std::sqrt(static_cast<double>(target_bins))));
       num_fm_bins_x = std::max(1, grid_k);
-      num_fm_bins_x = std::max(1, grid_k);
+      num_fm_bins_y = std::max(1, grid_k);
       bin_w =
           static_cast<double>(die_size_x) / static_cast<double>(num_fm_bins_x);
       bin_h =
-          static_cast<double>(die_size_y) / static_cast<double>(num_fm_bins_x);
+          static_cast<double>(die_size_y) / static_cast<double>(num_fm_bins_y);
 
-      bin_to_nodes.resize(num_fm_bins_x * num_fm_bins_x);
-      bin_converged.resize(num_fm_bins_x * num_fm_bins_x, false);
+      bin_to_nodes.resize(num_fm_bins_x * num_fm_bins_y);
+      bin_converged.resize(num_fm_bins_x * num_fm_bins_y, false);
 
       // node center from flattened 2D
       for (int n = 0; n < num_movable_nodes; ++n) {
@@ -259,7 +300,7 @@ void binBasedFMLauncher(
 
     // process each bin independently; locked only within bin
     int converged_bins = 0;
-    for (int by = 0; by < num_fm_bins_x; ++by) {
+    for (int by = 0; by < num_fm_bins_y; ++by) {
       for (int bx = 0; bx < num_fm_bins_x; ++bx) {
         int bidx = by * num_fm_bins_x + bx;
         auto &nodes = bin_to_nodes[bidx];
@@ -439,7 +480,7 @@ void binBasedFMLauncher(
 
     // Early termination if all bins have converged
     int total_non_empty_bins = 0;
-    for (int i = 0; i < num_fm_bins_x * num_fm_bins_x; ++i) {
+    for (int i = 0; i < num_fm_bins_x * num_fm_bins_y; ++i) {
       if (!bin_to_nodes[i].empty()) {
         total_non_empty_bins++;
       }
@@ -467,7 +508,8 @@ at::Tensor bin_based_fm_forward(
     const std::vector<std::string> &net_names, at::Tensor pos_2d,
     at::Tensor pos_terminal_legalized, std::string case_name, int num_terminals,
     const std::vector<std::string> &terminal_names, float top_die_max_util,
-    float bottom_die_max_util) {
+    float bottom_die_max_util, int num_nodes, int num_bins_x, int num_bins_y,
+    double xl, double yl, double xh, double yh) {
   CHECK_FLAT_CPU(flat_netpin);
   CHECK_CONTIGUOUS(flat_netpin);
   CHECK_FLAT_CPU(netpin_start);
@@ -485,10 +527,10 @@ at::Tensor bin_based_fm_forward(
   CHECK_CONTIGUOUS(tier);
 
   CHECK_EVEN(pin_pos);
-  CHECK_CONTIGUOUS(pin_pos);
+  // CHECK_CONTIGUOUS(pin_pos);
   CHECK_FLAT_CPU(pos_2d);
   CHECK_EVEN(pos_2d);
-  CHECK_CONTIGUOUS(pos_2d);
+  // CHECK_CONTIGUOUS(pos_2d);
 
   int num_nets = netpin_start.numel() - 1;
   int num_pins = pin2node_map.numel();
@@ -497,7 +539,7 @@ at::Tensor bin_based_fm_forward(
   int num_tiers = 2;
   at::Tensor cut_net_mask = at::zeros(num_nets, tier.options());
 
-  DREAMPLACE_DISPATCH_FLOATING_TYPES(node_size_x, "binBasedFMLauncher", [&] {
+  DREAMPLACE_DISPATCH_FLOATING_TYPES(pos_2d, "binBasedFMLauncher", [&] {
     binBasedFMLauncher<scalar_t>(
         DREAMPLACE_TENSOR_DATA_PTR(tier, int),
         DREAMPLACE_TENSOR_DATA_PTR(flat_netpin, int),
@@ -518,7 +560,9 @@ at::Tensor bin_based_fm_forward(
         DREAMPLACE_TENSOR_DATA_PTR(pos_terminal_legalized, scalar_t) +
             pos_terminal_legalized.numel() / 2,
         case_name, num_terminals, terminal_names, top_die_max_util,
-        bottom_die_max_util, at::get_num_threads());
+        bottom_die_max_util, at::get_num_threads(), num_nodes, num_bins_x,
+        num_bins_y, static_cast<scalar_t>(xl), static_cast<scalar_t>(yl),
+        static_cast<scalar_t>(xh), static_cast<scalar_t>(yh));
   });
 
   return tier;

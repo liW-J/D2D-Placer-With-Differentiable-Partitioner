@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-06-13 15:35:55
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-10-09 20:28:49
+LastEditTime: 2025-10-18 20:17:33
 FilePath: /D2D-placer/placer/op_wrapper.py
 Description:
 '''
@@ -21,11 +21,18 @@ from placer.ops.draw_block.draw_block import DrawBlock
 
 from placer.tools.out_fmt_iccad import OutfmtICCAD
 from placer.tools.pos_flattened import PosFlattened
+from placer.tools.graph_cutsize import GraphCutsize
+
 from placer.tools.partitioner_manager import PartitionerManager
 from dreamplace.ops.pin_pos.pin_pos import PinPos
 
+from placer.tools.thirdparty_api.specpart_base import SpecPartBase
+from placer.tools.thirdparty_api.tritonpart_base import TritonPartBase
+
 import torch
 import numpy as np
+import logging
+import os
 
 
 class D2DOpCollection(object):
@@ -36,7 +43,8 @@ class D2DOpCollection(object):
                  terminal_legalize_op, avg_cut_op, terminal_insert_aux_op,
                  terminal_legaliza_aux_op, refinement_op, hpwl_d2d_op,
                  macro_balance_op, parts_reader_op, hgr_generator_op,
-                 bin_based_fm_op, draw_layout_result_op, draw_block_op):
+                 bin_based_fm_op, draw_layout_result_op, draw_block_op,
+                 partition_flow_op):
         self.hmetis_op = hmetis_op
         self.multi_bipartition_op = multi_bipartition_op
         self.init_partition_op = init_partition_op
@@ -58,6 +66,7 @@ class D2DOpCollection(object):
         self.bin_based_fm_op = bin_based_fm_op
         self.draw_layout_result_op = draw_layout_result_op
         self.draw_block_op = draw_block_op
+        self.partition_flow_op = partition_flow_op
 
 
 class OpWrapper(object):
@@ -134,6 +143,7 @@ class OpWrapper(object):
         self.bin_based_fm_op = self.build_bin_based_fm()
         self.draw_layout_result_op = self.build_draw_layout_result()
         self.draw_block_op = self.build_draw_block()
+        self.partition_flow_op = self.build_partition_flow()
 
         self.d2d_op_collections = D2DOpCollection(
             hmetis_op=self.hmetis_op,
@@ -156,16 +166,19 @@ class OpWrapper(object):
             hgr_generator_op=self.hgr_generator_op,
             bin_based_fm_op=self.bin_based_fm_op,
             draw_layout_result_op=self.draw_layout_result_op,
-            draw_block_op=self.draw_block_op)
+            draw_block_op=self.draw_block_op,
+            partition_flow_op=self.partition_flow_op)
 
     def build_hmetis(self):
 
-        hmetis_op = Hmetis(self.data_collections_2d.flat_net2pin_map,
-                           self.data_collections_2d.flat_net2pin_start_map,
-                           self.data_collections_2d.pin2node_map,
-                           self.data_collections_2d.net_weights,
-                           self.data_collections_2d.net_mask_all,
-                           self.placedb_2d.num_movable_nodes, self.case_name)
+        def hmetis_op():
+
+            self.hgr_generator_op(self.case_name)
+            hg = f"{self.d2d_params.run_tmp_dir_root}/{self.case_name}.hgr"
+            cmd = f"bin/hmetis {hg} 2 2 10 1 1 0 1 0"
+            os.system(cmd)
+
+            return self.parts_reader_op(self.case_name)
 
         return hmetis_op
 
@@ -521,7 +534,10 @@ class OpWrapper(object):
             self.pin_offset_x, self.pin_offset_y, self.die_size_x,
             self.die_size_y, self.row_height, self.die_spec.terminalSizeX,
             self.die_spec.terminalSizeY, self.die_spec.terminalSpacing,
-            self.case_name, self.top_die_max_util, self.bottom_die_max_util)
+            self.case_name, self.top_die_max_util, self.bottom_die_max_util,
+            self.placedb_2d.num_nodes, self.placedb_2d.num_bins_x,
+            self.placedb_2d.num_bins_y, self.placedb_2d.xl, self.placedb_2d.yl,
+            self.placedb_2d.xh, self.placedb_2d.yh)
 
         def build_bin_based_fm_op(tier, pos_2d, pos_terminal, num_terminal_NIs,
                                   terminal_names):
@@ -614,3 +630,44 @@ class OpWrapper(object):
 
     def build_draw_block(self):
         return DrawBlock(self.placedb_2d)
+
+    def build_partition_flow(self):
+
+        def build_partition_flow_op(partitioner="tritonpart", logger=logging):
+            logger.info(f"building partition flow for {partitioner}")
+            if partitioner == "tritonpart":
+                tritonpart = TritonPartBase(self.d2d_params)
+                tier = tritonpart.flow(hgr_generator_op=self.hgr_generator_op,
+                                       parts_reader_op=self.parts_reader_op)
+
+            elif partitioner == "bin-based-tritonpart":
+                tritonpart = TritonPartBase(self.d2d_params)
+                tier = tritonpart.flow(
+                    hgr_generator_op=self.hgr_generator_op,
+                    parts_reader_op=self.parts_reader_op,
+                    pos=self.data_2d.pos,
+                    num_movable_nodes=self.placedb_2d.num_movable_nodes)
+
+            elif partitioner == "specpart":
+                specpart = SpecPartBase(self.d2d_params)
+                tier = specpart.flow(hgr_generator_op=self.hgr_generator_op,
+                                     parts_reader_op=self.parts_reader_op)
+
+            else:
+                logger.info(
+                    f"no partitioner specified, using default partitioner: Hmetis"
+                )
+                tier = self.hmetis_op()
+
+            graph_cutsize = GraphCutsize(
+                self.d2d_params.run_tmp_dir_root + "/" + self.case_name +
+                ".hgr", self.d2d_params.run_tmp_dir_root + "/" +
+                self.case_name + ".hgr.part.2")
+
+            new_clique_cut, new_cutnet = graph_cutsize.calculate()
+            logger.info("clique graph cutsize: %d, hyperedge cutsize: %d" %
+                        (new_clique_cut, new_cutnet))
+
+            return tier
+
+        return build_partition_flow_op

@@ -1,6 +1,5 @@
 add_subdirectory(parser_txt)  
 add_subdirectory(power_map)
-add_subdirectory(hmetis)
 add_subdirectory(partition_aux)
 add_subdirectory(avg_cut)
 add_subdirectory(terminal_aux)

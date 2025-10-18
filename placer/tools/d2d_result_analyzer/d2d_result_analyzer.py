@@ -4,7 +4,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-08-31 20:29:01
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-09-15 12:42:59
+LastEditTime: 2025-10-18 17:03:09
 FilePath: /D2D-placer/placer/tools/d2d_result_analyzer/d2d_result_analyzer.py
 Description: 
     D2D Placement Result Analyzer - Unified Interface
@@ -40,9 +40,7 @@ class D2DResultAnalyzer:
 
     def __init__(self,
                  benchmark_file: str,
-                 output_file: str,
                  result_dir: str = None,
-                 flattened_pl_file: str = None,
                  logger: Optional[logging.Logger] = None):
         """
         Initialize the analyzer
@@ -54,10 +52,14 @@ class D2DResultAnalyzer:
             flattened_pl_file: Path to flattened-2d placement file (optional)
             logger: Logger instance for output (optional)
         """
+
         self.benchmark_file = benchmark_file
-        self.output_file = output_file
-        self.flattened_pl_file = flattened_pl_file
-        self.result_dir = result_dir or os.path.dirname(output_file)
+        self.result_dir = result_dir
+
+        self.output_file = os.path.join(result_dir, "output.txt")
+        self.flattened_pl_file = os.path.join(
+            result_dir, "flattened-2d/flattened-2d.gp.pl")
+
         self.logger = logger or logging.getLogger(__name__)
 
         # Ensure result directory exists
@@ -74,14 +76,12 @@ class D2DResultAnalyzer:
                                      'd2d_net_analysis_visualization.png')
         self.crossing_viz = os.path.join(self.result_dir,
                                          'crossing_net_analysis.png')
-        self.flattened_2d_viz = os.path.join(self.result_dir,
-                                         'flattened_2d_hpwl_comparison.png')
+        self.flattened_2d_viz = os.path.join(
+            self.result_dir, 'flattened_2d_hpwl_comparison.png')
         self.terminal_viz = os.path.join(self.result_dir,
                                          'terminal_impact_analysis.png')
 
         self.logger.info(f"D2D Result Analyzer initialized")
-        self.logger.info(f"Benchmark file: {benchmark_file}")
-        self.logger.info(f"Output file: {output_file}")
         self.logger.info(f"Result directory: {self.result_dir}")
 
     def run_basic_analysis(self) -> Dict:
@@ -175,9 +175,10 @@ class D2DResultAnalyzer:
             if os.path.exists('crossing_net_analysis.png'):
                 os.rename('crossing_net_analysis.png', self.crossing_viz)
                 created_files.append(self.crossing_viz)
-                
+
             if os.path.exists('flattened_2d_hpwl_comparison.png'):
-                os.rename('flattened_2d_hpwl_comparison.png', self.flattened_2d_viz)
+                os.rename('flattened_2d_hpwl_comparison.png',
+                          self.flattened_2d_viz)
                 created_files.append(self.flattened_2d_viz)
 
             self.logger.info("Main visualizations created successfully")

@@ -2,7 +2,7 @@
  * @Author: JeanneWillis hi@jeannewillis.cn
  * @Date: 2025-06-17 13:30:24
  * @LastEditors: JeanneWillis hi@jeannewillis.cn
- * @LastEditTime: 2025-10-10 10:04:14
+ * @LastEditTime: 2025-10-15 13:03:26
  * @FilePath: /D2D-placer/placer/ops/hpwl_d2d/hpwl_d2d.cpp
  * @Description:
  */
@@ -93,79 +93,7 @@ int computeHPWLD2DLauncher(
     int terminal_size_y, int terminal_spacing, int num_terminals,
     const std::vector<std::string> &net_names,
     const std::vector<std::string> &terminal_names, int num_threads, T *hpwl) {
-  // // #pragma omp parallel for num_threads(num_threads)
-  //   for (int net_id = 0; net_id < num_nets; ++net_id) {
 
-  //     if (cut_net_mask[net_id]) {
-
-  //       int cur_terminal_id = 0;
-  //       for (int terminal_id = 0; terminal_id < num_terminals; ++terminal_id)
-  //       {
-  //         if (net_names[net_id] == terminal_names[terminal_id]) {
-  //           cur_terminal_id = terminal_id;
-  //           break;
-  //         }
-  //       }
-
-  //       std::vector<T> max_x(num_tiers, -std::numeric_limits<T>::max());
-  //       std::vector<T> min_x(num_tiers, std::numeric_limits<T>::max());
-  //       std::vector<T> max_y(num_tiers, -std::numeric_limits<T>::max());
-  //       std::vector<T> min_y(num_tiers, std::numeric_limits<T>::max());
-  //       T terminal_x_center = terminal_x[cur_terminal_id] +
-  //                             (terminal_size_x + terminal_spacing) / 2;
-  //       T terminal_y_center = terminal_y[cur_terminal_id] +
-  //                             (terminal_size_y + terminal_spacing) / 2;
-
-  //       for (int tier_id = 0; tier_id < num_tiers; ++tier_id) {
-  //         for (int pin_id = netpin_start[net_id];
-  //              pin_id < netpin_start[net_id + 1]; pin_id++) {
-  //           int node_id = pin2node_map[flat_netpin[pin_id]];
-  //           int index_pin = num_pins * tier_id + flat_netpin[pin_id];
-  //           if (tier[node_id] == tier_id) {
-  //             // LOG(WARN, "pin_x: %f, pin_y: %f", pin_x[index_pin],
-  //             pin_y[index_pin]); max_x[tier_id] = std::max(max_x[tier_id],
-  //             pin_x[index_pin]); min_x[tier_id] = std::min(min_x[tier_id],
-  //             pin_x[index_pin]); max_y[tier_id] = std::max(max_y[tier_id],
-  //             pin_y[index_pin]); min_y[tier_id] = std::min(min_y[tier_id],
-  //             pin_y[index_pin]);
-  //           }
-  //         }
-  //       }
-
-  //       for (int tier_id = 0; tier_id < num_tiers; ++tier_id) {
-  //         // LOG(WARN, "tier_id: %d, terminal_x_center: %f,
-  //         terminal_y_center: %f", tier_id, terminal_x_center,
-  //         terminal_y_center); max_x[tier_id] = std::max(max_x[tier_id],
-  //         terminal_x_center); min_x[tier_id] = std::min(min_x[tier_id],
-  //         terminal_x_center); max_y[tier_id] = std::max(max_y[tier_id],
-  //         terminal_y_center); min_y[tier_id] = std::min(min_y[tier_id],
-  //         terminal_y_center); hpwl[net_id] +=
-  //             max_x[tier_id] - min_x[tier_id] + max_y[tier_id] -
-  //             min_y[tier_id];
-  //         // LOG(INFO, "net_id: %d, tier_id: %d, hpwl: %f", net_id, tier_id,
-  //         hpwl[net_id]);
-  //       }
-  //     } else {
-  //       T max_x = -std::numeric_limits<T>::max();
-  //       T min_x = std::numeric_limits<T>::max();
-  //       T max_y = -std::numeric_limits<T>::max();
-  //       T min_y = std::numeric_limits<T>::max();
-  //       int tier_id = tier[pin2node_map[flat_netpin[netpin_start[net_id]]]];
-
-  //       for (int pin_id = netpin_start[net_id]; pin_id < netpin_start[net_id
-  //       + 1];
-  //            pin_id++) {
-  //         int index_pin = num_pins * tier_id + flat_netpin[pin_id];
-  //         // LOG(WARN, "pin_x: %f, pin_y: %f", pin_x[index_pin],
-  //         pin_y[index_pin]); min_x = std::min(min_x, pin_x[index_pin]); max_x
-  //         = std::max(max_x, pin_x[index_pin]); min_y = std::min(min_y,
-  //         pin_y[index_pin]); max_y = std::max(max_y, pin_y[index_pin]);
-  //       }
-  //       hpwl[net_id] += max_x - min_x + max_y - min_y;
-  //       // LOG(INFO, "net_id: %d, tier_id: %d, hpwl: %f", net_id, tier_id,
-  //       hpwl[net_id]);
-  //     }
-  //   }
   auto compute_single_net_hpwl = [&](int net_id, const int *tier_ptr) -> int {
     int hpwl_net = 0;
     // check if the net is cut: if cut_net_mask is prepared, it can be directly
