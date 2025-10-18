@@ -2,17 +2,78 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-10-18 18:22:43
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-10-18 19:12:22
+LastEditTime: 2025-10-19 02:53:46
 FilePath: /D2D-placer/unittest/refinement_swap_unittest.py
 Description: 
 '''
 
+import os
 import sys
+
+sys.path.append(
+    os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__)))))
+
+import configure
 import time
 from placer.d2d_placer import D2Dplacer
 from placer.d2d_placer import init_log
 import matplotlib.pyplot as plt
 import torch
+
+
+def d2d_placer_init(d2d_placer):
+    d2d_placer.tier = torch.load(
+        '/home/placer/D2D-placer/install/placer/partition_tensor/case2-tp-0.pt'
+    )
+    d2d_placer.params.flatten_2d.global_place_flag = False
+    d2d_placer.params.flatten_2d.random_center_init_flag = False
+    d2d_placer.params.flatten_2d.legalize_flag = False
+    d2d_placer.params.flatten_2d.detailed_place_flag = False
+    d2d_placer.params.flatten_2d.ntuplace_flag = False
+
+    d2d_placer.params.terminal.global_place_flag = False
+    d2d_placer.params.terminal.random_center_init_flag = False
+    d2d_placer.params.terminal.legalize_flag = False
+    d2d_placer.params.terminal.detailed_place_flag = False
+    d2d_placer.params.terminal.ntuplace_flag = False
+
+    d2d_placer.dreamplace.dp_2d.place(d2d_placer.params.flatten_2d,
+                                      d2d_placer.timer)
+
+    d2d_placer.dreamplace.dp_terminal.init_basic_place(
+        d2d_placer.params.terminal, d2d_placer.timer)
+    d2d_placer.dreamplace.dp_terminal.place(d2d_placer.params.terminal,
+                                            d2d_placer.timer)
+    
+    d2d_placer.num_terminal_NIs = 132
+    d2d_placer.cut_net_mask = d2d_placer.op_wrapper.d2d_op_collections.terminal_legalize_op(
+        d2d_placer.tier, d2d_placer.dreamplace.dp_2d.pos,
+        d2d_placer.dreamplace.dp_terminal.pos, d2d_placer.num_terminal_NIs,
+        d2d_placer.dreamplace.dp_terminal.placedb.node_names,
+        d2d_placer.node_orient)
+    
+    d2d_placer.die_by_die_place(global_place_flag=False,
+                                legalize_flag=False,
+                                detailed_place_flag=False,
+                                random_center_init_flag=False,
+                                ntuplace_flag=False)
+
+    d2d_placer.hpwl_d2d()
+
+    d2d_placer.params.flatten_2d.global_place_flag = True
+    d2d_placer.params.flatten_2d.random_center_init_flag = True
+    d2d_placer.params.flatten_2d.legalize_flag = False
+    d2d_placer.params.flatten_2d.detailed_place_flag = False
+    d2d_placer.params.flatten_2d.ntuplace_flag = True
+
+    d2d_placer.params.terminal.global_place_flag = True
+    d2d_placer.params.terminal.random_center_init_flag = True
+    d2d_placer.params.terminal.legalize_flag = False
+    d2d_placer.params.terminal.detailed_place_flag = False
+    d2d_placer.params.terminal.ntuplace_flag = True
+
+    return d2d_placer
 
 
 def refinement_test(d2d_placer):
@@ -74,6 +135,7 @@ def refinement_test(d2d_placer):
             d2d_placer.tier, d2d_placer.dreamplace.dp_2d.pos,
             d2d_placer.node_orient)
         d2d_placer.num_terminal_NIs = int(d2d_placer.cut_net_mask.sum().item())
+        d2d_placer.hpwl_d2d()
 
         d2d_placer.refinement()
         hpwl_tmp = d2d_placer.die_by_die_place(global_place_flag=True,
@@ -126,11 +188,6 @@ def refinement_test(d2d_placer):
         plt.savefig('refinement_test_ratio.png', dpi=300, bbox_inches='tight')
 
 
-def d2d_placer_params_set(d2d_placer):
-    d2d_placer.params.result_dir_root = "refinement_test"
-    return d2d_placer
-
-
 if __name__ == "__main__":
     """
     @brief main function to invoke the entire placement flow.
@@ -138,7 +195,10 @@ if __name__ == "__main__":
 
     d2d_placer = D2Dplacer(sys.argv[1])
     d2d_logger = init_log(d2d_placer.params.result_dir_root)
-
     d2d_placer.init_spec()
 
-    d2d_placer.partition(d2d_logger)
+    d2d_placer = d2d_placer_init(d2d_placer)
+
+    refinement_test(d2d_placer)
+    # d2d_placer.output()
+    # d2d_placer.analyze_results()

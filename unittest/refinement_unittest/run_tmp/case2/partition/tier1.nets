@@ -1,10 +1,10 @@
 UCLA nets 1.0
-# Created	:	Sat Oct 18 18:18:45 2025
+# Created	:	Sun Oct 19 01:11:59 2025
 
 # User		:	placer
 
-NumNets :	1439
-NumPins :	4276
+NumNets :	1434
+NumPins :	4265
 
 NetDegree : 2	N100
 	C2526	I : 6	-60
@@ -308,7 +308,7 @@ NetDegree : 2	N1068
 	C1433	O : 59	-28
 NetDegree : 2	N1069
 	C1013	I : 81	-84
-	N1069	O : 0	0
+	C1014	O : -85	-26
 NetDegree : 3	N1070
 	C1015	I : -252	-26
 	C1275	O : 14	-79
@@ -469,8 +469,8 @@ NetDegree : 2	N1116
 	C1186	O : 21	-26
 NetDegree : 3	N1117
 	C1066	I : -136	-28
+	C1242	O : -74	-26
 	C1438	O : -55	-60
-	N1117	O : 0	0
 NetDegree : 2	N1118
 	C1067	I : 107	-84
 	C1072	O : 21	-26
@@ -621,7 +621,7 @@ NetDegree : 2	N1160
 NetDegree : 3	N1161
 	C1112	I : -116	-55
 	C1426	O : -10	-26
-	N1161	O : 0	0
+	C1443	O : -103	-59
 NetDegree : 3	N1162
 	C1113	I : 16	-60
 	C1114	O : 17	-26
@@ -662,6 +662,9 @@ NetDegree : 2	N1174
 NetDegree : 2	N1175
 	C1140	I : 45	-66
 	C1406	O : -43	-43
+NetDegree : 2	N1176
+	C1143	I : -156	-59
+	C1270	O : 16	-60
 NetDegree : 2	N1177
 	C1146	I : -267	-26
 	C1422	O : -36	-76
@@ -735,23 +738,12 @@ NetDegree : 2	N1202
 NetDegree : 2	N1203
 	C1194	I : -23	-26
 	C1256	O : 1	-60
-NetDegree : 3	N1204
-	C1198	I : -31	-26
-	C1357	O : -52	-51
-	N1204	O : 0	0
-NetDegree : 3	N1205
-	C1198	I : -92	-26
-	C1357	O : -118	-26
-	N1205	O : 0	0
 NetDegree : 2	N1206
 	C1206	I : 6	-60
 	C1261	O : 34	-26
 NetDegree : 2	N1207
 	C1206	I : -23	-26
 	C1207	O : 6	-60
-NetDegree : 2	N1210
-	C1231	O : -79	-26
-	N1210	O : 0	0
 NetDegree : 3	N1213
 	C1213	I : 9	-26
 	C1214	O : 23	-26
@@ -820,8 +812,8 @@ NetDegree : 3	N1231
 	C1269	O : -58	-26
 	C1377	O : -11	-55
 NetDegree : 2	N1232
+	C1240	I : -85	-26
 	C1446	O : 33	-84
-	N1232	O : 0	0
 NetDegree : 2	N1233
 	C1241	I : 9	-60
 	C1279	O : -40	-26
@@ -834,9 +826,6 @@ NetDegree : 2	N1235
 NetDegree : 2	N1236
 	C1249	I : 103	-77
 	C1375	O : 2	-26
-NetDegree : 2	N1237
-	C1353	O : -85	-26
-	N1237	O : 0	0
 NetDegree : 2	N124
 	C2469	I : 6	-60
 	C2728	O : 0	0
@@ -1467,6 +1456,9 @@ NetDegree : 3	N1419
 	C144	I : 7	-26
 	C187	O : 0	-84
 	C440	O : -9	-26
+NetDegree : 2	N142
+	C883	I : -205	-26
+	N142	O : 0	0
 NetDegree : 2	N1420
 	C144	I : -22	-54
 	C295	O : 51	-26
@@ -2447,10 +2439,6 @@ NetDegree : 3	N1679
 	C468	I : -20	-84
 	C503	O : -23	-26
 	C662	O : -79	-26
-NetDegree : 3	N168
-	C1193	I : -90	-26
-	C1439	O : -198	-26
-	N168	O : 0	0
 NetDegree : 4	N1680
 	C468	I : -44	-26
 	C469	O : -20	-84
@@ -3272,7 +3260,7 @@ NetDegree : 3	N1892
 NetDegree : 3	N1893
 	C598	I : -25	-26
 	C674	O : 59	-28
-	N1893	O : 0	0
+	C762	O : -52	-76
 NetDegree : 2	N1894
 	C599	I : -31	-26
 	C651	O : -20	-84
@@ -3471,9 +3459,6 @@ NetDegree : 3	N1949
 	C658	I : -21	-28
 	C722	O : 59	-28
 	C807	O : -20	-84
-NetDegree : 2	N195
-	C873	I : -52	-51
-	N195	O : 0	0
 NetDegree : 2	N1950
 	C659	I : -109	-26
 	C776	O : -47	-54
@@ -3544,9 +3529,6 @@ NetDegree : 4	N1969
 	C710	O : 17	-26
 	C733	O : -12	-26
 	C783	O : -15	-84
-NetDegree : 2	N197
-	C849	I : -64	-54
-	N197	O : 0	0
 NetDegree : 3	N1970
 	C703	I : 34	-26
 	C711	O : -46	-14
@@ -3582,10 +3564,6 @@ NetDegree : 2	N1978
 NetDegree : 2	N1979
 	C734	I : 1	-60
 	C805	O : -31	-26
-NetDegree : 3	N198
-	C1193	I : 39	-26
-	C1439	O : 54	-26
-	N198	O : 0	0
 NetDegree : 2	N1980
 	C738	I : 59	-28
 	C794	O : -55	-60
@@ -3618,9 +3596,6 @@ NetDegree : 2	N1988
 NetDegree : 2	N1989
 	C790	I : -20	-84
 	C824	O : -60	-26
-NetDegree : 2	N199
-	C1190	I : -25	-26
-	N199	O : 0	0
 NetDegree : 2	N1990
 	C813	I : -25	-26
 	C815	O : -13	-84
@@ -3643,28 +3618,6 @@ NetDegree : 2	N1995
 NetDegree : 2	N2052
 	C1510	I : -79	-26
 	N2052	O : 0	0
-NetDegree : 6	N242
-	C1190	O : -90	-26
-	C1193	O : -151	-26
-	C1439	O : -7	-26
-	C849	O : -91	-28
-	C873	O : -118	-26
-	N242	O : 0	0
-NetDegree : 2	N2544
-	C2168	O : -29	-26
-	N2544	O : 0	0
-NetDegree : 2	N2609
-	C2114	I : -151	-26
-	C2168	O : 0	-84
-NetDegree : 2	N2610
-	C2114	I : -59	-26
-	N2610	O : 0	0
-NetDegree : 2	N2618
-	C2137	I : -92	-26
-	N2618	O : 0	0
-NetDegree : 2	N2619
-	C2137	I : -155	-79
-	N2619	O : 0	0
 NetDegree : 3	N276
 	C1034	I : -66	-26
 	C2577	O : -23	-26
@@ -3705,8 +3658,8 @@ NetDegree : 3	N284
 NetDegree : 4	N286
 	C1200	I : -66	-26
 	C1201	O : -66	-26
-	C2137	O : -122	-55
 	C2533	O : -23	-26
+	N286	O : 0	0
 NetDegree : 4	N288
 	C1349	I : -47	-26
 	C1415	O : -31	-26
@@ -3731,8 +3684,8 @@ NetDegree : 5	N292
 	C1023	I : -66	-26
 	C1175	O : -61	-26
 	C1454	O : -31	-26
-	C2114	O : -82	-79
 	C2482	O : -23	-26
+	N292	O : 0	0
 NetDegree : 3	N294
 	C1128	I : -92	-26
 	C2586	O : -23	-26
@@ -3777,6 +3730,9 @@ NetDegree : 5	N307
 NetDegree : 2	N308
 	C1004	I : -70	-55
 	N308	O : 0	0
+NetDegree : 2	N309
+	C945	I : -36	-76
+	N309	O : 0	0
 NetDegree : 2	N310
 	C1449	I : -90	-79
 	N310	O : 0	0
@@ -3795,7 +3751,7 @@ NetDegree : 2	N314
 	N314	O : 0	0
 NetDegree : 2	N315
 	C1269	I : -54	-54
-	N315	O : 0	0
+	C2492	O : -128	-26
 NetDegree : 2	N316
 	C1447	I : -15	-77
 	N316	O : 0	0
@@ -3803,15 +3759,12 @@ NetDegree : 3	N317
 	C1145	I : 9	-26
 	C1146	O : -333	-79
 	C2489	O : -128	-26
-NetDegree : 2	N318
-	C1239	I : -83	-76
-	N318	O : 0	0
 NetDegree : 2	N319
 	C1329	I : -16	-76
 	N319	O : 0	0
 NetDegree : 2	N320
 	C1115	I : -20	-84
-	N320	O : 0	0
+	C2485	O : -128	-26
 NetDegree : 3	N321
 	C1228	I : -54	-54
 	C2494	O : -8	-26
@@ -3831,6 +3784,9 @@ NetDegree : 3	N325
 	C853	I : -333	-79
 	C2571	O : -23	-26
 	N325	O : 0	0
+NetDegree : 2	N326
+	C1242	I : 2	-84
+	N326	O : 0	0
 NetDegree : 3	N327
 	C1066	I : 59	-28
 	C1150	O : -116	-55
@@ -3839,9 +3795,6 @@ NetDegree : 3	N329
 	C1181	I : -86	-28
 	C1221	O : -116	-55
 	N329	O : 0	0
-NetDegree : 2	N330
-	C925	I : 0	-84
-	N330	O : 0	0
 NetDegree : 3	N331
 	C1247	I : -116	-55
 	C1424	O : -23	-26
@@ -3864,6 +3817,9 @@ NetDegree : 2	N335
 NetDegree : 2	N358
 	C2210	I : -55	-59
 	C2582	O : 1	-60
+NetDegree : 2	N486
+	C2485	O : -15	-77
+	N486	O : 0	0
 NetDegree : 3	N487
 	C2489	O : -15	-77
 	C2582	O : -23	-26
@@ -4067,7 +4023,7 @@ NetDegree : 6	N649
 	C355	O : 59	-28
 	C515	O : -35	-26
 	C516	O : -44	-26
-	C952	O : -119	-55
+	N649	O : 0	0
 NetDegree : 6	N650
 	C93	I : 290	-26
 	C769	O : -58	-28
@@ -4148,11 +4104,11 @@ NetDegree : 4	N659
 	N659	O : 0	0
 NetDegree : 6	N660
 	C224	I : 22	-26
-	C1357	O : -90	-79
 	C1197	O : -121	-26
 	C350	O : -21	-28
 	C433	O : -40	-26
 	C976	O : -46	-14
+	N660	O : 0	0
 NetDegree : 8	N661
 	C103	I : 59	-28
 	C1129	O : -107	-26
@@ -4207,10 +4163,10 @@ NetDegree : 6	N666
 NetDegree : 6	N667
 	C265	I : -12	-26
 	C1309	O : -40	-14
-	C1231	O : -36	-76
 	C284	O : -86	-28
 	C309	O : 9	-26
 	C334	O : -58	-28
+	N667	O : 0	0
 NetDegree : 3	N668
 	C162	I : 59	-28
 	C418	O : -31	-26
@@ -4231,7 +4187,7 @@ NetDegree : 3	N670
 NetDegree : 3	N671
 	C156	I : -25	-26
 	C189	O : 59	-28
-	C845	O : -36	-76
+	N671	O : 0	0
 NetDegree : 4	N672
 	C158	I : -136	-28
 	C1341	O : -122	-55
@@ -4247,11 +4203,11 @@ NetDegree : 3	N674
 	C314	O : -56	-26
 NetDegree : 6	N675
 	C246	I : 19	-26
-	C1439	O : 106	-77
 	C1256	O : -23	-26
 	C385	O : 17	-26
 	C398	O : 17	-26
 	C432	O : 22	-26
+	N675	O : 0	0
 NetDegree : 5	N676
 	C233	I : 9	-26
 	C303	O : -44	-26
@@ -4493,6 +4449,10 @@ NetDegree : 2	N718
 NetDegree : 2	N719
 	C353	I : 102	-84
 	C871	O : -95	-59
+NetDegree : 3	N72
+	C2492	O : -15	-77
+	C2676	O : 0	0
+	N72	O : 0	0
 NetDegree : 2	N720
 	C327	I : 102	-84
 	C1476	O : -47	-26
@@ -4566,14 +4526,14 @@ NetDegree : 4	N740
 	N740	O : 0	0
 NetDegree : 4	N741
 	C521	I : -10	-26
-	C1198	O : -55	-60
 	C699	O : -92	-26
 	C804	O : -10	-26
+	N741	O : 0	0
 NetDegree : 4	N742
 	C598	I : -90	-26
-	C1353	O : -52	-76
 	C1081	O : -121	-26
 	C674	O : -136	-28
+	N742	O : 0	0
 NetDegree : 5	N743
 	C736	I : -31	-26
 	C1046	O : 21	-26
@@ -4617,9 +4577,9 @@ NetDegree : 2	N75
 	N75	O : 0	0
 NetDegree : 4	N750
 	C717	I : 17	-26
-	C1193	O : 87	-84
 	C815	O : -55	-59
 	C827	O : -25	-26
+	N750	O : 0	0
 NetDegree : 2	N751
 	C481	I : -55	-59
 	C1401	O : 24	-84
@@ -4649,6 +4609,10 @@ NetDegree : 3	N759
 	C644	I : -95	-59
 	C1210	O : -128	-26
 	N759	O : 0	0
+NetDegree : 3	N76
+	C1014	I : -52	-76
+	C2680	O : 0	0
+	N76	O : 0	0
 NetDegree : 3	N760
 	C534	I : -85	-26
 	C1479	O : -82	-79
@@ -4657,6 +4621,9 @@ NetDegree : 3	N761
 	C814	I : -92	-26
 	C1436	O : -83	-81
 	C840	O : 59	-28
+NetDegree : 2	N762
+	C762	I : -85	-26
+	N762	O : 0	0
 NetDegree : 3	N763
 	C740	I : -79	-26
 	C1358	O : -61	-26
@@ -4686,6 +4653,10 @@ NetDegree : 3	N768
 NetDegree : 2	N769
 	C744	I : -95	-59
 	C1428	O : -55	-60
+NetDegree : 3	N77
+	C944	I : -86	-76
+	C2681	O : 0	0
+	N77	O : 0	0
 NetDegree : 3	N770
 	C666	I : -92	-26
 	C1414	O : -11	-55
@@ -4782,6 +4753,10 @@ NetDegree : 2	N798
 NetDegree : 2	N799
 	C690	I : 106	-84
 	C1245	O : 25	-26
+NetDegree : 3	N80
+	C1240	I : -52	-76
+	C2684	O : 0	0
+	N80	O : 0	0
 NetDegree : 2	N800
 	C800	I : 114	-77
 	C1294	O : 63	-30
@@ -4791,9 +4766,6 @@ NetDegree : 2	N801
 NetDegree : 2	N802
 	C708	I : 114	-77
 	C1106	O : -94	-54
-NetDegree : 2	N805
-	C845	I : -79	-26
-	N805	O : 0	0
 NetDegree : 3	N808
 	C847	I : -29	-26
 	C1220	O : -69	-79
@@ -4805,10 +4777,10 @@ NetDegree : 2	N810
 	C848	I : -13	-84
 	C853	O : 209	-26
 NetDegree : 4	N811
-	C849	I : -83	-81
 	C1348	O : -31	-26
 	C1287	O : -31	-26
 	C907	O : -44	-26
+	N811	O : 0	0
 NetDegree : 4	N812
 	C1348	O : -92	-26
 	C1287	O : -92	-26
@@ -4865,8 +4837,8 @@ NetDegree : 2	N821
 	C917	O : 0	-84
 NetDegree : 3	N822
 	C855	I : 96	-77
+	C1456	O : -47	-26
 	C1441	O : -121	-26
-	N822	O : 0	0
 NetDegree : 2	N823
 	C855	I : -248	-26
 	C1309	O : -11	-55
@@ -5094,6 +5066,7 @@ NetDegree : 38	N851
 	C1106	O : -126	-54
 	C1110	O : 115	-26
 	C1118	O : 179	-26
+	C1143	O : -119	-76
 	C1151	O : 115	-26
 	C1153	O : 115	-26
 	C1154	O : -160	-51
@@ -5121,7 +5094,6 @@ NetDegree : 38	N851
 	C1007	O : 115	-26
 	C927	O : -9	-26
 	C988	O : -23	-26
-	N851	O : 0	0
 NetDegree : 2	N852
 	C869	I : -55	-60
 	C936	O : -63	-26
@@ -5136,9 +5108,9 @@ NetDegree : 3	N855
 	C1184	O : -267	-26
 	C930	O : -40	-26
 NetDegree : 3	N856
-	C873	I : -90	-79
 	C1341	O : -92	-26
 	C1340	O : -31	-26
+	N856	O : 0	0
 NetDegree : 3	N857
 	C1341	O : -155	-79
 	C1340	O : -92	-26
@@ -5171,6 +5143,10 @@ NetDegree : 24	N859
 	C1023	O : 41	-26
 	C920	O : -155	-79
 	C968	O : 35	-26
+NetDegree : 3	N86
+	C1456	I : -20	-84
+	C2690	O : 0	0
+	N86	O : 0	0
 NetDegree : 2	N860
 	C877	I : -35	-79
 	C1073	O : 7	-79
@@ -5201,15 +5177,20 @@ NetDegree : 5	N866
 NetDegree : 2	N867
 	C880	I : -11	-55
 	C1337	O : 5	-26
+NetDegree : 3	N87
+	C1443	I : 8	-78
+	C2691	O : 0	0
+	N87	O : 0	0
 NetDegree : 3	N870
 	C882	I : -91	-59
 	C1183	O : -23	-26
 	N870	O : 0	0
 NetDegree : 3	N871
+	C883	I : -247	-55
 	C1350	O : 163	-26
 	C1127	O : -202	-26
-	N871	O : 0	0
-NetDegree : 5	N872
+NetDegree : 6	N872
+	C883	I : -262	-79
 	C1071	O : -92	-26
 	C1307	O : -64	-26
 	C983	O : -90	-26
@@ -5228,12 +5209,15 @@ NetDegree : 5	N876
 	C1281	O : -23	-26
 	C1409	O : -397	-59
 	C1055	O : 6	-26
-	N876	O : 0	0
+	C888	O : -48	-76
 NetDegree : 4	N877
 	C887	I : 0	-84
 	C1130	O : -42	-26
 	C900	O : -27	-26
 	C916	O : -42	-26
+NetDegree : 2	N878
+	C888	I : -153	-26
+	N878	O : 0	0
 NetDegree : 2	N88
 	C2538	I : 1	-60
 	C2692	O : 0	0
@@ -5337,8 +5321,8 @@ NetDegree : 2	N909
 	C1291	O : -23	-26
 NetDegree : 3	N910
 	C906	I : -75	-26
-	C1190	O : -59	-79
 	C942	O : -31	-26
+	N910	O : 0	0
 NetDegree : 3	N911
 	C907	I : -7	-55
 	C1109	O : -40	-14
@@ -5395,6 +5379,9 @@ NetDegree : 2	N925
 NetDegree : 2	N926
 	C914	I : -16	-60
 	C1378	O : -23	-26
+NetDegree : 2	N929
+	C1270	O : -8	-26
+	N929	O : 0	0
 NetDegree : 2	N931
 	C916	I : -16	-60
 	C1236	O : 8	-26
@@ -5430,12 +5417,15 @@ NetDegree : 2	N940
 	C920	I : -92	-26
 	C1164	O : -82	-79
 NetDegree : 3	N942
+	C923	I : 1	-60
 	C1479	O : -151	-26
 	C1478	O : -99	-54
-	N942	O : 0	0
+NetDegree : 2	N943
+	C923	I : -23	-26
+	N943	O : 0	0
 NetDegree : 2	N944
-	C925	I : -29	-26
 	C1244	O : 1	-60
+	N944	O : 0	0
 NetDegree : 2	N945
 	C926	I : 39	-84
 	C1444	O : -92	-26
@@ -5473,7 +5463,7 @@ NetDegree : 3	N954
 	C977	O : -11	-55
 NetDegree : 2	N955
 	C930	I : 81	-84
-	C1239	O : -120	-59
+	N955	O : 0	0
 NetDegree : 27	N957
 	C1025	O : -22	-26
 	C1034	O : -22	-26
@@ -5575,24 +5565,18 @@ NetDegree : 2	N974
 	C943	I : 0	-84
 	C1251	O : -74	-26
 NetDegree : 2	N975
+	C944	I : -125	-26
 	C1092	O : 33	-84
-	N975	O : 0	0
 NetDegree : 2	N976
+	C945	I : -79	-26
 	C1101	O : 80	-84
-	N976	O : 0	0
 NetDegree : 3	N977
 	C946	I : -90	-26
 	C1372	O : 20	-79
 	N977	O : 0	0
-NetDegree : 2	N978
-	C952	O : -94	-26
-	N978	O : 0	0
 NetDegree : 2	N98
 	C2576	I : 6	-60
 	C2702	O : 0	0
-NetDegree : 2	N980
-	C952	O : -157	-79
-	N980	O : 0	0
 NetDegree : 3	N981
 	C950	I : -128	-26
 	C1148	O : -128	-26

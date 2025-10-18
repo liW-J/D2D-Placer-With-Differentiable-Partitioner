@@ -41,7 +41,7 @@ class D2DOpCollection(object):
                  out_fmt_iccad_op, pos_flattened_op, terminal_insert_op,
                  pin_pos_op, pin_pos_tier_op, pin_pos_terminal_op,
                  terminal_legalize_op, avg_cut_op, terminal_insert_aux_op,
-                 terminal_legaliza_aux_op, refinement_op, hpwl_d2d_op,
+                 terminal_legalize_aux_op, refinement_op, hpwl_d2d_op,
                  macro_balance_op, parts_reader_op, hgr_generator_op,
                  bin_based_fm_op, draw_layout_result_op, draw_block_op,
                  partition_flow_op):
@@ -57,7 +57,7 @@ class D2DOpCollection(object):
         self.terminal_legalize_op = terminal_legalize_op
         self.avg_cut_op = avg_cut_op
         self.terminal_insert_aux_op = terminal_insert_aux_op
-        self.terminal_legaliza_aux_op = terminal_legaliza_aux_op
+        self.terminal_legalize_aux_op = terminal_legalize_aux_op
         self.refinement_op = refinement_op
         self.hpwl_d2d_op = hpwl_d2d_op
         self.macro_balance_op = macro_balance_op
@@ -134,7 +134,7 @@ class OpWrapper(object):
         self.terminal_legalize_op = self.build_terminal_legalize()
         self.avg_cut_op = self.build_avg_cut()
         self.terminal_insert_aux_op = self.build_terminal_insert_aux()
-        self.terminal_legaliza_aux_op = self.build_terminal_legaliza_aux()
+        self.terminal_legalize_aux_op = self.build_terminal_legalize_aux()
         self.refinement_op = self.build_refinement()
         self.hpwl_d2d_op = self.build_hpwl_d2d()
         self.macro_balance_op = self.build_macro_balance()
@@ -158,7 +158,7 @@ class OpWrapper(object):
             terminal_legalize_op=self.terminal_legalize_op,
             avg_cut_op=self.avg_cut_op,
             terminal_insert_aux_op=self.terminal_insert_aux_op,
-            terminal_legaliza_aux_op=self.terminal_legaliza_aux_op,
+            terminal_legalize_aux_op=self.terminal_legalize_aux_op,
             refinement_op=self.refinement_op,
             hpwl_d2d_op=self.hpwl_d2d_op,
             macro_balance_op=self.macro_balance_op,
@@ -447,9 +447,9 @@ class OpWrapper(object):
 
         return build_terminal_insert_aux_op
 
-    def build_terminal_legaliza_aux(self):
+    def build_terminal_legalize_aux(self):
 
-        terminal_legaliza_aux_op = TerminalAux(
+        terminal_legalize_aux_op = TerminalAux(
             self.data_collections_2d.flat_net2pin_map,
             self.data_collections_2d.flat_net2pin_start_map,
             self.data_collections_2d.pin2node_map,
@@ -470,7 +470,7 @@ class OpWrapper(object):
             self.case_name,
             terminal_legalize_flag=True)
 
-        def build_terminal_legaliza_aux_op(tier, pos_2d, pos_terminal,
+        def build_terminal_legalize_aux_op(tier, pos_2d, pos_terminal,
                                            num_terminal_NIs, terminal_names):
             pin_pos_x = torch.stack([
                 self.pin_pos_tier_op[tier_id](pos_2d)
@@ -484,11 +484,11 @@ class OpWrapper(object):
             ])
             pin_pos = torch.cat([pin_pos_x, pin_pos_y], dim=0)
 
-            return terminal_legaliza_aux_op(tier, pin_pos, pos_2d,
+            return terminal_legalize_aux_op(tier, pin_pos, pos_2d,
                                             pos_terminal, num_terminal_NIs,
                                             terminal_names)
 
-        return build_terminal_legaliza_aux_op
+        return build_terminal_legalize_aux_op
 
     def build_refinement(self):
 

@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-07-19 17:57:28
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-10-18 20:17:53
+LastEditTime: 2025-10-18 20:35:12
 FilePath: /D2D-placer/placer/d2d_placer.py
 Description: 
 '''
@@ -35,7 +35,6 @@ from placer.constants import Format, Orient
 import torch
 import matplotlib.pyplot as plt
 
-# Import the analyzer (lazy import to avoid circular dependencies)
 from placer.tools.d2d_result_analyzer.d2d_result_analyzer import D2DResultAnalyzer
 
 
@@ -225,7 +224,7 @@ class D2Dplacer:
 
     def terminal_legalize(self):
         # create terminal aux for collaborative optimization by tier[0]
-        self.op_wrapper.d2d_op_collections.terminal_legaliza_aux_op(
+        self.op_wrapper.d2d_op_collections.terminal_legalize_aux_op(
             self.tier, self.dreamplace.dp_2d.pos,
             self.dreamplace.dp_terminal.pos, self.num_terminal_NIs,
             self.dreamplace.dp_terminal.placedb.node_names)

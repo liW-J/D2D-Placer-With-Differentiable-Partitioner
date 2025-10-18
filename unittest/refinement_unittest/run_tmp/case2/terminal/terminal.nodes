@@ -1,26 +1,21 @@
 UCLA nodes 1.0
-# Created	:	Sat Oct 18 18:18:39 2025
+# Created	:	Sun Oct 19 01:11:51 2025
 
 # User		:	placer
 
-NumNodes :		699
-NumTerminals :	563
+NumNodes :		693
+NumTerminals :	561
 	C1000	0 0 terminal
 	C1002	0 0 terminal
 	C1003	0 0 terminal
 	C1004	0 0 terminal
 	C1005	0 0 terminal
-	C1007	0 0 terminal
 	C1009	0 0 terminal
-	C1012	0 0 terminal
-	C1013	0 0 terminal
 	C1014	0 0 terminal
-	C1015	0 0 terminal
 	C1017	0 0 terminal
 	C1018	0 0 terminal
 	C1023	0 0 terminal
 	C1025	0 0 terminal
-	C1027	0 0 terminal
 	C1029	0 0 terminal
 	C103	0 0 terminal
 	C1032	0 0 terminal
@@ -30,13 +25,11 @@ NumTerminals :	563
 	C1036	0 0 terminal
 	C1037	0 0 terminal
 	C1040	0 0 terminal
-	C1042	0 0 terminal
 	C1045	0 0 terminal
 	C1046	0 0 terminal
 	C1048	0 0 terminal
 	C1049	0 0 terminal
 	C105	0 0 terminal
-	C1055	0 0 terminal
 	C1057	0 0 terminal
 	C1062	0 0 terminal
 	C1063	0 0 terminal
@@ -46,40 +39,29 @@ NumTerminals :	563
 	C1070	0 0 terminal
 	C1071	0 0 terminal
 	C1076	0 0 terminal
+	C1081	0 0 terminal
 	C1084	0 0 terminal
-	C1092	0 0 terminal
 	C1093	0 0 terminal
 	C1097	0 0 terminal
-	C1101	0 0 terminal
-	C1105	0 0 terminal
-	C1106	0 0 terminal
 	C1107	0 0 terminal
-	C1110	0 0 terminal
-	C1112	0 0 terminal
-	C1115	0 0 terminal
 	C1117	0 0 terminal
-	C1118	0 0 terminal
+	C1120	0 0 terminal
 	C1121	0 0 terminal
 	C1122	0 0 terminal
 	C1123	0 0 terminal
 	C1126	0 0 terminal
-	C1127	0 0 terminal
 	C1128	0 0 terminal
 	C1129	0 0 terminal
 	C1132	0 0 terminal
 	C1133	0 0 terminal
 	C1134	0 0 terminal
 	C1137	0 0 terminal
-	C1143	0 0 terminal
 	C1147	0 0 terminal
 	C1149	0 0 terminal
 	C1150	0 0 terminal
-	C1151	0 0 terminal
 	C1153	0 0 terminal
-	C1154	0 0 terminal
 	C1155	0 0 terminal
 	C1156	0 0 terminal
-	C1158	0 0 terminal
 	C1159	0 0 terminal
 	C1163	0 0 terminal
 	C1165	0 0 terminal
@@ -94,7 +76,6 @@ NumTerminals :	563
 	C1179	0 0 terminal
 	C1181	0 0 terminal
 	C1183	0 0 terminal
-	C1185	0 0 terminal
 	C1187	0 0 terminal
 	C1188	0 0 terminal
 	C1189	0 0 terminal
@@ -103,71 +84,60 @@ NumTerminals :	563
 	C1193	0 0 terminal
 	C1195	0 0 terminal
 	C1196	0 0 terminal
+	C1197	0 0 terminal
 	C1198	0 0 terminal
 	C1200	0 0 terminal
 	C1201	0 0 terminal
 	C1203	0 0 terminal
 	C1204	0 0 terminal
 	C1207	0 0 terminal
-	C1209	0 0 terminal
 	C1210	0 0 terminal
 	C1211	0 0 terminal
 	C1212	0 0 terminal
-	C1216	0 0 terminal
 	C1220	0 0 terminal
 	C1221	0 0 terminal
-	C1222	0 0 terminal
 	C1223	0 0 terminal
-	C1226	0 0 terminal
 	C1228	0 0 terminal
 	C1231	0 0 terminal
 	C1232	0 0 terminal
+	C1235	0 0 terminal
 	C1236	0 0 terminal
-	C1237	0 0 terminal
 	C1239	0 0 terminal
 	C1240	0 0 terminal
 	C1242	0 0 terminal
+	C1244	0 0 terminal
 	C1245	0 0 terminal
 	C1247	0 0 terminal
 	C1248	0 0 terminal
 	C1249	0 0 terminal
-	C1250	0 0 terminal
 	C1252	0 0 terminal
 	C1253	0 0 terminal
 	C1254	0 0 terminal
+	C1256	0 0 terminal
 	C1257	0 0 terminal
 	C1259	0 0 terminal
 	C1262	0 0 terminal
 	C1266	0 0 terminal
 	C1267	0 0 terminal
 	C1268	0 0 terminal
-	C1269	0 0 terminal
+	C1270	0 0 terminal
 	C1273	0 0 terminal
 	C1274	0 0 terminal
 	C1277	0 0 terminal
-	C1279	0 0 terminal
-	C1281	0 0 terminal
-	C1283	0 0 terminal
 	C1284	0 0 terminal
 	C1285	0 0 terminal
-	C1286	0 0 terminal
 	C1287	0 0 terminal
 	C1288	0 0 terminal
 	C1289	0 0 terminal
 	C1290	0 0 terminal
 	C1292	0 0 terminal
-	C1294	0 0 terminal
-	C1295	0 0 terminal
-	C1296	0 0 terminal
-	C1297	0 0 terminal
-	C1298	0 0 terminal
 	C1299	0 0 terminal
 	C1301	0 0 terminal
 	C1302	0 0 terminal
 	C1304	0 0 terminal
-	C1306	0 0 terminal
 	C1307	0 0 terminal
 	C1308	0 0 terminal
+	C1309	0 0 terminal
 	C1310	0 0 terminal
 	C1313	0 0 terminal
 	C1317	0 0 terminal
@@ -189,7 +159,6 @@ NumTerminals :	563
 	C1347	0 0 terminal
 	C1348	0 0 terminal
 	C1349	0 0 terminal
-	C1350	0 0 terminal
 	C1353	0 0 terminal
 	C1355	0 0 terminal
 	C1357	0 0 terminal
@@ -198,43 +167,32 @@ NumTerminals :	563
 	C1361	0 0 terminal
 	C1362	0 0 terminal
 	C1364	0 0 terminal
-	C1370	0 0 terminal
 	C1371	0 0 terminal
 	C1372	0 0 terminal
 	C1374	0 0 terminal
 	C1377	0 0 terminal
 	C1381	0 0 terminal
-	C1387	0 0 terminal
-	C1389	0 0 terminal
 	C1392	0 0 terminal
 	C1400	0 0 terminal
 	C1401	0 0 terminal
 	C1403	0 0 terminal
-	C1404	0 0 terminal
 	C1407	0 0 terminal
-	C1409	0 0 terminal
 	C1410	0 0 terminal
 	C1411	0 0 terminal
 	C1414	0 0 terminal
 	C1415	0 0 terminal
 	C1417	0 0 terminal
-	C1418	0 0 terminal
 	C1424	0 0 terminal
 	C1425	0 0 terminal
-	C1426	0 0 terminal
 	C1427	0 0 terminal
 	C1429	0 0 terminal
-	C1430	0 0 terminal
 	C1431	0 0 terminal
 	C1434	0 0 terminal
 	C1436	0 0 terminal
-	C1438	0 0 terminal
 	C1439	0 0 terminal
-	C1441	0 0 terminal
 	C1442	0 0 terminal
 	C1443	0 0 terminal
 	C1444	0 0 terminal
-	C1446	0 0 terminal
 	C1447	0 0 terminal
 	C1449	0 0 terminal
 	C1451	0 0 terminal
@@ -252,9 +210,8 @@ NumTerminals :	563
 	C1467	0 0 terminal
 	C1469	0 0 terminal
 	C1470	0 0 terminal
-	C1478	0 0 terminal
-	C1479	0 0 terminal
 	C1510	0 0 terminal
+	C156	0 0 terminal
 	C1585	0 0 terminal
 	C1611	0 0 terminal
 	C162	0 0 terminal
@@ -262,12 +219,9 @@ NumTerminals :	563
 	C163	0 0 terminal
 	C1630	0 0 terminal
 	C1635	0 0 terminal
-	C1660	0 0 terminal
 	C169	0 0 terminal
-	C1727	0 0 terminal
 	C1735	0 0 terminal
 	C176	0 0 terminal
-	C1760	0 0 terminal
 	C1763	0 0 terminal
 	C182	0 0 terminal
 	C1829	0 0 terminal
@@ -276,8 +230,7 @@ NumTerminals :	563
 	C1855	0 0 terminal
 	C1856	0 0 terminal
 	C186	0 0 terminal
-	C1868	0 0 terminal
-	C1895	0 0 terminal
+	C189	0 0 terminal
 	C1906	0 0 terminal
 	C1960	0 0 terminal
 	C198	0 0 terminal
@@ -286,33 +239,36 @@ NumTerminals :	563
 	C2113	0 0 terminal
 	C2114	0 0 terminal
 	C2122	0 0 terminal
-	C2125	0 0 terminal
 	C2127	0 0 terminal
 	C2137	0 0 terminal
-	C2138	0 0 terminal
 	C2145	0 0 terminal
 	C2155	0 0 terminal
 	C2160	0 0 terminal
 	C2164	0 0 terminal
-	C2168	0 0 terminal
 	C2172	0 0 terminal
-	C2177	0 0 terminal
 	C2184	0 0 terminal
+	C2194	0 0 terminal
 	C2195	0 0 terminal
 	C2196	0 0 terminal
 	C220	0 0 terminal
-	C2214	0 0 terminal
+	C2204	0 0 terminal
+	C2206	0 0 terminal
 	C2215	0 0 terminal
+	C2217	0 0 terminal
+	C2218	0 0 terminal
 	C2219	0 0 terminal
+	C2221	0 0 terminal
 	C2223	0 0 terminal
+	C2224	0 0 terminal
 	C2225	0 0 terminal
 	C2227	0 0 terminal
+	C2228	0 0 terminal
 	C2229	0 0 terminal
 	C2230	0 0 terminal
 	C2231	0 0 terminal
 	C2235	0 0 terminal
-	C2239	0 0 terminal
-	C2240	0 0 terminal
+	C2238	0 0 terminal
+	C224	0 0 terminal
 	C2242	0 0 terminal
 	C2246	0 0 terminal
 	C2248	0 0 terminal
@@ -330,53 +286,75 @@ NumTerminals :	563
 	C2287	0 0 terminal
 	C229	0 0 terminal
 	C2296	0 0 terminal
+	C2297	0 0 terminal
 	C2298	0 0 terminal
 	C2301	0 0 terminal
+	C2302	0 0 terminal
 	C2313	0 0 terminal
 	C2314	0 0 terminal
+	C2315	0 0 terminal
+	C2321	0 0 terminal
+	C2322	0 0 terminal
 	C2323	0 0 terminal
+	C2324	0 0 terminal
 	C2326	0 0 terminal
+	C2330	0 0 terminal
 	C2331	0 0 terminal
 	C2332	0 0 terminal
 	C2333	0 0 terminal
-	C2334	0 0 terminal
-	C2338	0 0 terminal
+	C2335	0 0 terminal
+	C2337	0 0 terminal
+	C2339	0 0 terminal
 	C2340	0 0 terminal
 	C2341	0 0 terminal
-	C2344	0 0 terminal
+	C2343	0 0 terminal
 	C2345	0 0 terminal
 	C2346	0 0 terminal
+	C2347	0 0 terminal
+	C2349	0 0 terminal
+	C2350	0 0 terminal
 	C2351	0 0 terminal
 	C2352	0 0 terminal
 	C2353	0 0 terminal
 	C2354	0 0 terminal
 	C2355	0 0 terminal
 	C2356	0 0 terminal
-	C2359	0 0 terminal
 	C2360	0 0 terminal
 	C2364	0 0 terminal
+	C2366	0 0 terminal
+	C2367	0 0 terminal
 	C2368	0 0 terminal
 	C2373	0 0 terminal
+	C2381	0 0 terminal
 	C2388	0 0 terminal
 	C2396	0 0 terminal
 	C2397	0 0 terminal
+	C2398	0 0 terminal
 	C2400	0 0 terminal
 	C2402	0 0 terminal
-	C2403	0 0 terminal
+	C2404	0 0 terminal
 	C2406	0 0 terminal
+	C241	0 0 terminal
 	C2412	0 0 terminal
-	C2414	0 0 terminal
+	C2419	0 0 terminal
 	C2420	0 0 terminal
 	C2427	0 0 terminal
+	C2428	0 0 terminal
+	C2430	0 0 terminal
 	C2431	0 0 terminal
+	C2442	0 0 terminal
 	C2443	0 0 terminal
 	C2445	0 0 terminal
+	C2447	0 0 terminal
+	C2448	0 0 terminal
+	C246	0 0 terminal
 	C2464	0 0 terminal
 	C2465	0 0 terminal
 	C2468	0 0 terminal
 	C2470	0 0 terminal
 	C2474	0 0 terminal
 	C2480	0 0 terminal
+	C2482	0 0 terminal
 	C2483	0 0 terminal
 	C2485	0 0 terminal
 	C2487	0 0 terminal
@@ -384,6 +362,7 @@ NumTerminals :	563
 	C2492	0 0 terminal
 	C2493	0 0 terminal
 	C2494	0 0 terminal
+	C2495	0 0 terminal
 	C2497	0 0 terminal
 	C2498	0 0 terminal
 	C25	0 0 terminal
@@ -397,14 +376,17 @@ NumTerminals :	563
 	C2524	0 0 terminal
 	C2527	0 0 terminal
 	C253	0 0 terminal
+	C2533	0 0 terminal
 	C2534	0 0 terminal
 	C2537	0 0 terminal
 	C2540	0 0 terminal
+	C2548	0 0 terminal
 	C2553	0 0 terminal
 	C2554	0 0 terminal
 	C2556	0 0 terminal
 	C2558	0 0 terminal
 	C2560	0 0 terminal
+	C2561	0 0 terminal
 	C2563	0 0 terminal
 	C2569	0 0 terminal
 	C2571	0 0 terminal
@@ -414,19 +396,31 @@ NumTerminals :	563
 	C2583	0 0 terminal
 	C2586	0 0 terminal
 	C2599	0 0 terminal
+	C265	0 0 terminal
 	C266	0 0 terminal
 	C267	0 0 terminal
+	C2676	0 0 terminal
 	C2679	0 0 terminal
+	C2680	0 0 terminal
+	C2681	0 0 terminal
+	C2684	0 0 terminal
 	C269	0 0 terminal
+	C2690	0 0 terminal
+	C2691	0 0 terminal
+	C284	0 0 terminal
 	C290	0 0 terminal
 	C299	0 0 terminal
 	C302	0 0 terminal
 	C305	0 0 terminal
+	C309	0 0 terminal
 	C323	0 0 terminal
 	C329	0 0 terminal
 	C330	0 0 terminal
+	C334	0 0 terminal
 	C345	0 0 terminal
 	C348	0 0 terminal
+	C350	0 0 terminal
+	C355	0 0 terminal
 	C360	0 0 terminal
 	C362	0 0 terminal
 	C371	0 0 terminal
@@ -434,24 +428,31 @@ NumTerminals :	563
 	C377	0 0 terminal
 	C382	0 0 terminal
 	C383	0 0 terminal
+	C385	0 0 terminal
 	C388	0 0 terminal
 	C390	0 0 terminal
 	C391	0 0 terminal
 	C392	0 0 terminal
 	C393	0 0 terminal
 	C394	0 0 terminal
+	C398	0 0 terminal
 	C399	0 0 terminal
 	C405	0 0 terminal
 	C407	0 0 terminal
 	C415	0 0 terminal
 	C418	0 0 terminal
 	C423	0 0 terminal
+	C432	0 0 terminal
+	C433	0 0 terminal
 	C443	0 0 terminal
 	C447	0 0 terminal
 	C452	0 0 terminal
 	C456	0 0 terminal
 	C466	0 0 terminal
+	C515	0 0 terminal
+	C516	0 0 terminal
 	C519	0 0 terminal
+	C521	0 0 terminal
 	C529	0 0 terminal
 	C537	0 0 terminal
 	C538	0 0 terminal
@@ -478,6 +479,7 @@ NumTerminals :	563
 	C681	0 0 terminal
 	C695	0 0 terminal
 	C698	0 0 terminal
+	C699	0 0 terminal
 	C702	0 0 terminal
 	C703	0 0 terminal
 	C708	0 0 terminal
@@ -485,6 +487,7 @@ NumTerminals :	563
 	C710	0 0 terminal
 	C711	0 0 terminal
 	C716	0 0 terminal
+	C717	0 0 terminal
 	C722	0 0 terminal
 	C727	0 0 terminal
 	C733	0 0 terminal
@@ -505,44 +508,42 @@ NumTerminals :	563
 	C792	0 0 terminal
 	C795	0 0 terminal
 	C803	0 0 terminal
+	C804	0 0 terminal
 	C811	0 0 terminal
+	C815	0 0 terminal
+	C827	0 0 terminal
 	C836	0 0 terminal
 	C845	0 0 terminal
-	C846	0 0 terminal
 	C849	0 0 terminal
 	C850	0 0 terminal
 	C853	0 0 terminal
-	C855	0 0 terminal
 	C859	0 0 terminal
 	C860	0 0 terminal
 	C862	0 0 terminal
 	C865	0 0 terminal
 	C867	0 0 terminal
 	C868	0 0 terminal
-	C869	0 0 terminal
 	C872	0 0 terminal
 	C873	0 0 terminal
 	C874	0 0 terminal
 	C879	0 0 terminal
-	C88	0 0 terminal
 	C880	0 0 terminal
 	C882	0 0 terminal
 	C883	0 0 terminal
 	C885	0 0 terminal
-	C887	0 0 terminal
 	C888	0 0 terminal
 	C905	0 0 terminal
 	C906	0 0 terminal
 	C907	0 0 terminal
 	C909	0 0 terminal
-	C91	0 0 terminal
 	C912	0 0 terminal
+	C915	0 0 terminal
 	C92	0 0 terminal
 	C921	0 0 terminal
 	C923	0 0 terminal
 	C924	0 0 terminal
 	C925	0 0 terminal
-	C927	0 0 terminal
+	C930	0 0 terminal
 	C933	0 0 terminal
 	C940	0 0 terminal
 	C942	0 0 terminal
@@ -551,156 +552,149 @@ NumTerminals :	563
 	C945	0 0 terminal
 	C946	0 0 terminal
 	C947	0 0 terminal
-	C948	0 0 terminal
-	C949	0 0 terminal
 	C951	0 0 terminal
 	C952	0 0 terminal
-	C953	0 0 terminal
 	C954	0 0 terminal
 	C956	0 0 terminal
 	C957	0 0 terminal
 	C968	0 0 terminal
+	C976	0 0 terminal
 	C979	0 0 terminal
 	C983	0 0 terminal
 	C984	0 0 terminal
 	C985	0 0 terminal
-	C988	0 0 terminal
 	C989	0 0 terminal
 	C997	0 0 terminal
 	C998	0 0 terminal
-	N1030	200	200
-	N1069	200	200
-	N1089	200	200
-	N1117	200	200
-	N1120	200	200
-	N1161	200	200
-	N1180	200	200
-	N1204	200	200
-	N1205	200	200
-	N1210	200	200
-	N1232	200	200
-	N1237	200	200
-	N1254	200	200
-	N1267	200	200
-	N1301	200	200
-	N152	200	200
-	N154	200	200
-	N155	200	200
-	N156	200	200
-	N160	200	200
-	N168	200	200
-	N1893	200	200
-	N195	200	200
-	N197	200	200
-	N198	200	200
-	N199	200	200
-	N2052	200	200
-	N242	200	200
-	N2544	200	200
-	N2610	200	200
-	N2618	200	200
-	N2619	200	200
-	N276	200	200
-	N277	200	200
-	N278	200	200
-	N279	200	200
-	N280	200	200
-	N282	200	200
-	N283	200	200
-	N284	200	200
-	N288	200	200
-	N289	200	200
-	N291	200	200
-	N294	200	200
-	N295	200	200
-	N301	200	200
-	N302	200	200
-	N304	200	200
-	N305	200	200
-	N306	200	200
-	N307	200	200
-	N308	200	200
-	N310	200	200
-	N311	200	200
-	N312	200	200
-	N313	200	200
-	N314	200	200
-	N315	200	200
-	N316	200	200
-	N318	200	200
-	N319	200	200
-	N320	200	200
-	N321	200	200
-	N322	200	200
-	N323	200	200
-	N324	200	200
-	N325	200	200
-	N327	200	200
-	N329	200	200
-	N330	200	200
-	N331	200	200
-	N332	200	200
-	N333	200	200
-	N334	200	200
-	N335	200	200
-	N487	200	200
-	N646	200	200
-	N647	200	200
-	N648	200	200
-	N651	200	200
-	N652	200	200
-	N653	200	200
-	N654	200	200
-	N655	200	200
-	N656	200	200
-	N657	200	200
-	N658	200	200
-	N659	200	200
-	N661	200	200
-	N662	200	200
-	N663	200	200
-	N666	200	200
-	N668	200	200
-	N669	200	200
-	N673	200	200
-	N677	200	200
-	N686	200	200
-	N696	200	200
-	N697	200	200
-	N698	200	200
-	N699	200	200
-	N702	200	200
-	N739	200	200
-	N740	200	200
-	N743	200	200
-	N744	200	200
-	N746	200	200
-	N748	200	200
-	N75	200	200
-	N759	200	200
-	N763	200	200
-	N766	200	200
-	N805	200	200
-	N812	200	200
-	N822	200	200
-	N832	200	200
-	N833	200	200
-	N837	200	200
-	N850	200	200
-	N851	200	200
-	N857	200	200
-	N870	200	200
-	N871	200	200
-	N872	200	200
-	N874	200	200
-	N876	200	200
-	N908	200	200
-	N942	200	200
-	N957	200	200
-	N969	200	200
-	N973	200	200
-	N975	200	200
-	N976	200	200
-	N977	200	200
-	N978	200	200
-	N980	200	200
+	N1030	228	228
+	N1089	228	228
+	N1120	228	228
+	N1180	228	228
+	N1254	228	228
+	N1267	228	228
+	N1301	228	228
+	N142	228	228
+	N152	228	228
+	N154	228	228
+	N155	228	228
+	N156	228	228
+	N160	228	228
+	N2052	228	228
+	N276	228	228
+	N277	228	228
+	N278	228	228
+	N279	228	228
+	N280	228	228
+	N282	228	228
+	N283	228	228
+	N284	228	228
+	N286	228	228
+	N288	228	228
+	N289	228	228
+	N291	228	228
+	N292	228	228
+	N294	228	228
+	N295	228	228
+	N301	228	228
+	N302	228	228
+	N304	228	228
+	N305	228	228
+	N306	228	228
+	N307	228	228
+	N308	228	228
+	N309	228	228
+	N310	228	228
+	N311	228	228
+	N312	228	228
+	N313	228	228
+	N314	228	228
+	N316	228	228
+	N319	228	228
+	N321	228	228
+	N322	228	228
+	N323	228	228
+	N324	228	228
+	N325	228	228
+	N326	228	228
+	N327	228	228
+	N329	228	228
+	N331	228	228
+	N332	228	228
+	N333	228	228
+	N334	228	228
+	N335	228	228
+	N486	228	228
+	N487	228	228
+	N646	228	228
+	N647	228	228
+	N648	228	228
+	N649	228	228
+	N651	228	228
+	N652	228	228
+	N653	228	228
+	N654	228	228
+	N655	228	228
+	N656	228	228
+	N657	228	228
+	N658	228	228
+	N659	228	228
+	N660	228	228
+	N661	228	228
+	N662	228	228
+	N663	228	228
+	N666	228	228
+	N667	228	228
+	N668	228	228
+	N669	228	228
+	N671	228	228
+	N673	228	228
+	N675	228	228
+	N677	228	228
+	N686	228	228
+	N696	228	228
+	N697	228	228
+	N698	228	228
+	N699	228	228
+	N702	228	228
+	N72	228	228
+	N739	228	228
+	N740	228	228
+	N741	228	228
+	N742	228	228
+	N743	228	228
+	N744	228	228
+	N746	228	228
+	N748	228	228
+	N75	228	228
+	N750	228	228
+	N759	228	228
+	N76	228	228
+	N762	228	228
+	N763	228	228
+	N766	228	228
+	N77	228	228
+	N80	228	228
+	N811	228	228
+	N812	228	228
+	N832	228	228
+	N833	228	228
+	N837	228	228
+	N850	228	228
+	N856	228	228
+	N857	228	228
+	N86	228	228
+	N87	228	228
+	N870	228	228
+	N872	228	228
+	N874	228	228
+	N878	228	228
+	N908	228	228
+	N910	228	228
+	N929	228	228
+	N943	228	228
+	N944	228	228
+	N955	228	228
+	N957	228	228
+	N969	228	228
+	N973	228	228
+	N977	228	228
