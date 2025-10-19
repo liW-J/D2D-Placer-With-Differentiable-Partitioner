@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-06-13 15:35:55
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-10-18 20:17:33
+LastEditTime: 2025-10-20 02:15:18
 FilePath: /D2D-placer/placer/op_wrapper.py
 Description:
 '''
@@ -536,8 +536,8 @@ class OpWrapper(object):
             self.die_spec.terminalSizeY, self.die_spec.terminalSpacing,
             self.case_name, self.top_die_max_util, self.bottom_die_max_util,
             self.placedb_2d.num_nodes, self.placedb_2d.num_bins_x,
-            self.placedb_2d.num_bins_y, self.placedb_2d.xl, self.placedb_2d.yl,
-            self.placedb_2d.xh, self.placedb_2d.yh)
+            self.placedb_2d.num_bins_y, self.placedb_tier[0].xl, self.placedb_tier[0].yl,
+            self.placedb_tier[0].xh, self.placedb_tier[0].yh)
 
         def build_bin_based_fm_op(tier, pos_2d, pos_terminal, num_terminal_NIs,
                                   terminal_names):

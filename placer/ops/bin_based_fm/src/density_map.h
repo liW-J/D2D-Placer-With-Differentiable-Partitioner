@@ -12,27 +12,27 @@
 PLACER_BEGIN_NAMESPACE
 
 template <typename T, typename AtomicOp>
-void distributeBox2Bin(const int num_bins_x, const int num_bins_y, const T xl,
-                       const T yl, const T xh, const T yh, const T bin_size_x,
-                       const T bin_size_y, T bxl, T byl, T bxh, T byh,
-                       AtomicOp atomic_add_op,
-                       typename AtomicOp::type *buf_map) {
+T distributeBox2Bin(const int num_bins_x, const int num_bins_y, const T xl, const T yl, const T xh,
+                    const T yh, const T bin_size_x, const T bin_size_y, T bxl, T byl, T bxh, T byh,
+                    AtomicOp atomic_add_op, typename AtomicOp::type* buf_map, int multiplier) {
+
+  int distributed_num_bins = 0;
+  T distributed_area = 0;
   // density overflow function
   auto computeDensityFunc = [](T node_xl, T node_xh, T bin_xl, T bin_xh) {
-    return DREAMPLACE_STD_NAMESPACE::max(
-        T(0.0), DREAMPLACE_STD_NAMESPACE::min(node_xh, bin_xh) -
-                    DREAMPLACE_STD_NAMESPACE::max(node_xl, bin_xl));
+    return DREAMPLACE_STD_NAMESPACE::max(T(0.0),
+                                         DREAMPLACE_STD_NAMESPACE::min(node_xh, bin_xh) -
+                                             DREAMPLACE_STD_NAMESPACE::max(node_xl, bin_xl));
   };
   // x direction
   int bin_index_xl = int((bxl - xl) / bin_size_x);
-  int bin_index_xh = int(ceil((bxh - xl) / bin_size_x)) + 1; // exclusive
+  int bin_index_xh = int(ceil((bxh - xl) / bin_size_x)) + 1;  // exclusive
   bin_index_xl = DREAMPLACE_STD_NAMESPACE::max(bin_index_xl, 0);
   bin_index_xh = DREAMPLACE_STD_NAMESPACE::min(bin_index_xh, num_bins_x);
 
   // y direction
-  int bin_index_yl = int((byl - yl - 2 * bin_size_y) / bin_size_y);
-  int bin_index_yh =
-      int(ceil((byh - yl + 2 * bin_size_y) / bin_size_y)) + 1; // exclusive
+  int bin_index_yl = int((byl - yl) / bin_size_y);
+  int bin_index_yh = int(ceil((byh - yl) / bin_size_y)) + 1;  // exclusive
   bin_index_yl = DREAMPLACE_STD_NAMESPACE::max(bin_index_yl, 0);
   bin_index_yh = DREAMPLACE_STD_NAMESPACE::min(bin_index_yh, num_bins_y);
 
@@ -54,9 +54,12 @@ void distributeBox2Bin(const int num_bins_x, const int num_bins_y, const T xl,
       T py = computeDensityFunc(byl, byh, bin_yl, bin_yh);
 
       // still area
-      atomic_add_op(&buf_map[k * num_bins_y + h], px * py);
+      atomic_add_op(&buf_map[k * num_bins_y + h], px * py * multiplier);
+      distributed_num_bins += 1;
+      distributed_area += buf_map[k * num_bins_y + h];
     }
   }
+  return distributed_area / distributed_num_bins;
 }
 
 /// @brief compute density map
@@ -73,31 +76,77 @@ void distributeBox2Bin(const int num_bins_x, const int num_bins_y, const T xl,
 /// @param yh top boundary
 /// @param num_threads number of threads
 /// @param atomic_add_op functional object for atomic add
-/// @param buf_map 2D density map in column-major to write
+/// @param buf_map_tier 2D density map in column-major to write
 template <typename T, typename AtomicOp>
-int computeDensityMapLauncher(const T *x_tensor, const T *y_tensor,
-                              const T *node_size_x_tensor,
-                              const T *node_size_y_tensor, const int num_nodes,
-                              const int num_bins_x, const int num_bins_y,
-                              const T xl, const T yl, const T xh, const T yh,
-                              int num_threads, AtomicOp atomic_add_op,
-                              typename AtomicOp::type *buf_map) {
+int computeDensityMapLauncher(const T* x_tensor, const T* y_tensor, const T* node_size_x_tensor,
+                              const T* node_size_y_tensor, const int num_nodes,
+                              const int num_bins_x, const int num_bins_y, const T xl, const T yl,
+                              const T xh, const T yh, int num_threads, AtomicOp atomic_add_op,
+                              typename AtomicOp::type* buf_map_tier, int* tier, int num_tiers) {
   // density_map_tensor should be initialized outside
 
   T bin_size_x = (xh - xl) / num_bins_x;
   T bin_size_y = (yh - yl) / num_bins_y;
+  double bin_area = bin_size_x * bin_size_y;
+  int num_bins = static_cast<int>(num_bins_x * num_bins_y);
 
-#pragma omp parallel for num_threads(num_threads)
+  // #pragma omp parallel for num_threads(num_threads)
   for (int i = 0; i < num_nodes; ++i) {
     T bxl = x_tensor[i];
     T byl = y_tensor[i];
-    T bxh = bxl + node_size_x_tensor[i];
-    T byh = byl + node_size_y_tensor[i];
-    distributeBox2Bin(num_bins_x, num_bins_y, xl, yl, xh, yh, bin_size_x,
-                      bin_size_y, bxl, byl, bxh, byh, atomic_add_op, buf_map);
+    int tier_id = tier[i];
+    T bxh = bxl + node_size_x_tensor[tier_id * num_nodes + i];
+    T byh = byl + node_size_y_tensor[tier_id * num_nodes + i];
+    distributeBox2Bin(static_cast<int>(num_bins_x), static_cast<int>(num_bins_y), xl, yl, xh, yh,
+                      bin_size_x, bin_size_y, bxl, byl, bxh, byh, atomic_add_op,
+                      buf_map_tier + tier_id * num_bins, 1);
+  }
+
+  for (int i = 0; i < num_tiers; ++i) {
+    for (int j = 0; j < num_bins; ++j) {
+      double density = static_cast<double>(buf_map_tier[i * num_bins + j]) / bin_area;
+      LOG(INFO, "density[%d * %d + %d]: %f", i, num_bins, j, density);
+    }
   }
 
   return 0;
+}
+
+template <typename T, typename AtomicOp>
+double updateDensityMapLauncher(const T* x_tensor, const T* y_tensor, const T* node_size_x_tensor,
+                                const T* node_size_y_tensor, const int num_nodes,
+                                const int num_bins_x, const int num_bins_y, const T xl, const T yl,
+                                const T xh, const T yh, int num_threads, AtomicOp atomic_add_op,
+                                typename AtomicOp::type* buf_map_tier, int from_tier, int to_tier,
+                                int node_id) {
+
+  // Calculate bin sizes
+  T bin_size_x = (xh - xl) / num_bins_x;
+  T bin_size_y = (yh - yl) / num_bins_y;
+  double bin_area = bin_size_x * bin_size_y;
+  int num_bins = static_cast<int>(num_bins_x * num_bins_y);
+
+  // Get node position and sizes for both tiers
+  T bxl = x_tensor[node_id];
+  T byl = y_tensor[node_id];
+
+  // Calculate node dimensions for both tiers
+  T bxh_from = bxl + node_size_x_tensor[from_tier * num_nodes + node_id];
+  T byh_from = byl + node_size_y_tensor[from_tier * num_nodes + node_id];
+  T bxh_to = bxl + node_size_x_tensor[to_tier * num_nodes + node_id];
+  T byh_to = byl + node_size_y_tensor[to_tier * num_nodes + node_id];
+
+  // Remove density contribution from the old tier using subtraction
+  distributeBox2Bin(static_cast<int>(num_bins_x), static_cast<int>(num_bins_y), xl, yl, xh, yh,
+                    bin_size_x, bin_size_y, bxl, byl, bxh_from, byh_from, atomic_add_op,
+                    buf_map_tier + from_tier * num_bins, -1);
+
+  // Add density contribution to the new tier using addition
+  T average_area = distributeBox2Bin(static_cast<int>(num_bins_x), static_cast<int>(num_bins_y), xl,
+                                     yl, xh, yh, bin_size_x, bin_size_y, bxl, byl, bxh_to, byh_to,
+                                     atomic_add_op, buf_map_tier + to_tier * num_bins, 1);
+
+  return average_area / bin_area;
 }
 
 PLACER_END_NAMESPACE

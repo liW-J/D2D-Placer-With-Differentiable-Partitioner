@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-10-18 18:22:43
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-10-19 02:53:46
+LastEditTime: 2025-10-19 23:40:01
 FilePath: /D2D-placer/unittest/refinement_swap_unittest.py
 Description: 
 '''
@@ -24,8 +24,7 @@ import torch
 
 def d2d_placer_init(d2d_placer):
     d2d_placer.tier = torch.load(
-        '/home/placer/D2D-placer/install/placer/partition_tensor/case2-tp-0.pt'
-    )
+        'results/case2/2025-10-19_01-10-22/tier-refinement.pt')
     d2d_placer.params.flatten_2d.global_place_flag = False
     d2d_placer.params.flatten_2d.random_center_init_flag = False
     d2d_placer.params.flatten_2d.legalize_flag = False
@@ -45,14 +44,10 @@ def d2d_placer_init(d2d_placer):
         d2d_placer.params.terminal, d2d_placer.timer)
     d2d_placer.dreamplace.dp_terminal.place(d2d_placer.params.terminal,
                                             d2d_placer.timer)
-    
+
     d2d_placer.num_terminal_NIs = 132
-    d2d_placer.cut_net_mask = d2d_placer.op_wrapper.d2d_op_collections.terminal_legalize_op(
-        d2d_placer.tier, d2d_placer.dreamplace.dp_2d.pos,
-        d2d_placer.dreamplace.dp_terminal.pos, d2d_placer.num_terminal_NIs,
-        d2d_placer.dreamplace.dp_terminal.placedb.node_names,
-        d2d_placer.node_orient)
-    
+    d2d_placer.cut_net_mask = torch.load("./cut_net_mask.pt")
+
     d2d_placer.die_by_die_place(global_place_flag=False,
                                 legalize_flag=False,
                                 detailed_place_flag=False,
@@ -78,33 +73,49 @@ def d2d_placer_init(d2d_placer):
 
 def refinement_test(d2d_placer):
 
-    plt.figure(figsize=(12, 8))
-    plt.title('numberOfSwaps vs HPWL Improvement Ratio',
+    fig, ax1 = plt.subplots(figsize=(12, 8))
+    plt.title('swap same pos but different tiers',
               fontsize=16,
               fontweight='bold',
               pad=20)
-    plt.xlabel('number of swaps (k)', fontsize=14, fontweight='bold')
-    plt.ylabel('HPWL Improvement Ratio', fontsize=14, fontweight='bold')
-    plt.grid(True, alpha=0.3, linestyle='--')
-    plt.legend(fontsize=12)
 
-    k = [i for i in range(1, 1300, 5)]
+    ax1.set_xlabel('number of swaps (k)', fontsize=14, fontweight='bold')
+    ax1.set_ylabel('HPWL Improvement Ratio',
+                   fontsize=14,
+                   fontweight='bold',
+                   color='blue')
+    ax1.tick_params(axis='y', labelcolor='blue')
+    ax1.grid(True, alpha=0.3, linestyle='--')
+
+    # 创建第二个y轴
+    ax2 = ax1.twinx()
+    ax2.set_ylabel('Max Distance',
+                   fontsize=14,
+                   fontweight='bold',
+                   color='red',
+                   rotation=270,
+                   va='bottom')
+    ax2.yaxis.set_label_position('right')  # 将标签显示在右侧
+    ax2.tick_params(axis='y', labelcolor='red')
+
+    k = [i for i in range(0, 720, 2)]
     k_tmp = []
+    max_distance_tmp = []
     hpwl_gain_ratio_tmp = []
     hpwl = d2d_placer.hpwl_d2d()
     tier_init = d2d_placer.tier.clone()
-
-    pos_2d_x = d2d_placer.dreamplace.dp_2d.pos[:d2d_placer.dreamplace.dp_2d.
-                                               placedb.num_nodes].clone()
-    pos_2d_y = d2d_placer.dreamplace.dp_2d.pos[d2d_placer.dreamplace.dp_2d.
-                                               placedb.num_nodes:].clone()
+    pos_init = d2d_placer.dreamplace.dp_2d.pos.clone()
 
     def swap_pos(u_index, v_index):
+        pos_2d_x = d2d_placer.dreamplace.dp_2d.pos[:d2d_placer.dreamplace.dp_2d
+                                                   .placedb.num_nodes].clone()
+        pos_2d_y = d2d_placer.dreamplace.dp_2d.pos[d2d_placer.dreamplace.dp_2d.
+                                                   placedb.num_nodes:].clone()
 
-        pos_2d_x[u_index], pos_2d_x[v_index] = pos_2d_x[v_index].clone(
-        ), pos_2d_x[u_index].clone()
-        pos_2d_y[u_index], pos_2d_y[v_index] = pos_2d_y[v_index].clone(
-        ), pos_2d_y[u_index].clone()
+        # pos_2d_x[u_index], pos_2d_x[v_index] = pos_2d_x[v_index].clone(
+        # ), pos_2d_x[u_index].clone()
+        # pos_2d_y[u_index], pos_2d_y[v_index] = pos_2d_y[v_index].clone(
+        # ), pos_2d_y[u_index].clone()
 
         pos_2d_tmp = torch.cat([pos_2d_x, pos_2d_y])
 
@@ -114,27 +125,82 @@ def refinement_test(d2d_placer):
 
     # d2d_placer.params.terminal.global_place_flag = False
 
+    def find_closest_nodes_across_tiers(tier0_indices,
+                                        tier1_indices,
+                                        max_distance=200.0):
+        """
+        找到不同层中位置最相近的节点对
+        """
+        pairs = []
+        used_tier0 = set()
+        used_tier1 = set()
+
+        pos_2d_x = d2d_placer.dreamplace.dp_2d.pos[:d2d_placer.dreamplace.dp_2d
+                                                   .placedb.num_nodes].clone()
+        pos_2d_y = d2d_placer.dreamplace.dp_2d.pos[d2d_placer.dreamplace.dp_2d.
+                                                   placedb.num_nodes:].clone()
+
+        for t0_idx in tier0_indices:
+            if t0_idx in used_tier0:
+                continue
+
+            min_distance = float('inf')
+            best_t1_idx = None
+
+            for t1_idx in tier1_indices:
+                if t1_idx in used_tier1:
+                    continue
+
+                distance = torch.sqrt(
+                    (pos_2d_x[t0_idx] - pos_2d_x[t1_idx])**2 +
+                    (pos_2d_y[t0_idx] - pos_2d_y[t1_idx])**2).item()
+
+                if distance < min_distance and distance <= max_distance:
+                    min_distance = distance
+                    best_t1_idx = t1_idx
+
+            if best_t1_idx is not None:
+                pairs.append((t0_idx, best_t1_idx, min_distance))
+                used_tier0.add(t0_idx)
+                used_tier1.add(best_t1_idx)
+
+        pairs.sort(key=lambda x: x[2])
+        return pairs
+
+    idx_t0 = [int(x) for x in torch.where(tier_init == 0)[0].tolist()]
+    idx_t1 = [int(x) for x in torch.where(tier_init == 1)[0].tolist()]
+    closest_pairs = find_closest_nodes_across_tiers(idx_t0, idx_t1)
+
     for i in k:
         d2d_placer.tier = tier_init.clone()
-
+        d2d_placer.dreamplace.dp_2d.pos = pos_init.clone()
+        d2d_placer.hpwl_d2d()
         swapped_nodes = set()
-        idx_t0 = [int(x) for x in torch.where(tier_init == 0)[0].tolist()]
-        idx_t1 = [int(x) for x in torch.where(tier_init == 1)[0].tolist()]
-        num_swaps = min(i, len(idx_t0), len(idx_t1))
 
-        for j in range(num_swaps):
-            u_index = idx_t0[j]
-            v_index = idx_t1[j]
-            if (u_index in swapped_nodes) or (v_index in swapped_nodes):
-                continue
-            d2d_placer.dreamplace.dp_2d.pos = swap_pos(u_index, v_index)
-            swapped_nodes.add(u_index)
-            swapped_nodes.add(v_index)
+        num_swaps = min(i, len(closest_pairs))
+        if num_swaps < i:
+            break
 
-        d2d_placer.cut_net_mask = d2d_placer.op_wrapper.d2d_op_collections.terminal_insert_op(
-            d2d_placer.tier, d2d_placer.dreamplace.dp_2d.pos,
-            d2d_placer.node_orient)
-        d2d_placer.num_terminal_NIs = int(d2d_placer.cut_net_mask.sum().item())
+        swap_count = 0
+        pair_index = 0
+        max_distance_this_k = 0.0
+
+        while swap_count < num_swaps and pair_index < len(closest_pairs):
+            u_index, v_index, distance = closest_pairs[pair_index]
+
+            if (u_index not in swapped_nodes) and (v_index
+                                                   not in swapped_nodes):
+
+                d2d_placer.dreamplace.dp_2d.pos = swap_pos(u_index, v_index)
+                swapped_nodes.add(u_index)
+                swapped_nodes.add(v_index)
+                swap_count += 1
+
+                # 更新当前k的最大距离
+                max_distance_this_k = max(max_distance_this_k, distance)
+
+            pair_index += 1
+
         d2d_placer.hpwl_d2d()
 
         d2d_placer.refinement()
@@ -146,13 +212,45 @@ def refinement_test(d2d_placer):
                                                logger=d2d_logger)
 
         hpwl_gain_ratio_tmp.append((hpwl - hpwl_tmp) / hpwl)
+        max_distance_tmp.append(max_distance_this_k)
         k_tmp.append(i)
-        plt.plot(k_tmp,
+
+        # 清除之前的图例
+        ax1.clear()
+        ax2.clear()
+
+        # 重新设置坐标轴
+        ax1.set_xlabel('number of swaps (k)', fontsize=14, fontweight='bold')
+        ax1.set_ylabel('HPWL Improvement Ratio',
+                       fontsize=14,
+                       fontweight='bold',
+                       color='blue')
+        ax1.tick_params(axis='y', labelcolor='blue')
+        ax1.grid(True, alpha=0.3, linestyle='--')
+
+        ax2.set_ylabel('Max Distance',
+                       fontsize=14,
+                       fontweight='bold',
+                       color='red',
+                       rotation=270,
+                       va='bottom')
+        ax2.tick_params(axis='y', labelcolor='red')
+        ax2.yaxis.set_label_position('right')  # 将标签显示在右侧
+        # 绘制HPWL Improvement Ratio
+        ax1.plot(k_tmp,
                  hpwl_gain_ratio_tmp,
                  'b-o',
                  linewidth=2,
                  markersize=4,
                  label='HPWL Improvement Ratio')
+
+        # 绘制Max Distance
+        ax2.plot(k_tmp,
+                 max_distance_tmp,
+                 'r-s',
+                 linewidth=2,
+                 markersize=4,
+                 label='Max Distance')
         for i in range(0, len(k_tmp), 10):
             plt.annotate(f'{hpwl_gain_ratio_tmp[i]:.4f}',
                          (k_tmp[i], hpwl_gain_ratio_tmp[i]),
@@ -164,8 +262,8 @@ def refinement_test(d2d_placer):
                                    facecolor="yellow",
                                    alpha=0.7))
 
-        plt.xlim(0, max(k_tmp) * 1.05)
-        plt.ylim(
+        ax1.set_xlim(0, max(k_tmp) * 1.05)
+        ax1.set_ylim(
             min(hpwl_gain_ratio_tmp) -
             abs(max(hpwl_gain_ratio_tmp) - min(hpwl_gain_ratio_tmp)) * 0.05,
             max(hpwl_gain_ratio_tmp) +
@@ -173,16 +271,16 @@ def refinement_test(d2d_placer):
 
         max_gain = max(hpwl_gain_ratio_tmp)
         max_gain_k = k_tmp[hpwl_gain_ratio_tmp.index(max_gain)]
-        plt.axhline(y=max_gain,
-                    color='red',
-                    linestyle=':',
-                    alpha=0.7,
-                    label=f'max improvement ratio: {max_gain:.4f}')
-        plt.axvline(x=max_gain_k,
-                    color='red',
-                    linestyle=':',
-                    alpha=0.7,
-                    label=f'max improvement number of swaps: {max_gain_k}')
+        ax1.axhline(y=max_gain, color='blue', linestyle=':', alpha=0.7)
+        ax1.axvline(x=max_gain_k, color='blue', linestyle=':', alpha=0.7)
+
+        # 添加图例
+        lines1, labels1 = ax1.get_legend_handles_labels()
+        lines2, labels2 = ax2.get_legend_handles_labels()
+        ax1.legend(lines1 + lines2,
+                   labels1 + labels2,
+                   loc='upper right',
+                   fontsize=12)
 
         plt.tight_layout()
         plt.savefig('refinement_test_ratio.png', dpi=300, bbox_inches='tight')
@@ -199,6 +297,9 @@ if __name__ == "__main__":
 
     d2d_placer = d2d_placer_init(d2d_placer)
 
-    refinement_test(d2d_placer)
+    d2d_placer.refinement()
+    d2d_placer.hpwl_d2d()
+
+    # refinement_test(d2d_placer)
     # d2d_placer.output()
     # d2d_placer.analyze_results()

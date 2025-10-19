@@ -13,7 +13,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-import ops.refinement.refinement_cpp as refinement_cpp
+import placer.ops.refinement.refinement_cpp as refinement_cpp
 
 
 class RefinementFunction(Function):
@@ -31,7 +31,8 @@ class RefinementFunction(Function):
                       pin_offset_x, pin_offset_y, die_size_x, die_size_y,
                       row_height, terminal_size_x, terminal_size_y,
                       terminal_spacing, pin_pos, node_names, net_names, pos_2d,
-                      pos_terminal_legalized, case_name, num_terminals, terminal_names)
+                      pos_terminal_legalized, case_name, num_terminals,
+                      terminal_names)
 
         return output
 
@@ -67,7 +68,8 @@ class Refinement(object):
 
         self.case_name = case_name
 
-    def __call__(self, tier, pin_pos, pos_2d, pos_terminal_legalized, num_terminals, terminal_names):
+    def __call__(self, tier, pin_pos, pos_2d, pos_terminal_legalized,
+                 num_terminals, terminal_names):
         return RefinementFunction.forward(
             tier, self.flat_netpin, self.netpin_start, self.pin2node_map,
             self.net_weights, self.num_movable_nodes, self.node_size_x,
@@ -75,7 +77,8 @@ class Refinement(object):
             self.die_size_x, self.die_size_y, self.row_height,
             self.terminal_size_x, self.terminal_size_y, self.terminal_spacing,
             pin_pos, self.node_names, self.net_names, pos_2d,
-            pos_terminal_legalized, self.case_name, num_terminals, terminal_names)
+            pos_terminal_legalized, self.case_name, num_terminals,
+            terminal_names)
 
 
 if __name__ == "__main__":

@@ -14,18 +14,22 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-import ops.multi_bipartition.multi_bipartition_cpp as multi_bipartition_cpp
+import placer.ops.multi_bipartition.multi_bipartition_cpp as multi_bipartition_cpp
 
 
 class MultiBipartitionFunction(Function):
 
     @staticmethod
-    def forward(pos, flat_netpin, netpin_start, pin2node_map, net_weights, net_mask, num_movable_nodes, flat_node2pin_map, flat_node2pin_start_map, pin2net_map):
+    def forward(pos, flat_netpin, netpin_start, pin2node_map, net_weights,
+                net_mask, num_movable_nodes, flat_node2pin_map,
+                flat_node2pin_start_map, pin2net_map):
         func = multi_bipartition_cpp.multi_bipartition
-        output = func(pos, flat_netpin, netpin_start, pin2node_map, net_weights,
-                      net_mask, num_movable_nodes, flat_node2pin_map, flat_node2pin_start_map, pin2net_map)
+        output = func(pos, flat_netpin, netpin_start, pin2node_map,
+                      net_weights, net_mask, num_movable_nodes,
+                      flat_node2pin_map, flat_node2pin_start_map, pin2net_map)
         # breakpoint()
         return output
+
 
 class MultiBipartition(nn.Module):
 
@@ -52,17 +56,13 @@ class MultiBipartition(nn.Module):
         self.flat_node2pin_map = flat_node2pin_map
         self.flat_node2pin_start_map = flat_node2pin_start_map
         self.pin2net_map = pin2net_map
-    
+
     def __call__(self, pos):
-        return MultiBipartitionFunction.forward(pos, self.flat_netpin,
-                                               self.netpin_start,
-                                               self.pin2node_map,
-                                               self.net_weights, 
-                                               self.net_mask,
-                                               self.num_movable_nodes,
-                                               self.flat_node2pin_map,
-                                               self.flat_node2pin_start_map,
-                                               self.pin2net_map)
+        return MultiBipartitionFunction.forward(
+            pos, self.flat_netpin, self.netpin_start, self.pin2node_map,
+            self.net_weights, self.net_mask, self.num_movable_nodes,
+            self.flat_node2pin_map, self.flat_node2pin_start_map,
+            self.pin2net_map)
 
 
 if __name__ == "__main__":

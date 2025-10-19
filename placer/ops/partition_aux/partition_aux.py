@@ -13,7 +13,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-import ops.partition_aux.partition_aux_cpp as partition_aux_cpp
+import placer.ops.partition_aux.partition_aux_cpp as partition_aux_cpp
 
 
 class PartitionAuxFunction(Function):

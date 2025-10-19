@@ -13,7 +13,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-import ops.macro_balance.macro_balance_cpp as macro_balance_cpp
+import placer.ops.macro_balance.macro_balance_cpp as macro_balance_cpp
 
 
 class MacroBalanceFunction(Function):

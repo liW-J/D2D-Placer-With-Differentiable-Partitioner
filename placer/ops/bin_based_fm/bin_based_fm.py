@@ -14,7 +14,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-import ops.bin_based_fm.bin_based_fm_cpp as bin_based_fm_cpp
+import placer.ops.bin_based_fm.bin_based_fm_cpp as bin_based_fm_cpp
 
 
 class BinBasedFMFunction(Function):
