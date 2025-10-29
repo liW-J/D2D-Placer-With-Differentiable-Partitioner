@@ -105,7 +105,6 @@ int computeDensityMapLauncher(const T* x_tensor, const T* y_tensor, const T* nod
   for (int i = 0; i < num_tiers; ++i) {
     for (int j = 0; j < num_bins; ++j) {
       double density = static_cast<double>(buf_map_tier[i * num_bins + j]) / bin_area;
-      LOG(INFO, "density[%d * %d + %d]: %f", i, num_bins, j, density);
     }
   }
 

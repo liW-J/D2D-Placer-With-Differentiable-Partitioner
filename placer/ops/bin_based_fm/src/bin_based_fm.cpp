@@ -2,7 +2,7 @@
  * @Author: JeanneWillis hi@jeannewillis.cn
  * @Date: 2025-09-21 17:01:58
  * @LastEditors: JeanneWillis hi@jeannewillis.cn
- * @LastEditTime: 2025-10-20 03:23:53
+ * @LastEditTime: 2025-10-21 00:36:51
  * @FilePath: /D2D-placer/placer/ops/bin_based_fm/src/bin_based_fm.cpp
  * @Description: fm refinement
  */
@@ -181,6 +181,7 @@ void binBasedFMLauncher(
   auto compute_node_gain = [&](int node_id) -> long long {
     // incremental HPWL calculation
     long long hpwl_delta = 0;
+    int num_nets_in_node = node_to_nets[node_id].size();
     int old_tier = tier[node_id];
     tier[node_id] = 1 - old_tier;
     for (int net_id : node_to_nets[node_id]) {
@@ -196,9 +197,18 @@ void binBasedFMLauncher(
     int num_terminals_after =
         Partitioner::getCutNetMask(cut_net_mask_tmp.data(), num_nets, num_tiers, tier_tmp.data(),
                                    flat_netpin, netpin_start, pin2node_map, num_movable_nodes);
-
     long long terminal_gain = num_terminals_tmp - num_terminals_after;
-    long long g = hpwl_delta + 1000 * terminal_gain;
+    
+    std::vector<double> buf_map_tier_tmp(buf_map_tier.size(), 0.0);
+    std::copy(buf_map_tier.begin(), buf_map_tier.end(), buf_map_tier_tmp.begin());
+    double density =
+        updateDensityMapLauncher(pos_2d_x, pos_2d_y, node_size_x, node_size_y, num_movable_nodes,
+                                 num_bins_x, num_bins_y, xl, yl, xh, yh, num_threads, atomic_add_op,
+                                 buf_map_tier_tmp.data(), old_tier, 1 - old_tier, node_id);
+    double density_pently = exp(std::max(1.0, density)) - 1;
+
+    long long g = hpwl_delta + 1000 * terminal_gain - density_pently * num_nets_in_node;
+    // LOG(INFO, "density: %f, density_pently: %f", density, density_pently);
     return g;
   };
 

@@ -299,7 +299,6 @@ class D2Dplacer:
             self.dreamplace.dp_terminal.pos +
             self.die_spec.terminalSpacing / 2, terminal_layout_filename,
             torch.zeros(self.num_terminal_NIs))
-        breakpoint()
 
     def analyze_results(self):
 

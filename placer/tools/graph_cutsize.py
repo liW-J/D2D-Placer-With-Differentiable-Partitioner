@@ -208,7 +208,7 @@ class GraphCutsize:
         num_hyperedges = int(header[0])
         num_vertices = int(header[1])
 
-        # 读取后续每行的超边（1-based -> 0-based）
+        # read subsequent lines of hyperedges (1-based -> 0-based)
         for ln in lines[1:]:
             he = [int(x) - 1 for x in ln.split()]
             if he:
@@ -217,7 +217,7 @@ class GraphCutsize:
         # tolerance: if the number of lines in the file does not match the number of hyperedges declared in the header, use the file content
         if len(hyperedges) != num_hyperedges:
             # warning: here we continue directly
-            pass
+            raise ValueError(f"number of hyperedges in file ({len(hyperedges)}) does not match the number of hyperedges declared in the header ({num_hyperedges})")
 
         return num_vertices, hyperedges
 
