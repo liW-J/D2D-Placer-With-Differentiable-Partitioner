@@ -2,7 +2,7 @@
  * @Author: JeanneWillis hi@jeannewillis.cn
  * @Date: 2025-09-21 17:01:58
  * @LastEditors: JeanneWillis hi@jeannewillis.cn
- * @LastEditTime: 2025-10-21 00:36:51
+ * @LastEditTime: 2025-11-01 04:13:36
  * @FilePath: /D2D-placer/placer/ops/bin_based_fm/src/bin_based_fm.cpp
  * @Description: fm refinement
  */
@@ -59,7 +59,6 @@ void binBasedFMLauncher(
   int num_bins = num_bins_x * num_bins_y;
   std::vector<double> buf_map_tier(num_bins * num_tiers, 0);
   DREAMPLACE_NAMESPACE::AtomicAdd<double> atomic_add_op;
-
   computeDensityMapLauncher(pos_2d_x, pos_2d_y, node_size_x, node_size_y, num_movable_nodes,
                             num_bins_x, num_bins_y, xl, yl, xh, yh, num_threads, atomic_add_op,
                             buf_map_tier.data(), tier, num_tiers);
@@ -75,7 +74,6 @@ void binBasedFMLauncher(
     }
   }
 
-  // FM database
   std::vector<std::vector<int>> net_to_nodes(num_nets);
   for (int net_id = 0; net_id < num_nets; ++net_id) {
     for (int pin_id = netpin_start[net_id]; pin_id < netpin_start[net_id + 1]; ++pin_id) {
@@ -86,7 +84,8 @@ void binBasedFMLauncher(
     }
   }
 
-  auto compute_single_net_hpwl = [&](int net_id, const int* tier_ptr) -> int {
+  auto compute_single_net_hpwl = [&](int net_id, const int* tier_ptr,
+                                     const int* cut_net_mask_ptr) -> int {
     int hpwl_net = 0;
     // check if the net is cut: if cut_net_mask is prepared, it can be directly
     // used; but this lambda supports recalculating the HPWL of the net assuming
@@ -121,16 +120,7 @@ void binBasedFMLauncher(
       }
     }
 
-    // check if the net is cut
-    bool is_cut = true;
-    for (int t = 0; t < num_tiers; ++t) {
-      if (node_count[t] == num_nodes_in_net) {
-        is_cut = false;
-        break;
-      }
-    }
-
-    if (is_cut) {
+    if (cut_net_mask_ptr[net_id]) {
       T terminal_x_center, terminal_y_center;
       if (cur_terminal_id == -1) {
         // inner cross-tier bonding point
@@ -174,7 +164,7 @@ void binBasedFMLauncher(
   std::vector<int> net_hpwl(num_nets, 0);
   int hpwl_sum = 0;
   for (int net_id = 0; net_id < num_nets; ++net_id) {
-    net_hpwl[net_id] = compute_single_net_hpwl(net_id, tier);
+    net_hpwl[net_id] = compute_single_net_hpwl(net_id, tier, cut_net_mask);
     hpwl_sum += net_hpwl[net_id];
   }
 
@@ -182,29 +172,28 @@ void binBasedFMLauncher(
     // incremental HPWL calculation
     long long hpwl_delta = 0;
     int num_nets_in_node = node_to_nets[node_id].size();
-    int old_tier = tier[node_id];
-    tier[node_id] = 1 - old_tier;
-    for (int net_id : node_to_nets[node_id]) {
-      int hpwl_before = net_hpwl[net_id];
-      int hpwl_after = compute_single_net_hpwl(net_id, tier);
-      hpwl_delta += (hpwl_before - hpwl_after);
-    }
-    tier[node_id] = old_tier;
 
     std::vector<int> tier_tmp(tier, tier + num_movable_nodes);
     std::vector<int> cut_net_mask_tmp(num_nets, 0);
     tier_tmp[node_id] = 1 - tier_tmp[node_id];
+
     int num_terminals_after =
         Partitioner::getCutNetMask(cut_net_mask_tmp.data(), num_nets, num_tiers, tier_tmp.data(),
                                    flat_netpin, netpin_start, pin2node_map, num_movable_nodes);
     long long terminal_gain = num_terminals_tmp - num_terminals_after;
-    
+
+    for (int net_id : node_to_nets[node_id]) {
+      int hpwl_before = net_hpwl[net_id];
+      int hpwl_after = compute_single_net_hpwl(net_id, tier_tmp.data(), cut_net_mask_tmp.data());
+      hpwl_delta += hpwl_before - hpwl_after;
+    }
+
     std::vector<double> buf_map_tier_tmp(buf_map_tier.size(), 0.0);
     std::copy(buf_map_tier.begin(), buf_map_tier.end(), buf_map_tier_tmp.begin());
     double density =
         updateDensityMapLauncher(pos_2d_x, pos_2d_y, node_size_x, node_size_y, num_movable_nodes,
                                  num_bins_x, num_bins_y, xl, yl, xh, yh, num_threads, atomic_add_op,
-                                 buf_map_tier_tmp.data(), old_tier, 1 - old_tier, node_id);
+                                 buf_map_tier_tmp.data(), tier[node_id], 1 - tier[node_id], node_id);
     double density_pently = exp(std::max(1.0, density)) - 1;
 
     long long g = hpwl_delta + 1000 * terminal_gain - density_pently * num_nets_in_node;
@@ -216,8 +205,7 @@ void binBasedFMLauncher(
   std::vector<double> tier_area(num_tiers, 0.0);
 
   // Bin state tracking for optimization
-  std::vector<bool> bin_converged;
-  std::vector<std::vector<int>> bin_to_nodes;
+
   int num_fm_bins_x = 0, num_fm_bins_y = 0;
   double bin_w = 0, bin_h = 0;
   auto get_bin_index = [&](double x, double y) -> int {
@@ -230,12 +218,21 @@ void binBasedFMLauncher(
     return by * num_fm_bins_x + bx;
   };
 
+  // --- build bin grid only on first pass ---
+  int target_bins = std::max(1, num_movable_nodes / 500);
+  int grid_k = std::max(1, static_cast<int>(std::sqrt(static_cast<double>(target_bins))));
+  num_fm_bins_x = std::max(1, grid_k);
+  num_fm_bins_y = std::max(1, grid_k);
+  bin_w = static_cast<double>(die_size_x) / static_cast<double>(num_fm_bins_x);
+  bin_h = static_cast<double>(die_size_y) / static_cast<double>(num_fm_bins_y);
+
   bool pass_flag = true;
   int pass_count = 0;
-  bool first_pass = true;
-
   while (pass_flag) {
     pass_count++;
+    long long best_pass_gain = 0;
+    int total_moves, total_bins_processed, converged_bins = 0;
+
     std::fill(tier_area.begin(), tier_area.end(), 0.0);
     for (int n = 0; n < num_movable_nodes; ++n) {
       int t = tier[n];
@@ -244,34 +241,27 @@ void binBasedFMLauncher(
       tier_area[t] += node_area;
     }
 
-    // --- build bin grid only on first pass ---
-    if (first_pass) {
-      int target_bins = std::max(1, num_movable_nodes / 500);
-      int grid_k = std::max(1, static_cast<int>(std::sqrt(static_cast<double>(target_bins))));
-      num_fm_bins_x = std::max(1, grid_k);
-      num_fm_bins_y = std::max(1, grid_k);
-      bin_w = static_cast<double>(die_size_x) / static_cast<double>(num_fm_bins_x);
-      bin_h = static_cast<double>(die_size_y) / static_cast<double>(num_fm_bins_y);
-
-      bin_to_nodes.resize(num_fm_bins_x * num_fm_bins_y);
-      bin_converged.resize(num_fm_bins_x * num_fm_bins_y, false);
-
-      // node center from flattened 2D
-      for (int n = 0; n < num_movable_nodes; ++n) {
-        double x = static_cast<double>(pos_2d_x[n]);
-        double y = static_cast<double>(pos_2d_y[n]);
-        int b = get_bin_index(x, y);
-        bin_to_nodes[b].push_back(n);
+    std::vector<int> candidate_nodes;
+    for (int net_id = 0; net_id < num_nets; ++net_id) {
+      if (cut_net_mask[net_id]) {
+        for (int node_id : net_to_nodes[net_id]) {
+          candidate_nodes.push_back(node_id);
+        }
       }
-      first_pass = false;
+    }
+    int num_candidate_nodes = candidate_nodes.size();
+
+    std::vector<bool> bin_converged(num_fm_bins_x * num_fm_bins_y, false);
+    std::vector<std::vector<int>> bin_to_nodes(num_fm_bins_x * num_fm_bins_y);
+    // node center from flattened 2D
+    for (int node_id : candidate_nodes) {
+      double x = static_cast<double>(pos_2d_x[node_id]);
+      double y = static_cast<double>(pos_2d_y[node_id]);
+      int b = get_bin_index(x, y);
+      bin_to_nodes[b].push_back(node_id);
     }
 
-    long long best_pass_gain = 0;
-    int total_moves = 0;
-    int total_bins_processed = 0;
-
     // process each bin independently; locked only within bin
-    int converged_bins = 0;
     for (int by = 0; by < num_fm_bins_y; ++by) {
       for (int bx = 0; bx < num_fm_bins_x; ++bx) {
         int bidx = by * num_fm_bins_x + bx;
@@ -284,7 +274,6 @@ void binBasedFMLauncher(
           converged_bins++;
           continue;
         }
-
         total_bins_processed++;
 
         // local gain map and priority queue
@@ -293,10 +282,10 @@ void binBasedFMLauncher(
         std::priority_queue<Item, std::vector<Item>, ItemComparator> pq;
 
         for (size_t i = 0; i < nodes.size(); ++i) {
-          int nid = nodes[i];
-          long long g = compute_node_gain(nid);
+          int node_id = nodes[i];
+          long long g = compute_node_gain(node_id);
           local_gain[i] = g;
-          pq.push({g, nid});
+          pq.push({g, node_id});
         }
 
         std::vector<char> locked_local(nodes.size(), 0);
@@ -304,15 +293,13 @@ void binBasedFMLauncher(
         for (size_t i = 0; i < nodes.size(); ++i)
           index_in_bin[nodes[i]] = static_cast<int>(i);
 
-        std::vector<int> move_order;
-        std::vector<int> move_from;
+        std::vector<int> move_order, move_from;
         std::vector<long long> move_gain;
         move_order.reserve(nodes.size());
         move_from.reserve(nodes.size());
         move_gain.reserve(nodes.size());
 
-        long long cumulative_gain = 0;
-        long long best_prefix_gain = 0;
+        long long cumulative_gain, best_prefix_gain = 0;
         int best_prefix_idx = -1;
 
         // select within bin
@@ -375,12 +362,15 @@ void binBasedFMLauncher(
             best_prefix_idx = static_cast<int>(move_order.size()) - 1;
           }
 
+          num_terminals_tmp =
+              Partitioner::getCutNetMask(cut_net_mask, num_nets, num_tiers, tier, flat_netpin,
+                                         netpin_start, pin2node_map, num_movable_nodes);
           // update global hpwl and terminal count incrementally
           int hpwl_delta_apply = 0;
           std::unordered_set<int> affected;
           for (int net_id : node_to_nets[node_id]) {
             int before = net_hpwl[net_id];
-            int after = compute_single_net_hpwl(net_id, tier);
+            int after = compute_single_net_hpwl(net_id, tier, cut_net_mask);
             net_hpwl[net_id] = after;
             hpwl_delta_apply += (after - before);
             for (int v : net_to_nodes[net_id])
@@ -389,12 +379,7 @@ void binBasedFMLauncher(
           }
           hpwl_sum += hpwl_delta_apply;
 
-          num_terminals_tmp =
-              Partitioner::getCutNetMask(cut_net_mask, num_nets, num_tiers, tier, flat_netpin,
-                                         netpin_start, pin2node_map, num_movable_nodes);
-
           // refresh gains for affected nodes in this bin
-
           for (int v : affected) {
             int li_v = index_in_bin[v];
             if (li_v < 0)
@@ -432,7 +417,7 @@ void binBasedFMLauncher(
                                        netpin_start, pin2node_map, num_movable_nodes);
         hpwl_sum = 0;
         for (int net_id = 0; net_id < num_nets; ++net_id) {
-          net_hpwl[net_id] = compute_single_net_hpwl(net_id, tier);
+          net_hpwl[net_id] = compute_single_net_hpwl(net_id, tier, cut_net_mask);
           hpwl_sum += net_hpwl[net_id];
         }
 

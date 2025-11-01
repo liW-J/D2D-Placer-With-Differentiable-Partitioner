@@ -111,6 +111,10 @@ int computeDensityMapLauncher(const T* x_tensor, const T* y_tensor, const T* nod
   return 0;
 }
 
+/**
+ * @brief Update density map for a single node
+ * @return average bin density after updating the node's position
+ */
 template <typename T, typename AtomicOp>
 double updateDensityMapLauncher(const T* x_tensor, const T* y_tensor, const T* node_size_x_tensor,
                                 const T* node_size_y_tensor, const int num_nodes,

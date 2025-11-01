@@ -2,7 +2,7 @@
  * @Author: JeanneWillis hi@jeannewillis.cn
  * @Date: 2025-05-26 14:47:09
  * @LastEditors: JeanneWillis hi@jeannewillis.cn
- * @LastEditTime: 2025-09-21 20:41:12
+ * @LastEditTime: 2025-11-01 04:01:36
  * @FilePath: /D2D-placer/placer/ops/utils_3d/src/partition.h
  * @Description:
  */
@@ -118,6 +118,8 @@ struct Partitioner {
           node_count.end()) {
         cut_net_mask[net_id] = 1;
         num_terminals++;
+      }else{
+        cut_net_mask[net_id] = 0;
       }
     }
     return num_terminals;
