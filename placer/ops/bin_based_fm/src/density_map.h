@@ -87,7 +87,7 @@ int computeDensityMapLauncher(const T* x_tensor, const T* y_tensor, const T* nod
 
   T bin_size_x = (xh - xl) / num_bins_x;
   T bin_size_y = (yh - yl) / num_bins_y;
-  double bin_area = bin_size_x * bin_size_y;
+  // double bin_area = bin_size_x * bin_size_y;
   int num_bins = static_cast<int>(num_bins_x * num_bins_y);
 
   // #pragma omp parallel for num_threads(num_threads)
@@ -101,13 +101,6 @@ int computeDensityMapLauncher(const T* x_tensor, const T* y_tensor, const T* nod
                       bin_size_x, bin_size_y, bxl, byl, bxh, byh, atomic_add_op,
                       buf_map_tier + tier_id * num_bins, 1);
   }
-
-  for (int i = 0; i < num_tiers; ++i) {
-    for (int j = 0; j < num_bins; ++j) {
-      double density = static_cast<double>(buf_map_tier[i * num_bins + j]) / bin_area;
-    }
-  }
-
   return 0;
 }
 
@@ -148,6 +141,40 @@ double updateDensityMapLauncher(const T* x_tensor, const T* y_tensor, const T* n
   T average_area = distributeBox2Bin(static_cast<int>(num_bins_x), static_cast<int>(num_bins_y), xl,
                                      yl, xh, yh, bin_size_x, bin_size_y, bxl, byl, bxh_to, byh_to,
                                      atomic_add_op, buf_map_tier + to_tier * num_bins, 1);
+
+  return average_area / bin_area;
+}
+
+/**
+ * @brief Update density map for a single node
+ * @return average bin density after updating the node's position
+ */
+template <typename T, typename AtomicOp>
+double getTerminalDensityMapLauncher(const T* x_tensor, const T* y_tensor,
+                                     const T* node_size_x_tensor, const T* node_size_y_tensor,
+                                     const int num_nodes, const int num_bins_x,
+                                     const int num_bins_y, const T xl, const T yl, const T xh,
+                                     const T yh, int num_threads, AtomicOp atomic_add_op,
+                                     typename AtomicOp::type* buf_map_terminal, T terminal_x_center,
+                                     T terminal_y_center, int multiplier) {
+
+  // Calculate bin sizes
+  T bin_size_x = (xh - xl) / num_bins_x;
+  T bin_size_y = (yh - yl) / num_bins_y;
+  double bin_area = bin_size_x * bin_size_y;
+
+  // Get node position and sizes for both tiers
+  T bxl = terminal_x_center - node_size_x_tensor[0] / 2;
+  T byl = terminal_y_center - node_size_y_tensor[0] / 2;
+
+  // Calculate node dimensions for both tiers
+  T bxh = terminal_x_center + node_size_x_tensor[0] / 2;
+  T byh = terminal_y_center + node_size_y_tensor[0] / 2;
+
+  // Add density contribution to the new tier using addition
+  T average_area = distributeBox2Bin(static_cast<int>(num_bins_x), static_cast<int>(num_bins_y), xl,
+                                     yl, xh, yh, bin_size_x, bin_size_y, bxl, byl, bxh, byh,
+                                     atomic_add_op, buf_map_terminal, multiplier);
 
   return average_area / bin_area;
 }
