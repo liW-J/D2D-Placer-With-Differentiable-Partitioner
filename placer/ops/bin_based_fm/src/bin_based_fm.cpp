@@ -2,7 +2,7 @@
  * @Author: JeanneWillis hi@jeannewillis.cn
  * @Date: 2025-09-21 17:01:58
  * @LastEditors: JeanneWillis hi@jeannewillis.cn
- * @LastEditTime: 2025-11-03 19:55:18
+ * @LastEditTime: 2025-11-09 16:07:40
  * @FilePath: /D2D-placer/placer/ops/bin_based_fm/src/bin_based_fm.cpp
  * @Description: fm refinement
  */
@@ -123,6 +123,37 @@ void binBasedFMLauncher(
     return std::make_pair(terminal_x_center, terminal_y_center);
   };
 
+  auto get_gain = [&](int net_id, const int* tier_ptr) -> std::pair<T, T> {
+    std::vector<T> max_x(num_tiers, -std::numeric_limits<T>::max());
+    std::vector<T> min_x(num_tiers, std::numeric_limits<T>::max());
+    std::vector<T> max_y(num_tiers, -std::numeric_limits<T>::max());
+    std::vector<T> min_y(num_tiers, std::numeric_limits<T>::max());
+    T terminal_x_center, terminal_y_center;
+
+    for (int pin_id = netpin_start[net_id]; pin_id < netpin_start[net_id + 1]; ++pin_id) {
+      int node_id = pin2node_map[flat_netpin[pin_id]];
+      int t = tier_ptr[node_id];
+      int index_pin = num_pins * t + flat_netpin[pin_id];
+      max_x[t] = std::max(max_x[t], pin_x[index_pin]);
+      min_x[t] = std::min(min_x[t], pin_x[index_pin]);
+      max_y[t] = std::max(max_y[t], pin_y[index_pin]);
+      min_y[t] = std::min(min_y[t], pin_y[index_pin]);
+    }
+
+    auto inner_min_x_it = std::max_element(min_x.begin(), min_x.end());
+    auto inner_max_x_it = std::min_element(max_x.begin(), max_x.end());
+    auto inner_min_y_it = std::max_element(min_y.begin(), min_y.end());
+    auto inner_max_y_it = std::min_element(max_y.begin(), max_y.end());
+    T inner_min_x = *inner_min_x_it;
+    T inner_max_x = *inner_max_x_it;
+    T inner_min_y = *inner_min_y_it;
+    T inner_max_y = *inner_max_y_it;
+    T x_gain = inner_min_x - inner_max_x;
+    T y_gain = inner_min_y - inner_max_y;
+    // LOG(INFO, "x_gain: %f, y_gain: %f", x_gain, y_gain);
+    return std::make_pair(x_gain, y_gain);
+  };
+
   auto compute_single_net_hpwl = [&](int net_id, const int* tier_ptr,
                                      const int* cut_net_mask_ptr) -> int {
     int hpwl_net = 0;
@@ -236,34 +267,35 @@ void binBasedFMLauncher(
       double terminal_density_pently_factor = 1;
       int hpwl_before = net_hpwl[net_id];
 
-      if (cut_net_mask_tmp[net_id] == 1 && cut_net_mask[net_id] == 0) {
-        std::vector<double> buf_map_terminal_tmp(buf_map_terminal.size(), 0.0);
-        std::copy(buf_map_terminal.begin(), buf_map_terminal.end(), buf_map_terminal_tmp.begin());
+      // // TODO: update terminal density map in every move
+      // if (cut_net_mask_tmp[net_id] == 1 && cut_net_mask[net_id] == 0) {
+      //   std::vector<double> buf_map_terminal_tmp(buf_map_terminal.size(), 0.0);
+      //   std::copy(buf_map_terminal.begin(), buf_map_terminal.end(),
+      //   buf_map_terminal_tmp.begin());
 
-        auto terminal_center = get_terminal_center(net_id, tier_tmp.data());
-        T terminal_x_center = terminal_center.first;
-        T terminal_y_center = terminal_center.second;
+      //   auto terminal_center = get_terminal_center(net_id, tier_tmp.data());
+      //   T terminal_x_center = terminal_center.first;
+      //   T terminal_y_center = terminal_center.second;
 
-        double terminal_density = getTerminalDensityMapLauncher(
-            terminal_x, terminal_y, terminal_node_size_x.data(), terminal_node_size_y.data(),
-            num_terminals, num_bins_x, num_bins_y, xl, yl, xh, yh, num_threads, atomic_add_op,
-            buf_map_terminal_tmp.data(), terminal_x_center, terminal_y_center, 0);
+      //   double terminal_density = getTerminalDensityMapLauncher(
+      //       terminal_x, terminal_y, terminal_node_size_x.data(), terminal_node_size_y.data(),
+      //       num_terminals, num_bins_x, num_bins_y, xl, yl, xh, yh, num_threads, atomic_add_op,
+      //       buf_map_terminal_tmp.data(), terminal_x_center, terminal_y_center, 0);
 
-        terminal_density_pently_factor *= exp(std::max(0.0, terminal_density) * log(20));
-        num_new_terminal += 1;
-      }
+      //   terminal_density_pently_factor *= exp(std::max(0.0, terminal_density) * log(20));
+      //   num_new_terminal += 1;
+      // }
 
-      int hpwl_after = compute_single_net_hpwl(net_id, tier_tmp.data(), cut_net_mask_tmp.data()) *
-                       terminal_density_pently_factor * density_pently;
+      // int hpwl_after = compute_single_net_hpwl(net_id, tier_tmp.data(), cut_net_mask_tmp.data())
+      // *
+      //                  terminal_density_pently_factor * density_pently;
+
+      int hpwl_after = compute_single_net_hpwl(net_id, tier_tmp.data(), cut_net_mask_tmp.data());
 
       hpwl_delta += hpwl_before - hpwl_after;
     }
 
-    // long long g = hpwl_delta + 1000 * terminal_gain - density_pently * num_nets_in_node -
-    //               terminal_density_pently;
-    // long long g = hpwl_delta + terminal_gain * terminal_density_pently_factor -
-    //               density_pently * num_nets_in_node;
-    long long g = hpwl_delta;
+    long long g = hpwl_delta + 1000 * terminal_gain;
     return g;
   };
 
@@ -271,7 +303,6 @@ void binBasedFMLauncher(
   std::vector<double> tier_area(num_tiers, 0.0);
 
   // Bin state tracking for optimization
-
   int num_fm_bins_x = 0, num_fm_bins_y = 0;
   double bin_w = 0, bin_h = 0;
   auto get_bin_index = [&](double x, double y) -> int {
@@ -421,9 +452,6 @@ void binBasedFMLauncher(
             best_prefix_idx = static_cast<int>(move_order.size()) - 1;
           }
 
-          // cut_net_mask_prev = copy(cut_net_mask);
-          std::vector<int> cut_net_mask_prev(num_nets, 0);
-          std::copy(cut_net_mask, cut_net_mask + num_nets, cut_net_mask_prev.begin());
           num_terminals_tmp =
               Partitioner::getCutNetMask(cut_net_mask, num_nets, num_tiers, tier, flat_netpin,
                                          netpin_start, pin2node_map, num_movable_nodes);
@@ -439,18 +467,6 @@ void binBasedFMLauncher(
             for (int v : net_to_nodes[net_id]) {
               if (v != node_id && node_set.count(v))
                 affected.insert(v);
-            }
-            if ((cut_net_mask[net_id] != cut_net_mask_prev[net_id])) {
-
-              auto terminal_center = get_terminal_center(net_id, tier);
-              T terminal_x_center = terminal_center.first;
-              T terminal_y_center = terminal_center.second;
-
-              int multiplier = (cut_net_mask[net_id] ? 1 : -1);
-              getTerminalDensityMapLauncher(
-                  terminal_x, terminal_y, terminal_node_size_x.data(), terminal_node_size_y.data(),
-                  num_terminals, num_bins_x, num_bins_y, xl, yl, xh, yh, num_threads, atomic_add_op,
-                  buf_map_terminal.data(), terminal_x_center, terminal_y_center, multiplier);
             }
           }
           hpwl_sum += hpwl_delta_apply;
@@ -488,8 +504,6 @@ void binBasedFMLauncher(
         }
 
         // resync hpwl and terminals after bin
-        std::vector<int> cut_net_mask_prev(num_nets, 0);
-        std::copy(cut_net_mask, cut_net_mask + num_nets, cut_net_mask_prev.begin());
         num_terminals_tmp =
             Partitioner::getCutNetMask(cut_net_mask, num_nets, num_tiers, tier, flat_netpin,
                                        netpin_start, pin2node_map, num_movable_nodes);
@@ -497,19 +511,6 @@ void binBasedFMLauncher(
         for (int net_id = 0; net_id < num_nets; ++net_id) {
           net_hpwl[net_id] = compute_single_net_hpwl(net_id, tier, cut_net_mask);
           hpwl_sum += net_hpwl[net_id];
-
-          if ((cut_net_mask[net_id] != cut_net_mask_prev[net_id])) {
-
-            auto terminal_center = get_terminal_center(net_id, tier);
-            T terminal_x_center = terminal_center.first;
-            T terminal_y_center = terminal_center.second;
-
-            int multiplier = (cut_net_mask[net_id] ? 1 : -1);
-            getTerminalDensityMapLauncher(
-                terminal_x, terminal_y, terminal_node_size_x.data(), terminal_node_size_y.data(),
-                num_terminals, num_bins_x, num_bins_y, xl, yl, xh, yh, num_threads, atomic_add_op,
-                buf_map_terminal.data(), terminal_x_center, terminal_y_center, multiplier);
-          }
         }
 
         best_pass_gain += best_prefix_gain;
