@@ -13,7 +13,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-import ops.terminal_aux.terminal_aux_cpp as terminal_aux_cpp
+import placer.ops.terminal_aux.terminal_aux_cpp as terminal_aux_cpp
 
 
 class TerminalAuxFunction(Function):

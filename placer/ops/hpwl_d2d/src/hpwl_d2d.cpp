@@ -2,7 +2,7 @@
  * @Author: JeanneWillis hi@jeannewillis.cn
  * @Date: 2025-06-17 13:30:24
  * @LastEditors: JeanneWillis hi@jeannewillis.cn
- * @LastEditTime: 2025-06-19 13:13:30
+ * @LastEditTime: 2025-10-15 13:03:26
  * @FilePath: /D2D-placer/placer/ops/hpwl_d2d/hpwl_d2d.cpp
  * @Description:
  */
@@ -25,7 +25,7 @@ int computeHPWLD2DLauncher(
     const T *terminal_x, const T *terminal_y, int terminal_size_x,
     int terminal_size_y, int terminal_spacing, int num_terminals,
     const std::vector<std::string> &net_names,
-    const std::vector<std::string> &terminal_name, int num_threads, T *hpwl);
+    const std::vector<std::string> &terminal_names, int num_threads, T *hpwl);
 /// @brief Compute half-perimeter wirelength
 /// @param pos cell locations, array of x locations and then y locations
 /// @param flat_netpin similar to the JA array in CSR format, which is flattened
@@ -43,7 +43,7 @@ at::Tensor hpwl_d2d_forward(at::Tensor pin_pos, at::Tensor flat_netpin,
                             int terminal_size_x, int terminal_size_y,
                             int terminal_spacing, int num_terminals,
                             const std::vector<std::string> &net_names,
-                            const std::vector<std::string> &terminal_name) {
+                            const std::vector<std::string> &terminal_names) {
   CHECK_FLAT_CPU(pin_pos);
   CHECK_EVEN(pin_pos);
   CHECK_CONTIGUOUS(pin_pos);
@@ -75,7 +75,7 @@ at::Tensor hpwl_d2d_forward(at::Tensor pin_pos, at::Tensor flat_netpin,
         DREAMPLACE_TENSOR_DATA_PTR(pos_terminal_legalized, scalar_t) +
             pos_terminal_legalized.numel() / 2,
         terminal_size_x, terminal_size_y, terminal_spacing, num_terminals,
-        net_names, terminal_name, at::get_num_threads(),
+        net_names, terminal_names, at::get_num_threads(),
         DREAMPLACE_TENSOR_DATA_PTR(hpwl, scalar_t));
   });
   if (net_weights.numel()) {
@@ -92,73 +92,99 @@ int computeHPWLD2DLauncher(
     const T *terminal_x, const T *terminal_y, int terminal_size_x,
     int terminal_size_y, int terminal_spacing, int num_terminals,
     const std::vector<std::string> &net_names,
-    const std::vector<std::string> &terminal_name, int num_threads, T *hpwl) {
-// #pragma omp parallel for num_threads(num_threads)
-  for (int net_id = 0; net_id < num_nets; ++net_id) {
+    const std::vector<std::string> &terminal_names, int num_threads, T *hpwl) {
 
-    if (cut_net_mask[net_id]) {
+  auto compute_single_net_hpwl = [&](int net_id, const int *tier_ptr) -> int {
+    int hpwl_net = 0;
+    // check if the net is cut: if cut_net_mask is prepared, it can be directly
+    // used; but this lambda supports recalculating the HPWL of the net assuming
+    // the tier state here we directly recalculate the HPWL of the net assuming
+    // the tier state first, we collect the bbox of each tier
+    std::vector<T> max_x(num_tiers, -std::numeric_limits<T>::max());
+    std::vector<T> min_x(num_tiers, std::numeric_limits<T>::max());
+    std::vector<T> max_y(num_tiers, -std::numeric_limits<T>::max());
+    std::vector<T> min_y(num_tiers, std::numeric_limits<T>::max());
 
-      int cur_terminal_id = 0;
-      for (int terminal_id = 0; terminal_id < num_terminals; ++terminal_id) {
-        if (net_names[net_id] == terminal_name[terminal_id]) {
-          cur_terminal_id = terminal_id;
-          break;
-        }
+    // collect the tiers involved in the net
+    std::vector<int> node_count(num_tiers, 0);
+    int num_nodes_in_net = 0;
+    for (int pin_id = netpin_start[net_id]; pin_id < netpin_start[net_id + 1];
+         ++pin_id) {
+      int node_id = pin2node_map[flat_netpin[pin_id]];
+      int t = tier_ptr[node_id];
+      int index_pin = num_pins * t + flat_netpin[pin_id];
+      max_x[t] = std::max(max_x[t], pin_x[index_pin]);
+      min_x[t] = std::min(min_x[t], pin_x[index_pin]);
+      max_y[t] = std::max(max_y[t], pin_y[index_pin]);
+      min_y[t] = std::min(min_y[t], pin_y[index_pin]);
+      node_count[t]++;
+      num_nodes_in_net++;
+    }
+
+    // check if the net is bound to a terminal
+    int cur_terminal_id = -1;
+    for (int terminal_id = 0; terminal_id < num_terminals; ++terminal_id) {
+      if (net_names[net_id] == terminal_names[terminal_id]) {
+        cur_terminal_id = terminal_id;
+        break;
       }
+    }
 
-      std::vector<T> max_x(num_tiers, -std::numeric_limits<T>::max());
-      std::vector<T> min_x(num_tiers, std::numeric_limits<T>::max());
-      std::vector<T> max_y(num_tiers, -std::numeric_limits<T>::max());
-      std::vector<T> min_y(num_tiers, std::numeric_limits<T>::max());
-      T terminal_x_center = terminal_x[cur_terminal_id] +
+    // check if the net is cut
+    bool is_cut = true;
+    for (int t = 0; t < num_tiers; ++t) {
+      if (node_count[t] == num_nodes_in_net) {
+        is_cut = false;
+        break;
+      }
+    }
+
+    if (is_cut) {
+      T terminal_x_center, terminal_y_center;
+      if (cur_terminal_id == -1) {
+        // inner cross-tier bonding point
+        auto inner_min_x_it = std::max_element(min_x.begin(), min_x.end());
+        auto inner_max_x_it = std::min_element(max_x.begin(), max_x.end());
+        auto inner_min_y_it = std::max_element(min_y.begin(), min_y.end());
+        auto inner_max_y_it = std::min_element(max_y.begin(), max_y.end());
+        T inner_min_x = *inner_min_x_it;
+        T inner_max_x = *inner_max_x_it;
+        T inner_min_y = *inner_min_y_it;
+        T inner_max_y = *inner_max_y_it;
+        terminal_x_center = (inner_min_x + inner_max_x) / 2;
+        terminal_y_center = (inner_min_y + inner_max_y) / 2;
+      } else {
+        terminal_x_center = terminal_x[cur_terminal_id] +
                             (terminal_size_x + terminal_spacing) / 2;
-      T terminal_y_center = terminal_y[cur_terminal_id] +
+        terminal_y_center = terminal_y[cur_terminal_id] +
                             (terminal_size_y + terminal_spacing) / 2;
-
-      for (int tier_id = 0; tier_id < num_tiers; ++tier_id) {
-        for (int pin_id = netpin_start[net_id];
-             pin_id < netpin_start[net_id + 1]; pin_id++) {
-          int node_id = pin2node_map[flat_netpin[pin_id]];
-          int index_pin = num_pins * tier_id + flat_netpin[pin_id];
-          if (tier[node_id] == tier_id) {
-            // LOG(WARN, "pin_x: %f, pin_y: %f", pin_x[index_pin], pin_y[index_pin]);
-            max_x[tier_id] = std::max(max_x[tier_id], pin_x[index_pin]);
-            min_x[tier_id] = std::min(min_x[tier_id], pin_x[index_pin]);
-            max_y[tier_id] = std::max(max_y[tier_id], pin_y[index_pin]);
-            min_y[tier_id] = std::min(min_y[tier_id], pin_y[index_pin]);
-          }
-        }
       }
-
-      for (int tier_id = 0; tier_id < num_tiers; ++tier_id) {
-        // LOG(WARN, "tier_id: %d, terminal_x_center: %f, terminal_y_center: %f", tier_id, terminal_x_center, terminal_y_center);
-        max_x[tier_id] = std::max(max_x[tier_id], terminal_x_center);
-        min_x[tier_id] = std::min(min_x[tier_id], terminal_x_center);
-        max_y[tier_id] = std::max(max_y[tier_id], terminal_y_center);
-        min_y[tier_id] = std::min(min_y[tier_id], terminal_y_center);
-        hpwl[net_id] +=
-            max_x[tier_id] - min_x[tier_id] + max_y[tier_id] - min_y[tier_id];
-        // LOG(INFO, "net_id: %d, tier_id: %d, hpwl: %f", net_id, tier_id, hpwl[net_id]);
+      for (int t = 0; t < num_tiers; ++t) {
+        max_x[t] = std::max(max_x[t], terminal_x_center);
+        min_x[t] = std::min(min_x[t], terminal_x_center);
+        max_y[t] = std::max(max_y[t], terminal_y_center);
+        min_y[t] = std::min(min_y[t], terminal_y_center);
+        hpwl_net += static_cast<int>(max_x[t] - min_x[t] + max_y[t] - min_y[t]);
       }
     } else {
-      T max_x = -std::numeric_limits<T>::max();
-      T min_x = std::numeric_limits<T>::max();
-      T max_y = -std::numeric_limits<T>::max();
-      T min_y = std::numeric_limits<T>::max();
-      int tier_id = tier[pin2node_map[flat_netpin[netpin_start[net_id]]]];
-
-      for (int pin_id = netpin_start[net_id]; pin_id < netpin_start[net_id + 1];
-           pin_id++) {
-        int index_pin = num_pins * tier_id + flat_netpin[pin_id];
-        // LOG(WARN, "pin_x: %f, pin_y: %f", pin_x[index_pin], pin_y[index_pin]);
-        min_x = std::min(min_x, pin_x[index_pin]);
-        max_x = std::max(max_x, pin_x[index_pin]);
-        min_y = std::min(min_y, pin_y[index_pin]);
-        max_y = std::max(max_y, pin_y[index_pin]);
+      int t_single = -1;
+      for (int t = 0; t < num_tiers; ++t)
+        if (node_count[t] == num_nodes_in_net) {
+          t_single = t;
+          break;
+        }
+      if (t_single >= 0) {
+        hpwl_net += static_cast<int>(max_x[t_single] - min_x[t_single] +
+                                     max_y[t_single] - min_y[t_single]);
       }
-      hpwl[net_id] += max_x - min_x + max_y - min_y;
-      // LOG(INFO, "net_id: %d, tier_id: %d, hpwl: %f", net_id, tier_id, hpwl[net_id]);
     }
+    return hpwl_net;
+  };
+
+  int hpwl_sum = 0;
+  for (int net_id = 0; net_id < num_nets; ++net_id) {
+    hpwl[net_id] = compute_single_net_hpwl(net_id, tier);
+    hpwl_sum += hpwl[net_id];
   }
 
   return 0;

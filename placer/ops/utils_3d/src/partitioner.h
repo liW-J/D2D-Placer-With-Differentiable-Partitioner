@@ -2,7 +2,7 @@
  * @Author: JeanneWillis hi@jeannewillis.cn
  * @Date: 2025-05-26 14:47:09
  * @LastEditors: JeanneWillis hi@jeannewillis.cn
- * @LastEditTime: 2025-07-21 00:25:58
+ * @LastEditTime: 2025-11-01 04:01:36
  * @FilePath: /D2D-placer/placer/ops/utils_3d/src/partition.h
  * @Description:
  */
@@ -118,6 +118,8 @@ struct Partitioner {
           node_count.end()) {
         cut_net_mask[net_id] = 1;
         num_terminals++;
+      }else{
+        cut_net_mask[net_id] = 0;
       }
     }
     return num_terminals;
@@ -133,12 +135,12 @@ struct Partitioner {
       const std::vector<std::string> &net_names,
       const std::vector<std::string> &terminal_name, int num_threads) {
     int hpwl = 0;
-// #pragma omp parallel for num_threads(num_threads)
+    // #pragma omp parallel for num_threads(num_threads)
     for (int net_id = 0; net_id < num_nets; ++net_id) {
 
       if (cut_net_mask[net_id]) {
 
-        int cur_terminal_id = 0;
+        int cur_terminal_id = -1;
         for (int terminal_id = 0; terminal_id < num_terminals; ++terminal_id) {
           if (net_names[net_id] == terminal_name[terminal_id]) {
             cur_terminal_id = terminal_id;
@@ -150,10 +152,7 @@ struct Partitioner {
         std::vector<T> min_x(num_tiers, std::numeric_limits<T>::max());
         std::vector<T> max_y(num_tiers, -std::numeric_limits<T>::max());
         std::vector<T> min_y(num_tiers, std::numeric_limits<T>::max());
-        T terminal_x_center = terminal_x[cur_terminal_id] +
-                              (terminal_size_x + terminal_spacing) / 2;
-        T terminal_y_center = terminal_y[cur_terminal_id] +
-                              (terminal_size_y + terminal_spacing) / 2;
+        T terminal_x_center, terminal_y_center;
 
         for (int tier_id = 0; tier_id < num_tiers; ++tier_id) {
           for (int pin_id = netpin_start[net_id];
@@ -161,14 +160,36 @@ struct Partitioner {
             int node_id = pin2node_map[flat_netpin[pin_id]];
             int index_pin = num_pins * tier_id + flat_netpin[pin_id];
             if (tier[node_id] == tier_id) {
-              // LOG(WARN, "pin_x: %f, pin_y: %f", pin_x[index_pin],
-              // pin_y[index_pin]);
+
               max_x[tier_id] = std::max(max_x[tier_id], pin_x[index_pin]);
               min_x[tier_id] = std::min(min_x[tier_id], pin_x[index_pin]);
               max_y[tier_id] = std::max(max_y[tier_id], pin_y[index_pin]);
               min_y[tier_id] = std::min(min_y[tier_id], pin_y[index_pin]);
             }
           }
+        }
+
+        if (cur_terminal_id == -1) {
+
+          // get inster bonding
+          auto inner_min_x_it = max_element(min_x.begin(), min_x.end());
+          auto inner_max_x_it = min_element(max_x.begin(), max_x.end());
+          auto inner_min_y_it = max_element(min_y.begin(), min_y.end());
+          auto inner_max_y_it = min_element(max_y.begin(), max_y.end());
+          T inner_min_x = *inner_min_x_it;
+          T inner_max_x = *inner_max_x_it;
+          T inner_min_y = *inner_min_y_it;
+          T inner_max_y = *inner_max_y_it;
+          terminal_x_center = (inner_min_x + inner_max_x) / 2;
+          terminal_y_center = (inner_min_y + inner_max_y) / 2;
+
+          // LOG(WARN, "net_id: %d, cur_terminal_id: %d", net_id,
+          // cur_terminal_id);
+        } else {
+          terminal_x_center = terminal_x[cur_terminal_id] +
+                              (terminal_size_x + terminal_spacing) / 2;
+          terminal_y_center = terminal_y[cur_terminal_id] +
+                              (terminal_size_y + terminal_spacing) / 2;
         }
 
         for (int tier_id = 0; tier_id < num_tiers; ++tier_id) {

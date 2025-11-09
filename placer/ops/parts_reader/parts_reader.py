@@ -14,7 +14,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-import ops.parts_reader.parts_reader_cpp as parts_reader_cpp
+import placer.ops.parts_reader.parts_reader_cpp as parts_reader_cpp
 
 
 class PartsReaderFunction(Function):
@@ -24,7 +24,8 @@ class PartsReaderFunction(Function):
                 net_mask, num_movable_nodes, partitioner_path):
         func = parts_reader_cpp.parts_reader
         output = func(tier, flat_netpin, netpin_start, pin2node_map,
-                      net_weights, net_mask, num_movable_nodes, partitioner_path)
+                      net_weights, net_mask, num_movable_nodes,
+                      partitioner_path)
 
         return output
 
@@ -45,10 +46,12 @@ class PartsReader(nn.Module):
         self.num_movable_nodes = num_movable_nodes
 
     def __call__(self, tier, partitioner_path):
-        return PartsReaderFunction.forward(tier, self.flat_netpin, self.netpin_start,
-                                      self.pin2node_map, self.net_weights,
-                                      self.net_mask, self.num_movable_nodes,
-                                      partitioner_path)
+        return PartsReaderFunction.forward(tier, self.flat_netpin,
+                                           self.netpin_start,
+                                           self.pin2node_map, self.net_weights,
+                                           self.net_mask,
+                                           self.num_movable_nodes,
+                                           partitioner_path)
 
 
 if __name__ == "__main__":

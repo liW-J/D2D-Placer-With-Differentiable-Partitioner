@@ -11,7 +11,7 @@ from torch.autograd import Function
 from torch import nn
 import numpy as np
 
-import ops.hpwl_d2d.hpwl_d2d_cpp as hpwl_d2d_cpp
+import placer.ops.hpwl_d2d.hpwl_d2d_cpp as hpwl_d2d_cpp
 
 
 class HPWLD2DFunction(Function):

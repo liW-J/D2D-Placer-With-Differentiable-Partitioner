@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-07-19 17:57:28
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-09-21 14:46:07
+LastEditTime: 2025-10-18 20:35:12
 FilePath: /D2D-placer/placer/d2d_placer.py
 Description: 
 '''
@@ -23,16 +23,18 @@ if root_dir not in sys.path:
     sys.path.append(root_dir)
 from colorama import Fore, Style
 from placer.ops.parser_txt.parser_txt import ParserTxt
+from placer.ops.draw_block.draw_block import DrawBlock
+
 from placer.op_wrapper import OpWrapper
 from placer.d2d_params import D2DParams
 from placer.tools.thirdparty_api.dreamplace_base import DreamplaceBaseCollection
 from placer.tools.thirdparty_api.specpart_base import SpecPartBase
 from placer.tools.thirdparty_api.tritonpart_base import TritonPartBase
-from placer.tools.graph_cutsize import GraphCutsize
+
 from placer.constants import Format, Orient
 import torch
+import matplotlib.pyplot as plt
 
-# Import the analyzer (lazy import to avoid circular dependencies)
 from placer.tools.d2d_result_analyzer.d2d_result_analyzer import D2DResultAnalyzer
 
 
@@ -88,8 +90,6 @@ class D2Dplacer:
         self.params = D2DParams(input_params)
         self.num_tiers = self.params.flatten_2d.num_tiers
         self.dreamplace = DreamplaceBaseCollection(self.num_tiers)
-        self.specpart = SpecPartBase(self.params)
-        self.tritonpart = TritonPartBase(self.params)
         self.op_wrapper = None
 
         self.format = Format.ICCAD2022
@@ -120,14 +120,13 @@ class D2Dplacer:
 
         return hpwl_d2d
 
-    def parse_die_spec(self):
+    def init_spec(self):
         if self.params.flatten_2d.txt_input:
             logging.info("parsing iccad txt input......")
-            # parser iccad txt format to aux
+            # parser iccad txt format to die_spec
             parser_txt = ParserTxt(self.params.flatten_2d.txt_input)
             self.die_spec = parser_txt()
 
-    def init_date(self):
         # control numpy multithreading
         os.environ["OMP_NUM_THREADS"] = "%d" % (
             self.params.flatten_2d.num_threads)
@@ -141,7 +140,6 @@ class D2Dplacer:
         self.tier = torch.zeros(
             self.dreamplace.dp_2d.placedb.num_movable_nodes, dtype=torch.int32)
 
-    def init_op_wrapper(self):
         self.op_wrapper = OpWrapper(self.dreamplace.dp_2d,
                                     self.dreamplace.dp_tier, self.params,
                                     self.die_spec)
@@ -165,57 +163,26 @@ class D2Dplacer:
             self.dreamplace.dp_tier[i].place(self.params.partition_tier[i],
                                              self.timer)
 
-        # for i in range(self.num_tiers):
-        #     logger.info("tier %d placement  HPWL:%.6f " %
-        #                  (i, self.dreamplace.metrics_tier[i][-1].hpwl))
-
         self.op_wrapper.d2d_op_collections.pos_flattened_op(
             self.tier, self.dreamplace.dp_2d.pos,
             [self.dreamplace.dp_tier[i].pos for i in range(self.num_tiers)])
+
+        return self.hpwl_d2d(logger)
 
     def flatten_2d_place(self):
         self.dreamplace.dp_2d.place(self.params.flatten_2d, self.timer)
 
     def partition(self, logger=logging):
-        # self.tier = self.op_wrapper.d2d_op_collections.hmetis_op(
-        #     self.dreamplace.dp_2d.pos)
-        # self.tier = self.op_wrapper.d2d_op_collections.avg_cut_op(self.dreamplace.dp_2d.pos)
 
         # temporarily call tier result from file
-        # self.tier = torch.load('/home/placer/D2D-placer/install/placer/partition_tensor/case2-hmetis.pt')
+        # self.tier = torch.load(
+        #     '/home/placer/D2D-placer/install/placer/partition_tensor/case2-tp-0.pt'
+        # )
+        # self.tier = torch.load(self.params.flatten_2d.tier_path)
         # self.tier = self.tier.to(torch.int32)
 
-        # self.tier = self.specpart.flow(
-        #     self.op_wrapper.d2d_op_collections.hgr_generator_op,
-        #     self.op_wrapper.d2d_op_collections.parts_reader_op)
-
-        # self.tier = self.tritonpart.flow(
-        #     self.op_wrapper.d2d_op_collections.hgr_generator_op,
-        #     self.op_wrapper.d2d_op_collections.parts_reader_op,
-        #     pos=self.dreamplace.dp_2d.pos,
-        #     num_movable_nodes=self.dreamplace.dp_2d.placedb.num_movable_nodes)
-
-        self.tier = self.tritonpart.flow(
-            self.op_wrapper.d2d_op_collections.hgr_generator_op,
-            self.op_wrapper.d2d_op_collections.parts_reader_op)
-
-        graph_cutsize = GraphCutsize(
-            "/home/placer/D2D-placer/install/run_tmp/" +
-            self.params.case_name + "/" + self.params.case_name + ".hgr",
-            "/home/placer/D2D-placer/install/run_tmp/" +
-            self.params.case_name + "/" + self.params.case_name +
-            ".hgr.part.2")
-
-        # self.tier = torch.tensor(graph_cutsize.parts)
-        graph_cutsize.parts = self.tier.tolist()
-
-        # new_clique_cut, new_cutnet = graph_cutsize.minimize_clique_cutsize_greedy(
-        # )
-        new_clique_cut, new_cutnet = graph_cutsize.calculate()
-        logger.info("clique graph cutsize: %d, hyperedge cutsize: %d" %
-                    (new_clique_cut, new_cutnet))
-
-        self.tier = self.tier.to(torch.int32)
+        self.tier = self.op_wrapper.d2d_op_collections.partition_flow_op(
+            partitioner="tritonpart", logger=logger)
         torch.save(self.tier, self.params.result_dir_root + "/tier.pt")
 
         # return partition result but not receive now
@@ -235,6 +202,9 @@ class D2Dplacer:
                 self.tier, self.dreamplace.dp_2d.pos / 2, self.node_orient)
 
         self.num_terminal_NIs = int(self.cut_net_mask.sum().item())
+        filename = self.params.result_dir_root + "/final-partition-block.png"
+        self.op_wrapper.d2d_op_collections.draw_block_op(
+            self.dreamplace.dp_2d.pos, filename, self.tier)
         breakpoint()
 
     def terminal_insert(self):
@@ -242,7 +212,9 @@ class D2Dplacer:
         self.op_wrapper.d2d_op_collections.terminal_insert_aux_op(
             self.tier, self.dreamplace.dp_2d.pos)
 
-        self.dreamplace.dp_terminal.database(self.params.terminal)
+        self.dreamplace.dp_terminal.init_basic_place(self.params.terminal,
+                                                     self.timer)
+        # self.dreamplace.dp_terminal.database(self.params.terminal)
         self.dreamplace.dp_terminal.place(self.params.terminal, self.timer)
 
         self.op_wrapper.d2d_op_collections.terminal_legalize_op(
@@ -252,14 +224,15 @@ class D2Dplacer:
 
     def terminal_legalize(self):
         # create terminal aux for collaborative optimization by tier[0]
-        self.op_wrapper.d2d_op_collections.terminal_legaliza_aux_op(
+        self.op_wrapper.d2d_op_collections.terminal_legalize_aux_op(
             self.tier, self.dreamplace.dp_2d.pos,
             self.dreamplace.dp_terminal.pos, self.num_terminal_NIs,
             self.dreamplace.dp_terminal.placedb.node_names)
-        # breakpoint()
 
         self.params.terminal.global_place_flag = False
-        self.dreamplace.dp_terminal.database(self.params.terminal)
+        self.dreamplace.dp_terminal.init_basic_place(self.params.terminal,
+                                                     self.timer)
+        # self.dreamplace.dp_terminal.database(self.params.terminal)
         self.dreamplace.dp_terminal.place(self.params.terminal, self.timer)
         self.params.terminal.global_place_flag = True
 
@@ -269,7 +242,7 @@ class D2Dplacer:
             self.dreamplace.dp_terminal.placedb.node_names, self.node_orient)
 
     def refinement(self):
-        self.tier = self.op_wrapper.d2d_op_collections.refinement_op(
+        self.tier = self.op_wrapper.d2d_op_collections.bin_based_fm_op(
             self.tier, self.dreamplace.dp_2d.pos,
             self.dreamplace.dp_terminal.pos, self.num_terminal_NIs,
             self.dreamplace.dp_terminal.placedb.node_names)
@@ -282,7 +255,9 @@ class D2Dplacer:
         self.op_wrapper.d2d_op_collections.terminal_insert_aux_op(
             self.tier, self.dreamplace.dp_2d.pos)
 
-        self.dreamplace.dp_terminal.database(self.params.terminal)
+        self.dreamplace.dp_terminal.init_basic_place(self.params.terminal,
+                                                     self.timer)
+        # self.dreamplace.dp_terminal.database(self.params.terminal)
         self.dreamplace.dp_terminal.place(self.params.terminal, self.timer)
 
         self.op_wrapper.d2d_op_collections.terminal_legalize_op(
@@ -290,52 +265,58 @@ class D2Dplacer:
             self.dreamplace.dp_terminal.pos, self.num_terminal_NIs,
             self.dreamplace.dp_terminal.placedb.node_names, self.node_orient)
 
-    def macro_rotation(self):
-        # self.dreamplace.placedb_terminal.node_orient = np.array(self.dreamplace.placedb_terminal.node_orient, dtype=np.bytes_)
-        # self.dreamplace.placedb_terminal.node_orient = np.array(self.dreamplace.placedb_terminal.node_orient, dtype=np.bytes_)
-        pass
+        torch.save(self.tier,
+                   self.params.result_dir_root + "/tier-refinement.pt")
 
     def output(self):
         self.op_wrapper.d2d_op_collections.out_fmt_iccad_op(
             self.dreamplace.dp_terminal.placedb, self.params.case_name,
             self.format, self.node_orient)
 
-    def analyze_results(self):
-        """
-        Analyze placement results using the integrated analysis tools
-        
-        """
+    def draw_d2d_layout(self):
+        top_layout_filename = self.params.result_dir_root + "/top-layout.png"
+        draw_top_block = DrawBlock(self.dreamplace.dp_tier[0].placedb)(
+            self.dreamplace.dp_tier[0].pos, top_layout_filename,
+            torch.zeros(self.dreamplace.dp_tier[0].placedb.num_movable_nodes))
 
-        def analyze_placer_output(benchmark_name: str,
+        bottom_layout_filename = self.params.result_dir_root + "/bottom-layout.png"
+        draw_bottom_block = DrawBlock(self.dreamplace.dp_tier[1].placedb)(
+            self.dreamplace.dp_tier[1].pos, bottom_layout_filename,
+            torch.zeros(self.dreamplace.dp_tier[1].placedb.num_movable_nodes))
+
+        terminal_layout_filename = self.params.result_dir_root + "/terminal-layout.png"
+        # track
+        terminal_placedb = self.dreamplace.dp_terminal.placedb
+        terminal_placedb.num_terminal_NIs += self.num_terminal_NIs
+        terminal_placedb.node_size_x[:self.
+                                     num_terminal_NIs] -= self.die_spec.terminalSpacing
+        terminal_placedb.node_size_y[:self.
+                                     num_terminal_NIs] -= self.die_spec.terminalSpacing
+
+        terminal_placedb.node_size_x[self.num_terminal_NIs:] = 0
+        terminal_placedb.node_size_y[self.num_terminal_NIs:] = 0
+        draw_terminal_block = DrawBlock(terminal_placedb)(
+            self.dreamplace.dp_terminal.pos +
+            self.die_spec.terminalSpacing / 2, terminal_layout_filename,
+            torch.zeros(self.num_terminal_NIs))
+
+    def analyze_results(self):
+
+        def analyze_placer_output(benchmark_file: str,
                                   result_dir: str,
                                   logger=logging):
-            """
-            Analyze placer output for a specific benchmark
-            
-            Args:
-                benchmark_name: Name of the benchmark case
-                output_dir: Directory containing placement output
-                result_dir: Result directory 
-                
-            Returns:
-                Analysis summary
-            """
+
             # Construct file paths
-            benchmark_file = f"benchmarks/iccad2022/{benchmark_name}.txt"
-            output_file = os.path.join(result_dir, "output.txt")
-            flattened_pl_file = os.path.join(
-                result_dir, "flattened-2d/flattened-2d.gp.pl")
-
             analyzer = D2DResultAnalyzer(benchmark_file=benchmark_file,
-                                         output_file=output_file,
                                          result_dir=result_dir,
-                                         flattened_pl_file=flattened_pl_file,
                                          logger=logger)
-
             return analyzer.run_comprehensive_analysis()
 
-        analyze_placer_output(self.params.case_name,
+        analyze_placer_output(self.params.flatten_2d.txt_input,
                               self.params.result_dir_root)
+
+        self.op_wrapper.d2d_op_collections.draw_layout_result_op()
+        self.draw_d2d_layout()
 
 
 if __name__ == "__main__":
@@ -345,20 +326,18 @@ if __name__ == "__main__":
 
     # placement begin
     printWelcome()
-    tt = time.time()
     d2d_placer = D2Dplacer(sys.argv[1])
     d2d_logger = init_log(d2d_placer.params.result_dir_root)
 
-    d2d_placer.parse_die_spec()
-    d2d_placer.init_date()
+    d2d_placer.init_spec()
     d2d_placer.flatten_2d_place()
-    d2d_placer.init_op_wrapper()
 
     d2d_placer.partition(d2d_logger)
+
     d2d_placer.die_by_die_place(global_place_flag=True,
                                 legalize_flag=False,
                                 detailed_place_flag=False,
-                                random_center_init_flag=False,
+                                random_center_init_flag=True,
                                 ntuplace_flag=False)
 
     d2d_placer.terminal_insert()
@@ -368,15 +347,14 @@ if __name__ == "__main__":
                                 random_center_init_flag=True,
                                 ntuplace_flag=False)
 
-    d2d_placer.macro_rotation()
     d2d_placer.refinement()
-    d2d_placer.die_by_die_place(global_place_flag=False,
+    d2d_placer.die_by_die_place(global_place_flag=True,
                                 legalize_flag=False,
                                 detailed_place_flag=False,
-                                random_center_init_flag=False,
-                                ntuplace_flag=True)
+                                random_center_init_flag=True,
+                                ntuplace_flag=True,
+                                logger=d2d_logger)
+
     d2d_placer.hpwl_d2d(d2d_logger)
     d2d_placer.output()
-
-    # Analyze placement results
     d2d_placer.analyze_results()

@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-06-13 15:35:55
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-09-21 00:31:44
+LastEditTime: 2025-10-21 00:05:08
 FilePath: /D2D-placer/placer/op_wrapper.py
 Description:
 '''
@@ -15,25 +15,36 @@ from placer.ops.terminal_aux.terminal_aux import TerminalAux
 from placer.ops.refinement.refinement import Refinement
 from placer.ops.hpwl_d2d.hpwl_d2d import HPWLD2D
 from placer.ops.macro_balance.macro_balance import MacroBalance
-from placer.ops.parts_reader.parts_reader import PartsReader
+from placer.ops.bin_based_fm.bin_based_fm import BinBasedFM
+from placer.ops.draw_layout_result.draw_layout_result import DrawLayoutResult
+from placer.ops.draw_block.draw_block import DrawBlock
 
 from placer.tools.out_fmt_iccad import OutfmtICCAD
 from placer.tools.pos_flattened import PosFlattened
+from placer.tools.graph_cutsize import GraphCutsize
+
 from placer.tools.partitioner_manager import PartitionerManager
 from dreamplace.ops.pin_pos.pin_pos import PinPos
 
+from placer.tools.thirdparty_api.specpart_base import SpecPartBase
+from placer.tools.thirdparty_api.tritonpart_base import TritonPartBase
+
 import torch
 import numpy as np
+import logging
+import os
 
 
 class D2DOpCollection(object):
 
     def __init__(self, hmetis_op, multi_bipartition_op, init_partition_op,
                  out_fmt_iccad_op, pos_flattened_op, terminal_insert_op,
-                 pin_pos_op, pin_pos_tier_op, terminal_legalize_op, avg_cut_op,
-                 terminal_insert_aux_op, terminal_legaliza_aux_op,
-                 refinement_op, hpwl_d2d_op, macro_balance_op, parts_reader_op,
-                 hgr_generator_op):
+                 pin_pos_op, pin_pos_tier_op, pin_pos_terminal_op,
+                 terminal_legalize_op, avg_cut_op, terminal_insert_aux_op,
+                 terminal_legalize_aux_op, refinement_op, hpwl_d2d_op,
+                 macro_balance_op, parts_reader_op, hgr_generator_op,
+                 bin_based_fm_op, draw_layout_result_op, draw_block_op,
+                 partition_flow_op):
         self.hmetis_op = hmetis_op
         self.multi_bipartition_op = multi_bipartition_op
         self.init_partition_op = init_partition_op
@@ -42,15 +53,20 @@ class D2DOpCollection(object):
         self.terminal_insert_op = terminal_insert_op
         self.pin_pos_op = pin_pos_op
         self.pin_pos_tier_op = pin_pos_tier_op
+        self.pin_pos_terminal_op = pin_pos_terminal_op
         self.terminal_legalize_op = terminal_legalize_op
         self.avg_cut_op = avg_cut_op
         self.terminal_insert_aux_op = terminal_insert_aux_op
-        self.terminal_legaliza_aux_op = terminal_legaliza_aux_op
+        self.terminal_legalize_aux_op = terminal_legalize_aux_op
         self.refinement_op = refinement_op
         self.hpwl_d2d_op = hpwl_d2d_op
         self.macro_balance_op = macro_balance_op
         self.parts_reader_op = parts_reader_op
         self.hgr_generator_op = hgr_generator_op
+        self.bin_based_fm_op = bin_based_fm_op
+        self.draw_layout_result_op = draw_layout_result_op
+        self.draw_block_op = draw_block_op
+        self.partition_flow_op = partition_flow_op
 
 
 class OpWrapper(object):
@@ -89,6 +105,9 @@ class OpWrapper(object):
             for data_collections in self.data_collections_tier
         ])
 
+        self.top_die_max_util = self.die_spec.topDieMaxUtil / 100
+        self.bottom_die_max_util = self.die_spec.bottomDieMaxUtil / 100
+
         # 3d-placer set flattened_die size as die_size*2
         if self.num_tiers == 2:
             self.die_size_x = self.die_spec.dieSizeX
@@ -111,15 +130,20 @@ class OpWrapper(object):
         self.terminal_insert_op = self.build_terminal_insert()
         self.pin_pos_op = self.build_pin_pos()
         self.pin_pos_tier_op = self.build_pin_pos_tier()
+        self.pin_pos_terminal_op = self.build_pin_pos_terminal()
         self.terminal_legalize_op = self.build_terminal_legalize()
         self.avg_cut_op = self.build_avg_cut()
         self.terminal_insert_aux_op = self.build_terminal_insert_aux()
-        self.terminal_legaliza_aux_op = self.build_terminal_legaliza_aux()
+        self.terminal_legalize_aux_op = self.build_terminal_legalize_aux()
         self.refinement_op = self.build_refinement()
         self.hpwl_d2d_op = self.build_hpwl_d2d()
         self.macro_balance_op = self.build_macro_balance()
         self.parts_reader_op = self.build_parts_reader()
         self.hgr_generator_op = self.build_hgr_generator()
+        self.bin_based_fm_op = self.build_bin_based_fm()
+        self.draw_layout_result_op = self.build_draw_layout_result()
+        self.draw_block_op = self.build_draw_block()
+        self.partition_flow_op = self.build_partition_flow()
 
         self.d2d_op_collections = D2DOpCollection(
             hmetis_op=self.hmetis_op,
@@ -130,24 +154,31 @@ class OpWrapper(object):
             terminal_insert_op=self.terminal_insert_op,
             pin_pos_op=self.pin_pos_op,
             pin_pos_tier_op=self.pin_pos_tier_op,
+            pin_pos_terminal_op=self.pin_pos_terminal_op,
             terminal_legalize_op=self.terminal_legalize_op,
             avg_cut_op=self.avg_cut_op,
             terminal_insert_aux_op=self.terminal_insert_aux_op,
-            terminal_legaliza_aux_op=self.terminal_legaliza_aux_op,
+            terminal_legalize_aux_op=self.terminal_legalize_aux_op,
             refinement_op=self.refinement_op,
             hpwl_d2d_op=self.hpwl_d2d_op,
             macro_balance_op=self.macro_balance_op,
             parts_reader_op=self.parts_reader_op,
-            hgr_generator_op=self.hgr_generator_op)
+            hgr_generator_op=self.hgr_generator_op,
+            bin_based_fm_op=self.bin_based_fm_op,
+            draw_layout_result_op=self.draw_layout_result_op,
+            draw_block_op=self.draw_block_op,
+            partition_flow_op=self.partition_flow_op)
 
     def build_hmetis(self):
 
-        hmetis_op = Hmetis(self.data_collections_2d.flat_net2pin_map,
-                           self.data_collections_2d.flat_net2pin_start_map,
-                           self.data_collections_2d.pin2node_map,
-                           self.data_collections_2d.net_weights,
-                           self.data_collections_2d.net_mask_all,
-                           self.placedb_2d.num_movable_nodes, self.case_name)
+        def hmetis_op():
+
+            self.hgr_generator_op(self.case_name)
+            hg = f"{self.d2d_params.run_tmp_dir_root}/{self.case_name}.hgr"
+            cmd = f"bin/hmetis {hg} 2 2 10 1 1 0 1 0"
+            os.system(cmd)
+
+            return self.parts_reader_op(self.case_name)
 
         return hmetis_op
 
@@ -279,6 +310,24 @@ class OpWrapper(object):
 
         return pin_pos_op
 
+    def build_pin_pos_terminal(self):
+
+        def build_pin_pos_terminal_op(data_collections_terminal,
+                                      num_terminal_NIs):
+            pin_pos_terminal_op = PinPos(
+                pin_offset_x=data_collections_terminal.pin_offset_x,
+                pin_offset_y=data_collections_terminal.pin_offset_y,
+                pin2node_map=data_collections_terminal.pin2node_map,
+                flat_node2pin_map=data_collections_terminal.flat_node2pin_map,
+                flat_node2pin_start_map=data_collections_terminal.
+                flat_node2pin_start_map,
+                num_physical_nodes=num_terminal_NIs,
+                algorithm="node-by-node")
+
+            return pin_pos_terminal_op
+
+        return build_pin_pos_terminal_op
+
     def build_pin_pos_tier(self):
 
         pin_pos_tier_op = []
@@ -398,9 +447,9 @@ class OpWrapper(object):
 
         return build_terminal_insert_aux_op
 
-    def build_terminal_legaliza_aux(self):
+    def build_terminal_legalize_aux(self):
 
-        terminal_legaliza_aux_op = TerminalAux(
+        terminal_legalize_aux_op = TerminalAux(
             self.data_collections_2d.flat_net2pin_map,
             self.data_collections_2d.flat_net2pin_start_map,
             self.data_collections_2d.pin2node_map,
@@ -421,7 +470,7 @@ class OpWrapper(object):
             self.case_name,
             terminal_legalize_flag=True)
 
-        def build_terminal_legaliza_aux_op(tier, pos_2d, pos_terminal,
+        def build_terminal_legalize_aux_op(tier, pos_2d, pos_terminal,
                                            num_terminal_NIs, terminal_names):
             pin_pos_x = torch.stack([
                 self.pin_pos_tier_op[tier_id](pos_2d)
@@ -434,10 +483,12 @@ class OpWrapper(object):
                 for tier_id in range(self.num_tiers)
             ])
             pin_pos = torch.cat([pin_pos_x, pin_pos_y], dim=0)
-            return terminal_legaliza_aux_op(tier, pin_pos, pos_2d, pos_terminal,
-                                       num_terminal_NIs, terminal_names)
 
-        return build_terminal_legaliza_aux_op
+            return terminal_legalize_aux_op(tier, pin_pos, pos_2d,
+                                            pos_terminal, num_terminal_NIs,
+                                            terminal_names)
+
+        return build_terminal_legalize_aux_op
 
     def build_refinement(self):
 
@@ -470,6 +521,41 @@ class OpWrapper(object):
                                  num_terminal_NIs, terminal_names)
 
         return build_refinement_op
+
+    def build_bin_based_fm(self):
+
+        bin_based_fm_op = BinBasedFM(
+            self.data_collections_2d.flat_net2pin_map,
+            self.data_collections_2d.flat_net2pin_start_map,
+            self.data_collections_2d.pin2node_map,
+            self.data_collections_2d.net_weights,
+            self.placedb_2d.num_movable_nodes, self.placedb_2d.node_names,
+            self.placedb_2d.net_names, self.node_size_x, self.node_size_y,
+            self.pin_offset_x, self.pin_offset_y, self.die_size_x,
+            self.die_size_y, self.row_height, self.die_spec.terminalSizeX,
+            self.die_spec.terminalSizeY, self.die_spec.terminalSpacing,
+            self.case_name, self.top_die_max_util, self.bottom_die_max_util,
+            self.placedb_2d.num_nodes, self.placedb_2d.num_bins_x//2,
+            self.placedb_2d.num_bins_y//2, self.placedb_tier[0].xl, self.placedb_tier[0].yl,
+            self.placedb_tier[0].xh, self.placedb_tier[0].yh)
+
+        def build_bin_based_fm_op(tier, pos_2d, pos_terminal, num_terminal_NIs,
+                                  terminal_names):
+            pin_pos_x = torch.stack([
+                self.pin_pos_tier_op[tier_id](pos_2d)
+                [:self.data_collections_2d.pin2node_map.numel()]
+                for tier_id in range(self.num_tiers)
+            ])
+            pin_pos_y = torch.stack([
+                self.pin_pos_tier_op[tier_id](pos_2d)
+                [self.data_collections_2d.pin2node_map.numel():]
+                for tier_id in range(self.num_tiers)
+            ])
+            pin_pos = torch.cat([pin_pos_x, pin_pos_y], dim=0)
+            return bin_based_fm_op(tier, pin_pos, pos_2d, pos_terminal,
+                                   num_terminal_NIs, terminal_names)
+
+        return build_bin_based_fm_op
 
     def build_hpwl_d2d(self):
 
@@ -536,3 +622,52 @@ class OpWrapper(object):
             self.data_collections_2d, self.placedb_2d,
             self.d2d_params.run_tmp_dir_root)
         return partitioner_manager.parts_reader
+
+    def build_draw_layout_result(self):
+        draw_layout_result_op = DrawLayoutResult(self.params.txt_input,
+                                                 self.params.result_dir)
+        return draw_layout_result_op
+
+    def build_draw_block(self):
+        return DrawBlock(self.placedb_2d)
+
+    def build_partition_flow(self):
+
+        def build_partition_flow_op(partitioner="tritonpart", logger=logging):
+            logger.info(f"building partition flow for {partitioner}")
+            if partitioner == "tritonpart":
+                tritonpart = TritonPartBase(self.d2d_params)
+                tier = tritonpart.flow(hgr_generator_op=self.hgr_generator_op,
+                                       parts_reader_op=self.parts_reader_op)
+
+            elif partitioner == "bin-based-tritonpart":
+                tritonpart = TritonPartBase(self.d2d_params)
+                tier = tritonpart.flow(
+                    hgr_generator_op=self.hgr_generator_op,
+                    parts_reader_op=self.parts_reader_op,
+                    pos=self.data_2d.pos,
+                    num_movable_nodes=self.placedb_2d.num_movable_nodes)
+
+            elif partitioner == "specpart":
+                specpart = SpecPartBase(self.d2d_params)
+                tier = specpart.flow(hgr_generator_op=self.hgr_generator_op,
+                                     parts_reader_op=self.parts_reader_op)
+
+            else:
+                logger.info(
+                    f"no partitioner specified, using default partitioner: Hmetis"
+                )
+                tier = self.hmetis_op()
+
+            graph_cutsize = GraphCutsize(
+                self.d2d_params.run_tmp_dir_root + "/" + self.case_name +
+                ".hgr", self.d2d_params.run_tmp_dir_root + "/" +
+                self.case_name + ".hgr.part.2")
+
+            new_clique_cut, new_cutnet = graph_cutsize.calculate()
+            logger.info("clique graph cutsize: %d, hyperedge cutsize: %d" %
+                        (new_clique_cut, new_cutnet))
+
+            return tier
+
+        return build_partition_flow_op

@@ -1,0 +1,673 @@
+UCLA scl 1.0
+# Created	:	Sun Oct 19 01:10:23 2025
+
+# User		:	placer
+
+NumRows : 74
+
+CoreRow Horizontal
+  Coordinate     :   0
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   252
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   504
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   756
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   1008
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   1260
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   1512
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   1764
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   2016
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   2268
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   2520
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   2772
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   3024
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   3276
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   3528
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   3780
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   4032
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   4284
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   4536
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   4788
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   5040
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   5292
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   5544
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   5796
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   6048
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   6300
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   6552
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   6804
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   7056
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   7308
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   7560
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   7812
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   8064
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   8316
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   8568
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   8820
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   9072
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   9324
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   9576
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   9828
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   10080
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   10332
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   10584
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   10836
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   11088
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   11340
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   11592
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   11844
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   12096
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   12348
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   12600
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   12852
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   13104
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   13356
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   13608
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   13860
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   14112
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   14364
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   14616
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   14868
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   15120
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   15372
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   15624
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   15876
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   16128
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   16380
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   16632
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   16884
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   17136
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   17388
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   17640
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   17892
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   18144
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End
+CoreRow Horizontal
+  Coordinate     :   18396
+  Height         :   252
+  Sitewidth      :   1
+  Sitespacing    :   1
+  Siteorient     :   0
+  Sitesymmetry   :   0
+  SubrowOrigin   :   0	NumSites  :  23340
+End

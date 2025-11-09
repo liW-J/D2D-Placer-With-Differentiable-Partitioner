@@ -14,7 +14,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-import ops.avg_cut.avg_cut_cpp as avg_cut_cpp
+import placer.ops.avg_cut.avg_cut_cpp as avg_cut_cpp
 
 
 class AvgCutFunction(Function):
@@ -23,8 +23,8 @@ class AvgCutFunction(Function):
     def forward(flat_netpin, netpin_start, pin2node_map, net_weights,
                 num_movable_nodes, pos, node_size_x, node_size_y):
         func = avg_cut_cpp.avg_cut
-        output = func(flat_netpin, netpin_start, pin2node_map,
-                      net_weights, num_movable_nodes, pos, node_size_x, node_size_y)
+        output = func(flat_netpin, netpin_start, pin2node_map, net_weights,
+                      num_movable_nodes, pos, node_size_x, node_size_y)
         return output
 
 
@@ -41,14 +41,11 @@ class AvgCut(nn.Module):
         self.net_weights = net_weights
         self.num_movable_nodes = num_movable_nodes
 
-    def __call__(self,
-                 pos,
-                 node_size_x,
-                 node_size_y):
+    def __call__(self, pos, node_size_x, node_size_y):
         return AvgCutFunction.forward(self.flat_netpin, self.netpin_start,
                                       self.pin2node_map, self.net_weights,
-                                      self.num_movable_nodes, pos,
-                                      node_size_x, node_size_y)
+                                      self.num_movable_nodes, pos, node_size_x,
+                                      node_size_y)
 
 
 if __name__ == "__main__":

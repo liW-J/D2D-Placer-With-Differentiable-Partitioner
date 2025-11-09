@@ -1,26 +1,27 @@
-set(OP_NAME hmetis)
+set(OP_NAME draw_layout_result)
 
 set(TARGET_NAME ${OP_NAME})
 
 set(INCLUDE_DIRS 
   ${CMAKE_CURRENT_SOURCE_DIR}/..
   ${DREAMPLACE_OPS_DIR}
+  ${3DPLACER_INCLUDE_DIRS}
   ${LIMBO_SOURCE_DIR}
   ${Boost_INCLUDE_DIRS}
   ${ZLIB_INCLUDE_DIRS}
-  ${3DPLACER_INCLUDE_DIRS}
   )
 
 set(LINK_LIBS 
   utility_cxx
+  # place_io_cxx
   utils_3d_cxx
+  3d_placer_lib
   OpenMP::OpenMP_CXX
   ${ZLIB_LIBRARIES}
-  3d_placer_lib
   )
 
 add_pytorch_extension(${TARGET_NAME}_cpp 
-  src/hmetis.cpp
+  src/draw_layout_result.cpp
   EXTRA_INCLUDE_DIRS ${INCLUDE_DIRS}
   EXTRA_LINK_LIBRARIES ${LINK_LIBS})
 
