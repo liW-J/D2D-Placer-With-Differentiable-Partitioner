@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-11-14 16:03:37
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-11-23 18:28:32
+LastEditTime: 2025-11-24 02:06:12
 FilePath: /D2D-placer/placer/tools/differentiable_partitioner/partitioner.py
 Description: Differentiable 3D Partitioner based on LogSumExp soft bounding box
 '''
@@ -74,6 +74,11 @@ class LSEPartitioner(nn.Module):
         else:
             self.register_buffer('net_weights', net_weights.detach().clone())
 
+        self.random_choice_x = torch.randint(
+            0, 2, (self.num_nets, ), device=self.pin_pos_x.device).float()
+        self.random_choice_y = torch.randint(
+            0, 2, (self.num_nets, ), device=self.pin_pos_y.device).float()
+
     def get_z(self):
         """
         map pre-activation variable t to soft assignment z = sigmoid(t)
@@ -129,113 +134,6 @@ class LSEPartitioner(nn.Module):
 
         # return -(1/α) * log_sum_exp(-α * weighted_vals)
         return -lse / self.alpha
-
-    def compute_hpwl_top(self, net_idx):
-        """
-        compute soft HPWL of the specified net on the top layer
-        using LSE soft bounding box:
-        - x_max_top = (1/α) * log_sum_exp(α * z_node * x_pin)
-        - x_min_top = -(1/α) * log_sum_exp(-α * z_node * x_pin)
-        - y_max_top = (1/α) * log_sum_exp(α * z_node * y_pin)
-        - y_min_top = -(1/α) * log_sum_exp(-α * z_node * y_pin)
-        - HPWL_top = (x_max_top - x_min_top) + (y_max_top - y_min_top)        
-        
-        Args:
-            net_idx: index of the net
-            
-        Returns:
-            soft HPWL of the specified net on the top layer
-        """
-        # obtain all pin indices of the specified net
-        start_idx = self.flat_net2pin_start_map[net_idx]
-        end_idx = self.flat_net2pin_start_map[net_idx + 1]
-        pin_indices = self.flat_net2pin_map[start_idx:end_idx]
-
-        if pin_indices.numel() < 2:
-            return torch.tensor(0.0, device=self.pin_pos_x.device)
-
-        # get soft assignment z (defined by node)
-        z = self.get_z()
-
-        # get node indices for each pin
-        node_indices = self.pin2node_map[
-            pin_indices]  # shape: [num_pins_in_net]
-
-        # get z value for each pin corresponding to the node
-        z_net = z[node_indices]  # shape: [num_pins_in_net]
-
-        # get position of each pin
-        x_net = self.pin_pos_x[pin_indices]  # shape: [num_pins_in_net]
-        y_net = self.pin_pos_y[pin_indices]  # shape: [num_pins_in_net]
-
-        # compute weighted values: z_node * x_pin and z_node * y_pin
-        weighted_x = z_net * x_net  # shape: [num_pins_in_net]
-        weighted_y = z_net * y_net  # shape: [num_pins_in_net]
-
-        # use LSE to compute soft bounding box
-        x_max_top = self.lse_max(weighted_x)
-        x_min_top = self.lse_min(weighted_x)
-        y_max_top = self.lse_max(weighted_y)
-        y_min_top = self.lse_min(weighted_y)
-
-        # caculate HPWL
-        hpwl_x = x_max_top - x_min_top
-        hpwl_y = y_max_top - y_min_top
-        hpwl_top = hpwl_x + hpwl_y
-
-        return hpwl_top
-
-    def compute_hpwl_bottom(self, net_idx):
-        """
-        calculate soft HPWL of the specified net on the bottom layer
-        using the same LSE formula as the top layer, but using (1 - z_node) instead of z_node
-        
-        Args:
-            net_idx: index of the net
-            
-        Returns:
-            soft HPWL of the specified net on the bottom layer
-        """
-        # obtain all pin indices of the specified net
-        start_idx = self.flat_net2pin_start_map[net_idx]
-        end_idx = self.flat_net2pin_start_map[net_idx + 1]
-        pin_indices = self.flat_net2pin_map[start_idx:end_idx]
-
-        if pin_indices.numel() < 2:
-            return torch.tensor(0.0, device=self.pin_pos_x.device)
-
-        # get soft assignment z (defined by node)
-        z = self.get_z()
-
-        # get node indices for each pin
-        node_indices = self.pin2node_map[
-            pin_indices]  # shape: [num_pins_in_net]
-
-        # use (1 - z_node) to represent bottom assignment
-        z_bottom = 1.0 - z[node_indices]  # shape: [num_pins_in_net]
-
-        # get position of each pin
-        x_net = self.pin_pos_x.max() - self.pin_pos_x[
-            pin_indices]  # shape: [num_pins_in_net]
-        y_net = self.pin_pos_y.max() - self.pin_pos_y[
-            pin_indices]  # shape: [num_pins_in_net]
-
-        # compute weighted values: (1 - z_node) * x_pin and (1 - z_node) * y_pin
-        weighted_x = z_bottom * x_net
-        weighted_y = z_bottom * y_net
-
-        # use LSE to compute soft bounding box
-        x_max_bottom = self.lse_max(weighted_x)
-        x_min_bottom = self.lse_min(weighted_x)
-        y_max_bottom = self.lse_max(weighted_y)
-        y_min_bottom = self.lse_min(weighted_y)
-
-        # caculate HPWL
-        hpwl_x = x_max_bottom - x_min_bottom
-        hpwl_y = y_max_bottom - y_min_bottom
-        hpwl_bottom = hpwl_x + hpwl_y
-
-        return hpwl_bottom
 
     def compute_cutsize(self, net_idx):
         """
@@ -351,6 +249,7 @@ class LSEPartitioner(nn.Module):
         valid_start_indices = start_indices[valid_mask]  # [num_valid_nets]
         valid_end_indices = end_indices[valid_mask]  # [num_valid_nets]
         valid_pin_counts = pin_counts[valid_mask]  # [num_valid_nets]
+        valid_net_indices = net_indices[valid_mask]  # [num_valid_nets]
         num_valid_nets = valid_pin_counts.numel()
 
         # collect all valid net's pin indices
@@ -366,9 +265,32 @@ class LSEPartitioner(nn.Module):
         all_node_indices = self.pin2node_map[all_pin_indices]  # [total_pins]
         all_z_net = z[all_node_indices]  # [total_pins]
 
-        # get position of each pin
-        all_x_net = self.pin_pos_x[all_pin_indices]  # [total_pins]
-        all_y_net = self.pin_pos_y[all_pin_indices]  # [total_pins]
+        # compute max values for random selection
+        x_max_val = self.pin_pos_x.max()
+        y_max_val = self.pin_pos_y.max()
+
+        # get position of each pin with random selection
+        # randomly choose between original value or max_val - value for each pin
+        pin_pos_x_original = self.pin_pos_x[all_pin_indices]  # [total_pins]
+        pin_pos_y_original = self.pin_pos_y[all_pin_indices]  # [total_pins]
+
+        # 为每个 pin 分配其所属 net 的索引，使用 repeat_interleave 优雅地处理
+        pin_to_net_indices = torch.repeat_interleave(
+            valid_net_indices, valid_pin_counts)  # [total_pins]
+
+        # 获取每个 pin 对应的 net 的 random choice 系数
+        random_choice_x = self.random_choice_x[
+            pin_to_net_indices]  # [total_pins]
+        random_choice_y = self.random_choice_y[
+            pin_to_net_indices]  # [total_pins]
+
+        # randomly select: original value or max_val - value
+        all_x_net = random_choice_x * pin_pos_x_original + (
+            1 - random_choice_x) * (x_max_val - pin_pos_x_original
+                                    )  # [total_pins]
+        all_y_net = random_choice_y * pin_pos_y_original + (
+            1 - random_choice_y) * (y_max_val - pin_pos_y_original
+                                    )  # [total_pins]
 
         # compute weighted values for top layer: z_node * x_pin and z_node * y_pin
         weighted_x_top = all_z_net * all_x_net  # [total_pins]
@@ -376,8 +298,6 @@ class LSEPartitioner(nn.Module):
 
         # compute weighted values for bottom layer: (1 - z_node) * x_pin and (1 - z_node) * y_pin
         z_bottom = 1.0 - all_z_net  # [total_pins]
-        x_max_val = self.pin_pos_x.max()
-        y_max_val = self.pin_pos_y.max()
         all_x_net_bottom = x_max_val - all_x_net  # [total_pins]
         all_y_net_bottom = y_max_val - all_y_net  # [total_pins]
         weighted_x_bottom = z_bottom * all_x_net_bottom  # [total_pins]
@@ -762,13 +682,11 @@ def main():
     flat_net2pin_start_map = torch.load(
         "case2_hidden_flat_net2pin_start_map.pt")
     pin2node_map = torch.load("case2_hidden_pin2node_map.pt")
-    # breakpoint()
 
     node_x = node_pos[:num_cells]
     node_y = node_pos[node_pos.numel() // 2:node_pos.numel() // 2 + num_cells]
     pin_pos_x = pin_pos[:pin2node_map.numel()]
     pin_pos_y = pin_pos[pin2node_map.numel():]
-    # breakpoint()  # 已注释掉，避免程序暂停
 
     # verify data shape
     num_pins = pin2node_map.numel()
@@ -809,7 +727,7 @@ def main():
     # configure cutsize loss
     use_cutsize_loss = True
     lambda_cut_start = 1.0
-    lambda_cut_end = 1.0
+    lambda_cut_end = 100.0
     selected_nets_for_cutsize = None  # None means apply cutsize constraint to all nets
     cutsize_net_weights = None  # None means use self.net_weights corresponding to the selected nets
     # can specify specific network subset, e.g.:
