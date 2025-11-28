@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-11-14 16:03:37
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-11-24 02:06:12
+LastEditTime: 2025-11-29 03:15:39
 FilePath: /D2D-placer/placer/tools/differentiable_partitioner/partitioner.py
 Description: Differentiable 3D Partitioner based on LogSumExp soft bounding box
 '''
@@ -73,11 +73,6 @@ class LSEPartitioner(nn.Module):
             self.register_buffer('net_weights', torch.ones(self.num_nets))
         else:
             self.register_buffer('net_weights', net_weights.detach().clone())
-
-        self.random_choice_x = torch.randint(
-            0, 2, (self.num_nets, ), device=self.pin_pos_x.device).float()
-        self.random_choice_y = torch.randint(
-            0, 2, (self.num_nets, ), device=self.pin_pos_y.device).float()
 
     def get_z(self):
         """
@@ -271,37 +266,23 @@ class LSEPartitioner(nn.Module):
 
         # get position of each pin with random selection
         # randomly choose between original value or max_val - value for each pin
-        pin_pos_x_original = self.pin_pos_x[all_pin_indices]  # [total_pins]
-        pin_pos_y_original = self.pin_pos_y[all_pin_indices]  # [total_pins]
-
-        # 为每个 pin 分配其所属 net 的索引，使用 repeat_interleave 优雅地处理
-        pin_to_net_indices = torch.repeat_interleave(
-            valid_net_indices, valid_pin_counts)  # [total_pins]
-
-        # 获取每个 pin 对应的 net 的 random choice 系数
-        random_choice_x = self.random_choice_x[
-            pin_to_net_indices]  # [total_pins]
-        random_choice_y = self.random_choice_y[
-            pin_to_net_indices]  # [total_pins]
-
-        # randomly select: original value or max_val - value
-        all_x_net = random_choice_x * pin_pos_x_original + (
-            1 - random_choice_x) * (x_max_val - pin_pos_x_original
-                                    )  # [total_pins]
-        all_y_net = random_choice_y * pin_pos_y_original + (
-            1 - random_choice_y) * (y_max_val - pin_pos_y_original
-                                    )  # [total_pins]
+        all_x_net = self.pin_pos_x[all_pin_indices]  # [total_pins]
+        all_y_net = self.pin_pos_y[all_pin_indices]  # [total_pins]
+        all_x_net_rev = x_max_val - all_x_net
+        all_y_net_rev = y_max_val - all_y_net
 
         # compute weighted values for top layer: z_node * x_pin and z_node * y_pin
-        weighted_x_top = all_z_net * all_x_net  # [total_pins]
-        weighted_y_top = all_z_net * all_y_net  # [total_pins]
+        weighted_x_top_max = all_z_net * all_x_net  # [total_pins]
+        weighted_y_top_max = all_z_net * all_y_net  # [total_pins]
+        weighted_x_top_min = all_z_net * all_x_net_rev  # [total_pins]
+        weighted_y_top_min = all_z_net * all_y_net_rev  # [total_pins]
 
         # compute weighted values for bottom layer: (1 - z_node) * x_pin and (1 - z_node) * y_pin
         z_bottom = 1.0 - all_z_net  # [total_pins]
-        all_x_net_bottom = x_max_val - all_x_net  # [total_pins]
-        all_y_net_bottom = y_max_val - all_y_net  # [total_pins]
-        weighted_x_bottom = z_bottom * all_x_net_bottom  # [total_pins]
-        weighted_y_bottom = z_bottom * all_y_net_bottom  # [total_pins]
+        weighted_x_bottom_max = z_bottom * all_x_net_rev  # [total_pins]
+        weighted_y_bottom_max = z_bottom * all_y_net_rev  # [total_pins]
+        weighted_x_bottom_min = z_bottom * all_x_net  # [total_pins]
+        weighted_y_bottom_min = z_bottom * all_x_net  # [total_pins]
 
         # vectorized calculation of HPWL for each net
         hpwl_top_per_net = torch.zeros(num_valid_nets,
@@ -316,25 +297,46 @@ class LSEPartitioner(nn.Module):
 
             # top layer
             if layer in ['top', 'both']:
-                wx_top = weighted_x_top[pin_offset:pin_offset + num_pins]
-                wy_top = weighted_y_top[pin_offset:pin_offset + num_pins]
-                x_max_top = self.lse_max(wx_top)
-                x_min_top = self.lse_min(wx_top)
-                y_max_top = self.lse_max(wy_top)
-                y_min_top = self.lse_min(wy_top)
-                hpwl_top_per_net[i] = (x_max_top - x_min_top) + (y_max_top -
-                                                                 y_min_top)
+                wx_top_max = weighted_x_top_max[pin_offset:pin_offset +
+                                                num_pins]
+                wy_top_max = weighted_y_top_max[pin_offset:pin_offset +
+                                                num_pins]
+                x_top_max = self.lse_max(wx_top_max)
+                y_top_max = self.lse_max(wy_top_max)
+
+                wx_top_min = weighted_x_top_min[pin_offset:pin_offset +
+                                                num_pins]
+                wy_top_min = weighted_y_top_min[pin_offset:pin_offset +
+                                                num_pins]
+                x_top_min = self.lse_max(wx_top_min)
+                y_top_min = self.lse_max(wy_top_min)
+
+                hpwl_top_per_net[
+                    i] = x_top_max + y_top_max + x_top_min + y_top_min - max(
+                        wx_top_max.max(), wx_top_min.max()) - max(
+                            wy_top_max.max(), wy_top_min.max())
 
             # bottom layer
             if layer in ['bottom', 'both']:
-                wx_bottom = weighted_x_bottom[pin_offset:pin_offset + num_pins]
-                wy_bottom = weighted_y_bottom[pin_offset:pin_offset + num_pins]
-                x_max_bottom = self.lse_max(wx_bottom)
-                x_min_bottom = self.lse_min(wx_bottom)
-                y_max_bottom = self.lse_max(wy_bottom)
-                y_min_bottom = self.lse_min(wy_bottom)
-                hpwl_bottom_per_net[i] = (x_max_bottom - x_min_bottom) + (
-                    y_max_bottom - y_min_bottom)
+                wx_bottom_max = weighted_x_bottom_max[pin_offset:pin_offset +
+                                                      num_pins]
+                wy_bottom_max = weighted_y_bottom_max[pin_offset:pin_offset +
+                                                      num_pins]
+                x_bottom_max = self.lse_max(wx_bottom_max)
+                y_bottom_max = self.lse_max(wy_bottom_max)
+
+                wx_bottom_min = weighted_x_bottom_min[pin_offset:pin_offset +
+                                                      num_pins]
+                wy_bottom_min = weighted_y_bottom_min[pin_offset:pin_offset +
+                                                      num_pins]
+
+                x_bottom_min = self.lse_max(wx_bottom_min)
+                y_bottom_min = self.lse_max(wy_bottom_min)
+
+                hpwl_bottom_per_net[
+                    i] = x_bottom_max + y_bottom_max + x_bottom_min + y_bottom_min - max(
+                        wx_bottom_max.max(), wx_bottom_min.max()) - max(
+                            wy_bottom_max.max(), wy_bottom_min.max())
 
             pin_offset += num_pins
 

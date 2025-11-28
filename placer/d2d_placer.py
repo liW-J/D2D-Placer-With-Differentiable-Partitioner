@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-07-19 17:57:28
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-10-18 20:35:12
+LastEditTime: 2025-11-24 16:42:52
 FilePath: /D2D-placer/placer/d2d_placer.py
 Description: 
 '''
@@ -166,6 +166,23 @@ class D2Dplacer:
         self.op_wrapper.d2d_op_collections.pos_flattened_op(
             self.tier, self.dreamplace.dp_2d.pos,
             [self.dreamplace.dp_tier[i].pos for i in range(self.num_tiers)])
+
+        return self.hpwl_d2d(logger)
+
+    def die_terminal_co_place(self,
+                              global_place_flag,
+                              legalize_flag,
+                              detailed_place_flag,
+                              random_center_init_flag,
+                              ntuplace_flag,
+                              logger=logging):
+        """
+        三层共同优化：同时优化 top die 和 bottom die
+        HPWL_D2D = top_hpwl + bottom_hpwl（terminal 已在网表中）
+        每层有独立的 density 约束
+        
+        参考 DREAMPlace NonLinearPlace 的多阶段优化结构
+        """
 
         return self.hpwl_d2d(logger)
 
@@ -333,7 +350,6 @@ if __name__ == "__main__":
     d2d_placer.flatten_2d_place()
 
     d2d_placer.partition(d2d_logger)
-
     d2d_placer.die_by_die_place(global_place_flag=True,
                                 legalize_flag=False,
                                 detailed_place_flag=False,
