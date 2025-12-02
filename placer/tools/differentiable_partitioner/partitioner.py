@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-11-14 16:03:37
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-11-29 03:15:39
+LastEditTime: 2025-12-02 21:17:36
 FilePath: /D2D-placer/placer/tools/differentiable_partitioner/partitioner.py
 Description: Differentiable 3D Partitioner based on LogSumExp soft bounding box
 '''
@@ -260,16 +260,14 @@ class LSEPartitioner(nn.Module):
         all_node_indices = self.pin2node_map[all_pin_indices]  # [total_pins]
         all_z_net = z[all_node_indices]  # [total_pins]
 
-        # compute max values for random selection
-        x_max_val = self.pin_pos_x.max()
-        y_max_val = self.pin_pos_y.max()
-
         # get position of each pin with random selection
         # randomly choose between original value or max_val - value for each pin
         all_x_net = self.pin_pos_x[all_pin_indices]  # [total_pins]
         all_y_net = self.pin_pos_y[all_pin_indices]  # [total_pins]
-        all_x_net_rev = x_max_val - all_x_net
-        all_y_net_rev = y_max_val - all_y_net
+        all_x_net = all_x_net - all_x_net.min()
+        all_y_net = all_y_net - all_y_net.min()
+        all_x_net_rev = all_x_net.max() - all_x_net
+        all_y_net_rev = all_y_net.max() - all_y_net
 
         # compute weighted values for top layer: z_node * x_pin and z_node * y_pin
         weighted_x_top_max = all_z_net * all_x_net  # [total_pins]
@@ -282,7 +280,7 @@ class LSEPartitioner(nn.Module):
         weighted_x_bottom_max = z_bottom * all_x_net_rev  # [total_pins]
         weighted_y_bottom_max = z_bottom * all_y_net_rev  # [total_pins]
         weighted_x_bottom_min = z_bottom * all_x_net  # [total_pins]
-        weighted_y_bottom_min = z_bottom * all_x_net  # [total_pins]
+        weighted_y_bottom_min = z_bottom * all_y_net  # [total_pins]
 
         # vectorized calculation of HPWL for each net
         hpwl_top_per_net = torch.zeros(num_valid_nets,
