@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-11-14 16:03:37
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-12-08 22:56:30
+LastEditTime: 2025-12-03 03:20:55
 FilePath: /D2D-placer/placer/tools/differentiable_partitioner/partitioner.py
 Description: Differentiable 3D Partitioner based on LogSumExp soft bounding box
 '''
@@ -33,8 +33,7 @@ class LSEPartitioner(nn.Module):
                  pin_pos_x,
                  pin_pos_y,
                  alpha=1.0,
-                 net_weights=None,
-                 gumbel_tau=0.1):
+                 net_weights=None):
         """
         initialize LSE partitioner
         
@@ -47,8 +46,6 @@ class LSEPartitioner(nn.Module):
             pin_pos_y: y coordinates of pins, shape [num_pins] tensor
             alpha: LSE smoothing parameter, larger means harder to be 0 or 1
             net_weights: optional net weights, shape [num_nets] tensor
-            gumbel_tau: Gumbel Softmax temperature parameter, controlling the smoothness of the softmax (default 0.1)
-                        smaller tau means more discrete distribution; larger tau means more smooth distribution
         """
         super(LSEPartitioner, self).__init__()
 
@@ -63,18 +60,13 @@ class LSEPartitioner(nn.Module):
         self.register_buffer('pin2node_map', pin2node_map.detach().clone())
         self.register_buffer('pin_pos_x', pin_pos_x.detach().clone())
         self.register_buffer('pin_pos_y', pin_pos_y.detach().clone())
+
         # trainable pre-activation variable t_i (one for each cell)
         # use small random initialization to avoid all z being 0.5 (symmetric point)
         self.t = nn.Parameter(torch.randn(num_cells) * 0.1)
 
         # LSE smoothing parameter
         self.alpha = alpha
-
-        # Gumbel Softmax temperature parameter
-        self.gumbel_tau = gumbel_tau
-
-        # Current iteration counter (used to switch between sigmoid and gumbel_softmax)
-        self.current_iteration = 0
 
         # net weights (if not provided, default to all 1)
         if net_weights is None:
@@ -84,52 +76,12 @@ class LSEPartitioner(nn.Module):
 
     def get_z(self):
         """
-        map pre-activation variable t to soft assignment z
+        map pre-activation variable t to soft assignment z = sigmoid(t)
+        
         Returns:
             z: shape [num_cells] tensor, representing the probability of each cell being assigned to the top layer
         """
-        # use sigmoid when iteration < 200; else use gumbel_softmax_z
-        # sigmoid when iteration < 200; else gumbel_softmax_z
-        if self.current_iteration < 200:
-            return torch.sigmoid(self.t)
-        else:
-            return self.gumbel_softmax_z(self.t, tau=self.gumbel_tau)
-
-    def gumbel_softmax_z(self, pi_logits, tau=0.1):
-        """
-        use Gumbel Softmax to convert logits to soft assignment probabilities   
-        Gumbel Softmax is a differentiable sampling method for discrete variables.
-
-        Args:
-            pi_logits: shape [num_cells] tensor, logit values for each cell
-            tau: temperature parameter, controlling the smoothness of the softmax
-                 smaller tau means more discrete distribution; larger tau means more smooth distribution
-        
-        Returns:
-            z: shape [num_cells] tensor, probability of each cell being assigned to the top layer
-        """
-        # convert single logit t to two logits: [t, 0]
-        # the first logit corresponds to top layer, the second logit corresponds to bottom layer
-        # use [t, 0] instead of [t, -t] to keep the semantic consistent with the original sigmoid
-        # sigmoid(t) = exp(t) / (exp(t) + exp(0)) = exp(t) / (exp(t) + 1)
-        logits = torch.stack(
-            [pi_logits, torch.zeros_like(pi_logits)], dim=-1)  # [num_cells, 2]
-
-        # generate Gumbel noise: G = -log(-log(U)), where U ~ Uniform(0,1)
-        # use numerically stable implementation
-        uniform = torch.rand_like(logits)
-        # avoid log(0) and log(1), use clamp
-        uniform = torch.clamp(uniform, min=1e-8, max=1.0 - 1e-8)
-        gumbel_noise = -torch.log(-torch.log(uniform))
-
-        # add Gumbel noise and divide by temperature parameter
-        gumbel_logits = (logits + gumbel_noise) / tau  # [num_cells, 2]
-        softmax_probs = torch.softmax(gumbel_logits, dim=-1)  # [num_cells, 2]
-
-        # return the first element (probability of top layer)
-        z = softmax_probs[..., 0]  # [num_cells]
-
-        return z
+        return torch.sigmoid(self.t)
 
     def lse_max(self, weighted_vals):
         """
@@ -178,29 +130,6 @@ class LSEPartitioner(nn.Module):
         # return -(1/α) * log_sum_exp(-α * weighted_vals)
         return -lse / self.alpha
 
-    def weighted_lse_max(self, values, weights, eps=1e-12):
-
-        # use torch.logsumexp to ensure numerical stability
-        # logsumexp(α * x) = log(Σ exp(α * x))
-        # then divide by α to get soft maximum
-        if self.alpha <= 0:
-            raise ValueError("alpha must be positive")
-
-        weighted_exp = weights * torch.exp(self.alpha * values)
-        return torch.log(torch.clamp(weighted_exp.sum(), min=eps)) / self.alpha
-
-    def weighted_lse_min(self, values, weights, eps=1e-12):
-
-        # use torch.logsumexp to ensure numerical stability
-        # logsumexp(α * x) = log(Σ exp(α * x))
-        # then divide by α to get soft maximum
-        if self.alpha <= 0:
-            raise ValueError("alpha must be positive")
-
-        weighted_exp = weights * torch.exp(-self.alpha * values)
-        return -torch.log(torch.clamp(weighted_exp.sum(),
-                                      min=eps)) / self.alpha
-
     def compute_cutsize(self, net_idx):
         """
         calculate differentiable cutsize of the specified net (based on Snake-3D formula)
@@ -219,7 +148,7 @@ class LSEPartitioner(nn.Module):
         Returns:
             differentiable cutsize of the specified net, scalar tensor
         """
-        # get all pin indices of the specified net
+        # 获取该网的所有pin索引
         start_idx = self.flat_net2pin_start_map[net_idx]
         end_idx = self.flat_net2pin_start_map[net_idx + 1]
         pin_indices = self.flat_net2pin_map[start_idx:end_idx]
@@ -335,10 +264,8 @@ class LSEPartitioner(nn.Module):
         # randomly choose between original value or max_val - value for each pin
         all_x_net = self.pin_pos_x[all_pin_indices]  # [total_pins]
         all_y_net = self.pin_pos_y[all_pin_indices]  # [total_pins]
-        all_x_net = all_x_net - all_x_net.min() + 1e-2
-        all_y_net = all_y_net - all_y_net.min() + 1e-2
-        all_x_net_rev = all_x_net.max() - all_x_net + 1e-2
-        all_y_net_rev = all_y_net.max() - all_y_net + 1e-2
+        all_x_net_rev = all_x_net.max() - all_x_net
+        all_y_net_rev = all_y_net.max() - all_y_net
 
         # compute weighted values for top layer: z_node * x_pin and z_node * y_pin
         weighted_x_top_max = all_z_net * all_x_net  # [total_pins]
@@ -885,9 +812,6 @@ def main():
 
     # training loop
     for iteration in range(num_iterations):
-        # update current iteration (used to switch between sigmoid and gumbel_softmax)
-        model.current_iteration = iteration
-
         # update alpha (gradually increase, making soft assignment harder)
         model.alpha = alpha_schedule[iteration]
         entropy_weight = entropy_schedule[iteration]
