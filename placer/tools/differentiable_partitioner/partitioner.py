@@ -2,9 +2,9 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-11-14 16:03:37
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-11-17 22:54:10
+LastEditTime: 2025-11-15 20:43:29
 FilePath: /D2D-placer/placer/tools/differentiable_partitioner/partitioner.py
-Description: Differentiable 3D Partitioner based on LogSumExp soft bounding box
+Description: 基于LSE软边界框的可微分3D分割器
 '''
 import torch
 import torch.nn as nn
@@ -16,12 +16,19 @@ import os
 
 class LSEPartitioner(nn.Module):
     """
-    Differentiable 3D Partitioner based on LogSumExp soft bounding box
+    基于LogSumExp软边界框的可微分3D分割器
     
-    Features:
-    1. Mapping trainable pre-activation variable t_i to soft assignment z_i = sigmoid(t_i)
-    2. Using LSE soft bounding box to compute HPWL of top and bottom layers
-    3. Computing gradient of total HPWL with respect to t, supporting end-to-end training
+    该模块实现：
+    1. 将可训练的预激活变量t_i映射到软分配z_i = sigmoid(t_i)
+    2. 使用LSE软边界框计算顶层和底层的HPWL
+    3. 计算总HPWL对t的梯度，支持端到端训练
+    
+    支持真实的电路结构：
+    - 每个net包含多个pins
+    - 每个pin属于一个node（cell）
+    - 每个node可能有多个pins
+    - 使用pin的位置计算HPWL
+    - 通过pin2node_map将梯度映射到node级别
     """
 
     def __init__(self,
@@ -34,24 +41,24 @@ class LSEPartitioner(nn.Module):
                  alpha=1.0,
                  net_weights=None):
         """
-        initialize LSE partitioner
+        初始化LSE分割器
         
         Args:
-            num_cells: number of cells (nodes)
-            flat_net2pin_map: flat net to pin mapping, shape [num_pins] tensor
-            flat_net2pin_start_map: start index of each net in flat_net2pin_map, shape [num_nets+1] tensor
-            pin2node_map: pin to node mapping, shape [num_pins] tensor
-            pin_pos_x: x coordinates of pins, shape [num_pins] tensor
-            pin_pos_y: y coordinates of pins, shape [num_pins] tensor
-            alpha: LSE smoothing parameter, larger means harder to be 0 or 1
-            net_weights: optional net weights, shape [num_nets] tensor
+            num_cells: 单元（node）数量
+            flat_net2pin_map: 扁平化的net到pin映射，形状为[num_pins]的tensor
+            flat_net2pin_start_map: 每个net在flat_net2pin_map中的起始位置，形状为[num_nets+1]的tensor
+            pin2node_map: pin到node的映射，形状为[num_pins]的tensor
+            pin_pos_x: pin的x坐标，形状为[num_pins]的tensor
+            pin_pos_y: pin的y坐标，形状为[num_pins]的tensor
+            alpha: LSE平滑参数，越大越接近硬max/min
+            net_weights: 可选的网权重，形状为[num_nets]的tensor
         """
         super(LSEPartitioner, self).__init__()
 
         self.num_cells = num_cells
         self.num_nets = flat_net2pin_start_map.numel() - 1
 
-        # register fixed data structures (no gradient)
+        # 注册固定的数据结构（不需要梯度）
         self.register_buffer('flat_net2pin_map',
                              flat_net2pin_map.detach().clone())
         self.register_buffer('flat_net2pin_start_map',
@@ -60,14 +67,14 @@ class LSEPartitioner(nn.Module):
         self.register_buffer('pin_pos_x', pin_pos_x.detach().clone())
         self.register_buffer('pin_pos_y', pin_pos_y.detach().clone())
 
-        # trainable pre-activation variable t_i (one for each cell)
-        # use small random initialization to avoid all z being 0.5 (symmetric point)
+        # 可训练的预激活变量t_i（每个cell一个）
+        # 使用小的随机初始化，避免所有z都等于0.5（对称点）
         self.t = nn.Parameter(torch.randn(num_cells) * 0.01)
 
-        # LSE smoothing parameter
+        # LSE平滑参数
         self.alpha = alpha
 
-        # net weights (if not provided, default to all 1)
+        # 网权重（如果未提供，默认为全1）
         if net_weights is None:
             self.register_buffer('net_weights', torch.ones(self.num_nets))
         else:
@@ -75,77 +82,81 @@ class LSEPartitioner(nn.Module):
 
     def get_z(self):
         """
-        map pre-activation variable t to soft assignment z = sigmoid(t)
+        将预激活变量t映射到软分配z = sigmoid(t)
         
         Returns:
-            z: shape [num_cells] tensor, representing the probability of each cell being assigned to the top layer
+            z: 形状为[num_cells]的tensor，表示每个cell分配到顶层的概率
         """
         return torch.sigmoid(self.t)
 
     def lse_max(self, weighted_vals):
         """
-        numerically stable LSE maximum calculation
+        数值稳定的LSE最大值计算
         
-        formula: max(x) ≈ (1/α) * log_sum_exp(α * x)
+        公式: max(x) ≈ (1/α) * log_sum_exp(α * x)
         
-        numerically stable implementation: log_sum_exp(a_j) = m + log Σ_j exp(a_j - m)
-        where m = max_j a_j
+        数值稳定实现: log_sum_exp(a_j) = m + log Σ_j exp(a_j - m)
+        其中 m = max_j a_j
         
         Args:
-            weighted_vals: weighted values, shape [..., ...] tensor
+            weighted_vals: 加权值，形状为[...]的tensor
             
         Returns:
-            soft maximum, shape same as weighted_vals (except the aggregated dimension)
+            软最大值，形状与weighted_vals相同（除了被聚合的维度）
         """
-        # use torch.logsumexp to ensure numerical stability
+        # 使用torch.logsumexp确保数值稳定性
         # logsumexp(α * x) = log(Σ exp(α * x))
-        # then divide by α to get soft maximum
+        # 然后除以α得到软最大值
         if self.alpha <= 0:
             raise ValueError("alpha must be positive")
 
-        # calculate log_sum_exp(α * weighted_vals)
+        # 计算 log_sum_exp(α * weighted_vals)
         lse = torch.logsumexp(self.alpha * weighted_vals, dim=-1)
 
-        # return (1/α) * log_sum_exp(α * weighted_vals)
+        # 返回 (1/α) * log_sum_exp(α * weighted_vals)
         return lse / self.alpha
 
     def lse_min(self, weighted_vals):
         """
-        numerically stable LSE minimum calculation
-        formula: min(x) ≈ -(1/α) * log_sum_exp(-α * x)
+        数值稳定的LSE最小值计算
+        
+        公式: min(x) ≈ -(1/α) * log_sum_exp(-α * x)
         
         Args:
-            weighted_vals: weighted values, shape [..., ...] tensor
+            weighted_vals: 加权值，形状为[...]的tensor
             
         Returns:
-            soft minimum, shape same as weighted_vals (except the aggregated dimension)
+            软最小值
         """
         if self.alpha <= 0:
             raise ValueError("alpha must be positive")
 
-        # calculate log_sum_exp(-α * weighted_vals)
+        # 计算 log_sum_exp(-α * weighted_vals)
         lse = torch.logsumexp(-self.alpha * weighted_vals, dim=-1)
 
-        # return -(1/α) * log_sum_exp(-α * weighted_vals)
+        # 返回 -(1/α) * log_sum_exp(-α * weighted_vals)
         return -lse / self.alpha
 
     def compute_hpwl_top(self, net_idx):
         """
-        compute soft HPWL of the specified net on the top layer
-        using LSE soft bounding box:
+        计算指定网在顶层的软HPWL
+        
+        使用LSE软边界框：
         - x_max_top = (1/α) * log_sum_exp(α * z_node * x_pin)
         - x_min_top = -(1/α) * log_sum_exp(-α * z_node * x_pin)
         - y_max_top = (1/α) * log_sum_exp(α * z_node * y_pin)
         - y_min_top = -(1/α) * log_sum_exp(-α * z_node * y_pin)
-        - HPWL_top = (x_max_top - x_min_top) + (y_max_top - y_min_top)        
+        - HPWL_top = (x_max_top - x_min_top) + (y_max_top - y_min_top)
+        
+        注意：z是按node定义的，但位置是按pin定义的
         
         Args:
-            net_idx: index of the net
+            net_idx: 网的索引
             
         Returns:
-            soft HPWL of the specified net on the top layer
+            该网在顶层的软HPWL
         """
-        # obtain all pin indices of the specified net
+        # 获取该网的所有pin索引
         start_idx = self.flat_net2pin_start_map[net_idx]
         end_idx = self.flat_net2pin_start_map[net_idx + 1]
         pin_indices = self.flat_net2pin_map[start_idx:end_idx]
@@ -153,31 +164,30 @@ class LSEPartitioner(nn.Module):
         if pin_indices.numel() < 2:
             return torch.tensor(0.0, device=self.pin_pos_x.device)
 
-        # get soft assignment z (defined by node)
+        # 获取软分配z（按node定义）
         z = self.get_z()
 
-        # get node indices for each pin
-        node_indices = self.pin2node_map[
-            pin_indices]  # shape: [num_pins_in_net]
+        # 获取每个pin对应的node索引
+        node_indices = self.pin2node_map[pin_indices]  # 形状: [num_pins_in_net]
 
-        # get z value for each pin corresponding to the node
-        z_net = z[node_indices]  # shape: [num_pins_in_net]
+        # 获取每个pin对应的node的z值
+        z_net = z[node_indices]  # 形状: [num_pins_in_net]
 
-        # get position of each pin
-        x_net = self.pin_pos_x[pin_indices]  # shape: [num_pins_in_net]
-        y_net = self.pin_pos_y[pin_indices]  # shape: [num_pins_in_net]
+        # 获取每个pin的位置
+        x_net = self.pin_pos_x[pin_indices]  # 形状: [num_pins_in_net]
+        y_net = self.pin_pos_y[pin_indices]  # 形状: [num_pins_in_net]
 
-        # compute weighted values: z_node * x_pin and z_node * y_pin
-        weighted_x = z_net * x_net  # shape: [num_pins_in_net]
-        weighted_y = z_net * y_net  # shape: [num_pins_in_net]
+        # 计算加权值: z_node * x_pin 和 z_node * y_pin
+        weighted_x = z_net * x_net  # 形状: [num_pins_in_net]
+        weighted_y = z_net * y_net  # 形状: [num_pins_in_net]
 
-        # use LSE to compute soft bounding box
+        # 使用LSE计算软边界框
         x_max_top = self.lse_max(weighted_x)
         x_min_top = self.lse_min(weighted_x)
         y_max_top = self.lse_max(weighted_y)
         y_min_top = self.lse_min(weighted_y)
 
-        # caculate HPWL
+        # 计算HPWL
         hpwl_x = x_max_top - x_min_top
         hpwl_y = y_max_top - y_min_top
         hpwl_top = hpwl_x + hpwl_y
@@ -186,16 +196,17 @@ class LSEPartitioner(nn.Module):
 
     def compute_hpwl_bottom(self, net_idx):
         """
-        calculate soft HPWL of the specified net on the bottom layer
-        using the same LSE formula as the top layer, but using (1 - z_node) instead of z_node
+        计算指定网在底层的软HPWL
+        
+        使用与顶层相同的LSE公式，但使用(1 - z_node)代替z_node
         
         Args:
-            net_idx: index of the net
+            net_idx: 网的索引
             
         Returns:
-            soft HPWL of the specified net on the bottom layer
+            该网在底层的软HPWL
         """
-        # obtain all pin indices of the specified net
+        # 获取该网的所有pin索引
         start_idx = self.flat_net2pin_start_map[net_idx]
         end_idx = self.flat_net2pin_start_map[net_idx + 1]
         pin_indices = self.flat_net2pin_map[start_idx:end_idx]
@@ -203,31 +214,30 @@ class LSEPartitioner(nn.Module):
         if pin_indices.numel() < 2:
             return torch.tensor(0.0, device=self.pin_pos_x.device)
 
-        # get soft assignment z (defined by node)
+        # 获取软分配z（按node定义）
         z = self.get_z()
 
-        # get node indices for each pin
-        node_indices = self.pin2node_map[
-            pin_indices]  # shape: [num_pins_in_net]
+        # 获取每个pin对应的node索引
+        node_indices = self.pin2node_map[pin_indices]  # 形状: [num_pins_in_net]
 
-        # use (1 - z_node) to represent bottom assignment
-        z_bottom = 1.0 - z[node_indices]  # shape: [num_pins_in_net]
+        # 使用(1 - z_node)表示底层分配
+        z_bottom = 1.0 - z[node_indices]  # 形状: [num_pins_in_net]
 
-        # get position of each pin
-        x_net = self.pin_pos_x[pin_indices]  # shape: [num_pins_in_net]
-        y_net = self.pin_pos_y[pin_indices]  # shape: [num_pins_in_net]
+        # 获取每个pin的位置
+        x_net = self.pin_pos_x[pin_indices]  # 形状: [num_pins_in_net]
+        y_net = self.pin_pos_y[pin_indices]  # 形状: [num_pins_in_net]
 
-        # compute weighted values: (1 - z_node) * x_pin and (1 - z_node) * y_pin
+        # 计算加权值: (1 - z_node) * x_pin 和 (1 - z_node) * y_pin
         weighted_x = z_bottom * x_net
         weighted_y = z_bottom * y_net
 
-        # use LSE to compute soft bounding box
+        # 使用LSE计算软边界框
         x_max_bottom = self.lse_max(weighted_x)
         x_min_bottom = self.lse_min(weighted_x)
         y_max_bottom = self.lse_max(weighted_y)
         y_min_bottom = self.lse_min(weighted_y)
 
-        # caculate HPWL
+        # 计算HPWL
         hpwl_x = x_max_bottom - x_min_bottom
         hpwl_y = y_max_bottom - y_min_bottom
         hpwl_bottom = hpwl_x + hpwl_y
@@ -236,32 +246,33 @@ class LSEPartitioner(nn.Module):
 
     def forward(self, entropy_weight=0.0):
         """
-        calculate total HPWL loss
+        前向传播：计算总HPWL损失
+        
         L_WL = Σ_e (HPWL_top_e + HPWL_bottom_e) * weight_e
         
         Args:
-            entropy_weight: entropy regularization weight, used to encourage z near 0 or 1 (default 0.0, no regularization)
-                            suggested value: 0.01-0.1, gradually increase during training
+            entropy_weight: 熵正则化权重，用于鼓励z接近0或1（默认0.0，不添加正则化）
+                           建议值：0.01-0.1，随着训练逐渐增加
         
         Returns:
-            total_hpwl: total HPWL loss, scalar tensor
+            total_hpwl: 总HPWL损失，标量tensor
         """
         total_hpwl = torch.tensor(0.0, device=self.pin_pos_x.device)
 
-        # iterate over all nets, accumulate HPWL
+        # 遍历所有网，累加HPWL
         for net_idx in range(self.num_nets):
             hpwl_top = self.compute_hpwl_top(net_idx)
             hpwl_bottom = self.compute_hpwl_bottom(net_idx)
 
-            # weighted accumulate
+            # 加权累加
             total_hpwl += self.net_weights[net_idx] * (hpwl_top + hpwl_bottom)
 
-        # add entropy regularization term, encourage z near 0 or 1
-        # entropy H(z) = -z*log(z) - (1-z)*log(1-z)
-        # when z is near 0 or 1, entropy is minimized; when z=0.5, entropy is maximized
+        # 添加熵正则化项，鼓励z接近0或1
+        # 熵 H(z) = -z*log(z) - (1-z)*log(1-z)
+        # 当z接近0或1时，熵最小；当z=0.5时，熵最大
         if entropy_weight > 0:
             z = self.get_z()
-            # numerically stable: avoid log(0)
+            # 数值稳定：避免log(0)
             eps = 1e-8
             entropy = -(z * torch.log(z + eps) +
                         (1 - z) * torch.log(1 - z + eps))
@@ -272,21 +283,23 @@ class LSEPartitioner(nn.Module):
 
     def get_binary_assignment(self, threshold=0.5):
         """
-        get binary assignment
-        threshold for binary assignment, default 0.5
+        将软分配z转换为硬二进制分配
+        
+        Args:
+            threshold: 阈值，默认0.5
             
         Returns:
-            binary_z: binary assignment, 1 for top, 0 for bottom
+            binary_z: 二进制分配，1表示顶层，0表示底层
         """
         z = self.get_z()
         return (z > threshold).to(torch.int32)
 
     def get_assignment_stats(self):
         """
-        get assignment statistics for debugging
+        获取分配统计信息，用于调试
         
         Returns:
-            dict: contains z statistics
+            dict: 包含z的统计信息
         """
         z = self.get_z()
         return {
@@ -299,22 +312,55 @@ class LSEPartitioner(nn.Module):
         }
 
 
+def create_dummy_data(num_cells=100, num_nets=50, seed=42):
+    """
+    创建用于测试的虚拟数据
+    
+    Args:
+        num_cells: 单元数量
+        num_nets: 网数量
+        seed: 随机种子
+        
+    Returns:
+        x_coords: x坐标tensor
+        y_coords: y坐标tensor
+        netlist: 网表
+    """
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+
+    # 生成随机2D坐标（假设在[0, 1000]范围内）
+    x_coords = torch.rand(num_cells) * 1000.0
+    y_coords = torch.rand(num_cells) * 1000.0
+
+    # 生成随机网表
+    # 每个网包含2-10个随机选择的pin
+    netlist = []
+    for _ in range(num_nets):
+        num_pins = np.random.randint(2, 11)
+        pins = np.random.choice(num_cells, size=num_pins,
+                                replace=False).tolist()
+        netlist.append(pins)
+
+    return x_coords, y_coords, netlist
+
+
 def visualize_z_single(x_coords,
                        y_coords,
                        z_values,
                        iteration,
                        save_path=None):
     """
-    visualize z values over xy for a single iteration
+    可视化单个迭代的z值相对于xy的分布
     
     Args:
-        x_coords: x coordinates, shape [num_cells] tensor or numpy array
-        y_coords: y coordinates, shape [num_cells] tensor or numpy array
-        z_values: z values, shape [num_cells] tensor or numpy array
-        iteration: current iteration number
-        save_path: save path (optional)
+        x_coords: x坐标，形状为[num_cells]的tensor或numpy数组
+        y_coords: y坐标，形状为[num_cells]的tensor或numpy数组
+        z_values: z值，形状为[num_cells]的tensor或numpy数组
+        iteration: 当前迭代次数
+        save_path: 保存路径（可选）
     """
-    # convert to numpy array
+    # 转换为numpy数组
     if isinstance(x_coords, torch.Tensor):
         x_coords = x_coords.detach().cpu().numpy()
     if isinstance(y_coords, torch.Tensor):
@@ -322,14 +368,14 @@ def visualize_z_single(x_coords,
     if isinstance(z_values, torch.Tensor):
         z_values = z_values.detach().cpu().numpy()
 
-    # create single 3D plot
+    # 创建单个3D图
     fig = plt.figure(figsize=(10, 8))
     ax = fig.add_subplot(111, projection='3d')
 
-    # set colors based on z values (blue=bottom, red=top)
+    # 根据z值设置颜色（蓝色=底层，红色=顶层）
     colors = z_values
 
-    # plot 3D scatter plot
+    # 绘制3D散点图
     scatter = ax.scatter(x_coords,
                          y_coords,
                          z_values,
@@ -340,6 +386,7 @@ def visualize_z_single(x_coords,
                          edgecolors='k',
                          linewidths=0.3)
 
+    # 使用英文标签以避免字体问题，同时保持清晰
     ax.set_xlabel('X Coordinate', fontsize=12)
     ax.set_ylabel('Y Coordinate', fontsize=12)
     ax.set_zlabel('Z Value (Soft Assignment)', fontsize=12)
@@ -347,19 +394,19 @@ def visualize_z_single(x_coords,
                  fontsize=14,
                  fontweight='bold')
 
-    # set z axis range
+    # 设置z轴范围
     ax.set_zlim(0, 1)
 
-    # add color bar
+    # 添加颜色条
     plt.colorbar(scatter, ax=ax, shrink=0.8, label='Z Value')
 
     plt.tight_layout()
 
     if save_path:
         plt.savefig(save_path, dpi=150, bbox_inches='tight')
-        print(f"visualization saved to: {save_path}")
+        print(f"   可视化已保存到: {save_path}")
 
-    plt.close()
+    plt.close()  # 关闭图形以释放内存，不显示窗口
 
 
 def main():
