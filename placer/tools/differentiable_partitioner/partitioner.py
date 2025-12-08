@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-11-14 16:03:37
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-11-23 18:28:32
+LastEditTime: 2025-11-23 02:44:15
 FilePath: /D2D-placer/placer/tools/differentiable_partitioner/partitioner.py
 Description: Differentiable 3D Partitioner based on LogSumExp soft bounding box
 '''
@@ -309,131 +309,6 @@ class LSEPartitioner(nn.Module):
 
         return cutsize
 
-    def compute_hpwl_batch(self, net_indices, layer='both'):
-        """
-        batch calculation of HPWL for multiple nets (vectorized version)
-        
-        Args:
-            net_indices: network indices, tensor of shape [num_nets]
-            layer: 'top', 'bottom', or 'both' (default 'both')
-        
-        Returns:
-            if layer == 'both': tuple of (hpwl_top, hpwl_bottom), each shape [num_nets]
-            else: hpwl values, tensor of shape [num_nets]
-        """
-        if net_indices.numel() == 0:
-            empty = torch.tensor([], device=self.pin_pos_x.device)
-            if layer == 'both':
-                return empty, empty
-            return empty
-
-        num_nets = net_indices.numel()
-        z = self.get_z()
-
-        # get start and end indices for all nets
-        start_indices = self.flat_net2pin_start_map[net_indices]  # [num_nets]
-        end_indices = self.flat_net2pin_start_map[net_indices +
-                                                  1]  # [num_nets]
-
-        # calculate pin count for each net
-        pin_counts = end_indices - start_indices  # [num_nets]
-
-        # filter out nets with less than 2 pins (these nets have HPWL=0)
-        valid_mask = pin_counts >= 2  # [num_nets]
-
-        if not valid_mask.any():
-            zeros = torch.zeros(num_nets, device=self.pin_pos_x.device)
-            if layer == 'both':
-                return zeros, zeros
-            return zeros
-
-        # only process valid nets
-        valid_start_indices = start_indices[valid_mask]  # [num_valid_nets]
-        valid_end_indices = end_indices[valid_mask]  # [num_valid_nets]
-        valid_pin_counts = pin_counts[valid_mask]  # [num_valid_nets]
-        num_valid_nets = valid_pin_counts.numel()
-
-        # collect all valid net's pin indices
-        all_pin_indices = []
-        for i in range(num_valid_nets):
-            start_idx = valid_start_indices[i].item()
-            end_idx = valid_end_indices[i].item()
-            all_pin_indices.append(self.flat_net2pin_map[start_idx:end_idx])
-
-        all_pin_indices = torch.cat(all_pin_indices)  # [total_pins]
-
-        # get all pin corresponding node indices and z values
-        all_node_indices = self.pin2node_map[all_pin_indices]  # [total_pins]
-        all_z_net = z[all_node_indices]  # [total_pins]
-
-        # get position of each pin
-        all_x_net = self.pin_pos_x[all_pin_indices]  # [total_pins]
-        all_y_net = self.pin_pos_y[all_pin_indices]  # [total_pins]
-
-        # compute weighted values for top layer: z_node * x_pin and z_node * y_pin
-        weighted_x_top = all_z_net * all_x_net  # [total_pins]
-        weighted_y_top = all_z_net * all_y_net  # [total_pins]
-
-        # compute weighted values for bottom layer: (1 - z_node) * x_pin and (1 - z_node) * y_pin
-        z_bottom = 1.0 - all_z_net  # [total_pins]
-        x_max_val = self.pin_pos_x.max()
-        y_max_val = self.pin_pos_y.max()
-        all_x_net_bottom = x_max_val - all_x_net  # [total_pins]
-        all_y_net_bottom = y_max_val - all_y_net  # [total_pins]
-        weighted_x_bottom = z_bottom * all_x_net_bottom  # [total_pins]
-        weighted_y_bottom = z_bottom * all_y_net_bottom  # [total_pins]
-
-        # vectorized calculation of HPWL for each net
-        hpwl_top_per_net = torch.zeros(num_valid_nets,
-                                       device=self.pin_pos_x.device)
-        hpwl_bottom_per_net = torch.zeros(num_valid_nets,
-                                          device=self.pin_pos_x.device)
-
-        # calculate HPWL for each net
-        pin_offset = 0
-        for i in range(num_valid_nets):
-            num_pins = valid_pin_counts[i].item()
-
-            # top layer
-            if layer in ['top', 'both']:
-                wx_top = weighted_x_top[pin_offset:pin_offset + num_pins]
-                wy_top = weighted_y_top[pin_offset:pin_offset + num_pins]
-                x_max_top = self.lse_max(wx_top)
-                x_min_top = self.lse_min(wx_top)
-                y_max_top = self.lse_max(wy_top)
-                y_min_top = self.lse_min(wy_top)
-                hpwl_top_per_net[i] = (x_max_top - x_min_top) + (y_max_top -
-                                                                 y_min_top)
-
-            # bottom layer
-            if layer in ['bottom', 'both']:
-                wx_bottom = weighted_x_bottom[pin_offset:pin_offset + num_pins]
-                wy_bottom = weighted_y_bottom[pin_offset:pin_offset + num_pins]
-                x_max_bottom = self.lse_max(wx_bottom)
-                x_min_bottom = self.lse_min(wx_bottom)
-                y_max_bottom = self.lse_max(wy_bottom)
-                y_min_bottom = self.lse_min(wy_bottom)
-                hpwl_bottom_per_net[i] = (x_max_bottom - x_min_bottom) + (
-                    y_max_bottom - y_min_bottom)
-
-            pin_offset += num_pins
-
-        # create complete result arrays (including invalid nets)
-        if layer == 'both':
-            result_top = torch.zeros(num_nets, device=self.pin_pos_x.device)
-            result_bottom = torch.zeros(num_nets, device=self.pin_pos_x.device)
-            result_top[valid_mask] = hpwl_top_per_net
-            result_bottom[valid_mask] = hpwl_bottom_per_net
-            return result_top, result_bottom
-        elif layer == 'top':
-            result = torch.zeros(num_nets, device=self.pin_pos_x.device)
-            result[valid_mask] = hpwl_top_per_net
-            return result
-        else:  # layer == 'bottom'
-            result = torch.zeros(num_nets, device=self.pin_pos_x.device)
-            result[valid_mask] = hpwl_bottom_per_net
-            return result
-
     def compute_cutsize_batch(self, net_indices):
         """
         batch calculation of differentiable cutsize for multiple nets (vectorized version)
@@ -608,15 +483,15 @@ class LSEPartitioner(nn.Module):
             else:
                 return total_loss
         """
-        # batch calculation of HPWL for all nets (vectorized, much faster)
-        all_net_indices = torch.arange(self.num_nets,
-                                       device=self.pin_pos_x.device)
-        hpwl_top_all, hpwl_bottom_all = self.compute_hpwl_batch(
-            all_net_indices, layer='both')
+        total_hpwl = torch.tensor(0.0, device=self.pin_pos_x.device)
 
-        # weighted accumulate: Σ_e (HPWL_top_e + HPWL_bottom_e) * weight_e
-        total_hpwl = (self.net_weights *
-                      (hpwl_top_all + hpwl_bottom_all)).sum()
+        # iterate over all nets, accumulate HPWL
+        for net_idx in range(self.num_nets):
+            hpwl_top = self.compute_hpwl_top(net_idx)
+            hpwl_bottom = self.compute_hpwl_bottom(net_idx)
+
+            # weighted accumulate
+            total_hpwl += self.net_weights[net_idx] * (hpwl_top + hpwl_bottom)
 
         # add entropy regularization term, encourage z near 0 or 1
         # entropy H(z) = -z*log(z) - (1-z)*log(1-z)
