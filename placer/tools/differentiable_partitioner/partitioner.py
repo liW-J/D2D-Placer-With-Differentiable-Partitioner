@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-11-14 16:03:37
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-12-03 03:20:55
+LastEditTime: 2025-12-02 21:17:36
 FilePath: /D2D-placer/placer/tools/differentiable_partitioner/partitioner.py
 Description: Differentiable 3D Partitioner based on LogSumExp soft bounding box
 '''
@@ -264,6 +264,8 @@ class LSEPartitioner(nn.Module):
         # randomly choose between original value or max_val - value for each pin
         all_x_net = self.pin_pos_x[all_pin_indices]  # [total_pins]
         all_y_net = self.pin_pos_y[all_pin_indices]  # [total_pins]
+        all_x_net = all_x_net - all_x_net.min()
+        all_y_net = all_y_net - all_y_net.min()
         all_x_net_rev = all_x_net.max() - all_x_net
         all_y_net_rev = all_y_net.max() - all_y_net
 
