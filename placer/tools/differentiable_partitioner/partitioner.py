@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-11-14 16:03:37
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-12-08 22:56:30
+LastEditTime: 2026-01-09 15:05:24
 FilePath: /D2D-placer/placer/tools/differentiable_partitioner/partitioner.py
 Description: Differentiable 3D Partitioner based on LogSumExp soft bounding box
 '''
@@ -32,6 +32,10 @@ class LSEPartitioner(nn.Module):
                  pin2node_map,
                  pin_pos_x,
                  pin_pos_y,
+                 node_x,
+                 node_y,
+                 node_size_x,
+                 node_size_y,
                  alpha=1.0,
                  net_weights=None,
                  gumbel_tau=0.1):
@@ -47,7 +51,7 @@ class LSEPartitioner(nn.Module):
             pin_pos_y: y coordinates of pins, shape [num_pins] tensor
             alpha: LSE smoothing parameter, larger means harder to be 0 or 1
             net_weights: optional net weights, shape [num_nets] tensor
-            gumbel_tau: Gumbel Softmax temperature parameter, controlling the smoothness of the softmax (default 0.1)
+            gumbel_tau: Gumbel Softmax temperature parameter, controlling the smoothness of the softmax
                         smaller tau means more discrete distribution; larger tau means more smooth distribution
         """
         super(LSEPartitioner, self).__init__()
@@ -63,15 +67,35 @@ class LSEPartitioner(nn.Module):
         self.register_buffer('pin2node_map', pin2node_map.detach().clone())
         self.register_buffer('pin_pos_x', pin_pos_x.detach().clone())
         self.register_buffer('pin_pos_y', pin_pos_y.detach().clone())
+        self.register_buffer('node_x', node_x.detach().clone())
+        self.register_buffer('node_y', node_y.detach().clone())
+        self.register_buffer('node_size_x', node_size_x.detach().clone())
+        self.register_buffer('node_size_y', node_size_y.detach().clone())
+
+        self.x_range = node_x.max() - node_x.min()
+        self.y_range = node_y.max() - node_y.min()
+
         # trainable pre-activation variable t_i (one for each cell)
         # use small random initialization to avoid all z being 0.5 (symmetric point)
         self.t = nn.Parameter(torch.randn(num_cells) * 0.1)
+        # self.t = torch.load("case2-h-sota.pt").float().to(pin_pos_x.device)
+        # self.t[self.t > 0] = 1.0
+        # self.t[self.t <= 0] = -1.0
+        # self.t = nn.Parameter(self.t)
+
+        # initial_values = torch.tensor([10.0, -10.0, -10.0, -10.0],
+        #                               device=self.pin_pos_x.device)
+        # initial_values = torch.tensor(
+        #     [-10.0, 10.0, 10.0, 10.0, -10.0, 10.0, 10.0, 10.0],
+        #     device=self.pin_pos_x.device)
+        # self.t = nn.Parameter(initial_values)
 
         # LSE smoothing parameter
         self.alpha = alpha
 
         # Gumbel Softmax temperature parameter
         self.gumbel_tau = gumbel_tau
+        self.gumbel_switch_iteration = 200
 
         # Current iteration counter (used to switch between sigmoid and gumbel_softmax)
         self.current_iteration = 0
@@ -85,12 +109,12 @@ class LSEPartitioner(nn.Module):
     def get_z(self):
         """
         map pre-activation variable t to soft assignment z
+
         Returns:
             z: shape [num_cells] tensor, representing the probability of each cell being assigned to the top layer
         """
-        # use sigmoid when iteration < 200; else use gumbel_softmax_z
-        # sigmoid when iteration < 200; else gumbel_softmax_z
-        if self.current_iteration < 200:
+        # switch to gumbel_softmax_z after gumbel_switch_iteration iterations
+        if self.current_iteration < self.gumbel_switch_iteration:
             return torch.sigmoid(self.t)
         else:
             return self.gumbel_softmax_z(self.t, tau=self.gumbel_tau)
@@ -177,29 +201,6 @@ class LSEPartitioner(nn.Module):
 
         # return -(1/α) * log_sum_exp(-α * weighted_vals)
         return -lse / self.alpha
-
-    def weighted_lse_max(self, values, weights, eps=1e-12):
-
-        # use torch.logsumexp to ensure numerical stability
-        # logsumexp(α * x) = log(Σ exp(α * x))
-        # then divide by α to get soft maximum
-        if self.alpha <= 0:
-            raise ValueError("alpha must be positive")
-
-        weighted_exp = weights * torch.exp(self.alpha * values)
-        return torch.log(torch.clamp(weighted_exp.sum(), min=eps)) / self.alpha
-
-    def weighted_lse_min(self, values, weights, eps=1e-12):
-
-        # use torch.logsumexp to ensure numerical stability
-        # logsumexp(α * x) = log(Σ exp(α * x))
-        # then divide by α to get soft maximum
-        if self.alpha <= 0:
-            raise ValueError("alpha must be positive")
-
-        weighted_exp = weights * torch.exp(-self.alpha * values)
-        return -torch.log(torch.clamp(weighted_exp.sum(),
-                                      min=eps)) / self.alpha
 
     def compute_cutsize(self, net_idx):
         """
@@ -521,7 +522,7 @@ class LSEPartitioner(nn.Module):
                                  if selected_nets is None, use self.net_weights
         
         Returns:
-            total_cutsize: 总cutsize损失，标量tensor
+            total_cutsize: total cutsize loss
         """
         if selected_nets is None:
             # if not specified, calculate for all nets (may be slow)
@@ -534,7 +535,8 @@ class LSEPartitioner(nn.Module):
 
         # ensure selected_nets is in valid range
         if selected_nets.max() >= self.num_nets or selected_nets.min() < 0:
-            raise ValueError(f"selected_nets索引超出范围 [0, {self.num_nets-1}]")
+            raise ValueError(
+                f"selected_nets index out of range [0, {self.num_nets-1}]")
 
         total_cutsize = torch.tensor(0.0, device=self.pin_pos_x.device)
 
@@ -551,8 +553,9 @@ class LSEPartitioner(nn.Module):
                     device=self.pin_pos_x.device)
             if cutsize_net_weights.numel() != selected_nets.numel():
                 raise ValueError(
-                    f"cutsize_net_weights长度({cutsize_net_weights.numel()}) "
-                    f"必须与selected_nets长度({selected_nets.numel()})匹配")
+                    f"cutsize_net_weights length ({cutsize_net_weights.numel()}) "
+                    f"must match selected_nets length ({selected_nets.numel()})"
+                )
             weights = cutsize_net_weights
 
         # vectorized calculation of cutsize for all selected nets
@@ -563,24 +566,72 @@ class LSEPartitioner(nn.Module):
 
         return total_cutsize
 
+    def compute_balance_loss(self):
+        """
+        calculate balance loss
+        if the density of a bin exceeds half of the bin area, add relu penalty
+
+        Returns:
+            balance_loss: balance loss, scalar tensor
+        """
+
+        z = self.get_z()
+        top_z = z
+        bottom_z = 1 - z
+
+        def compute_density_map(z, num_bin_x, num_bin_y):
+
+            bin_size_x = self.x_range / num_bin_x
+            bin_size_y = self.y_range / num_bin_y
+
+            # calculate the area of each bin
+            bin_area = bin_size_x * bin_size_y
+            threshold_area = bin_area * 0.6
+
+            density_map = torch.zeros(num_bin_x, num_bin_y, device=z.device)
+            for i in range(z.numel()):
+                x_idx = ((self.node_x[i] - self.node_x.min()) /
+                         bin_size_x).long()
+                y_idx = ((self.node_y[i] - self.node_y.min()) /
+                         bin_size_y).long()
+                x_idx = torch.clamp(x_idx, 0, num_bin_x - 1)
+                y_idx = torch.clamp(y_idx, 0, num_bin_y - 1)
+
+                density_map[
+                    x_idx,
+                    y_idx] += self.node_size_x[i] * self.node_size_y[i] * z[i]
+
+            return density_map, threshold_area
+
+        top_density_map, threshold_area = compute_density_map(top_z, 8, 8)
+        bottom_density_map, _ = compute_density_map(bottom_z, 8, 8)
+
+        balance_loss = torch.relu(top_density_map - threshold_area).sum() + \
+                       torch.relu(bottom_density_map - threshold_area).sum()
+
+        return balance_loss
+
     def forward(self,
                 entropy_weight=0.0,
                 lambda_wl=1.0,
                 lambda_cut=0.0,
+                lambda_balance=0.0,
                 selected_nets=None,
                 cutsize_net_weights=None,
                 return_debug_info=False):
         """
-        calculate total loss (HPWL + Cutsize)
+        calculate total loss (HPWL + Cutsize + Balance)
         L_WL = Σ_e (HPWL_top_e + HPWL_bottom_e) * weight_e
         L_cut = Σ_{n∈selected_nets} w(n) * cutsize(n)
-        L_total = λ_WL * L_WL + λ_cut * L_cut
+        L_balance = balance loss (penalizes density exceeding half bin area)
+        L_total = λ_WL * L_WL + λ_cut * L_cut + λ_balance * L_balance + entropy_weight * L_entropy
         
         Args:
             entropy_weight: entropy regularization weight, used to encourage z near 0 or 1 (default 0.0, no regularization)
                             suggested value: 0.01-0.1, gradually increase during training
             lambda_wl: weight of HPWL loss, default 1.0
             lambda_cut: weight of cutsize loss, default 0.0
+            lambda_balance: weight of balance loss, default 0.0
             selected_nets: indices of nets to apply cutsize constraint, tensor or list
                            only used when lambda_cut > 0
             cutsize_net_weights: weights of each selected net, tensor or list
@@ -593,6 +644,7 @@ class LSEPartitioner(nn.Module):
                 debug_info: dict containing:
                     - 'L_WL': total HPWL loss
                     - 'L_cut': total cutsize loss
+                    - 'L_balance': total balance loss
                     - 'L_entropy': entropy regularization loss
                     - 'L_total': total loss
                 return (total_loss, debug_info) tuple
@@ -608,6 +660,10 @@ class LSEPartitioner(nn.Module):
         # weighted accumulate: Σ_e (HPWL_top_e + HPWL_bottom_e) * weight_e
         total_hpwl = (self.net_weights *
                       (hpwl_top_all + hpwl_bottom_all)).sum()
+
+        # print(
+        #     f"total_hpwl: {total_hpwl}; hpwl_top_all: {hpwl_top_all.mean()}; hpwl_bottom_all: {hpwl_bottom_all.mean()};"
+        # )
 
         # add entropy regularization term, encourage z near 0 or 1
         # entropy H(z) = -z*log(z) - (1-z)*log(1-z)
@@ -627,7 +683,12 @@ class LSEPartitioner(nn.Module):
                 selected_nets=selected_nets,
                 cutsize_net_weights=cutsize_net_weights)
 
+        balance_loss = torch.tensor(0.0, device=self.pin_pos_x.device)
+        if lambda_balance > 0:
+            balance_loss = self.compute_balance_loss()
+
         total_loss = (lambda_wl * total_hpwl + lambda_cut * cutsize_loss +
+                      lambda_balance * balance_loss +
                       entropy_weight * entropy_loss)
 
         # if not return debug information, return total loss
@@ -638,6 +699,7 @@ class LSEPartitioner(nn.Module):
         debug_info = {
             'L_WL': total_hpwl.item(),
             'L_cut': cutsize_loss.item() if lambda_cut > 0 else 0.0,
+            'L_balance': balance_loss.item() if lambda_balance > 0 else 0.0,
             'L_entropy': entropy_loss.item() if entropy_weight > 0 else 0.0,
             'L_total': total_loss.item()
         }
@@ -745,19 +807,38 @@ def main():
 
     # load real circuit data
     print("\n1. Load real circuit data...")
+    # num_cells = 8
+    # num_nets = 1
     num_cells = 2735
     num_nets = 2644
-    node_pos = torch.load("case2_hidden_2d_placement.pt")
-    pin_pos = torch.load("case2_hidden_2d_pinpos.pt")
-    flat_net2pin_map = torch.load("case2_hidden_flat_net2pin_map.pt")
+    # num_cells = 44764
+    # num_nets = 44360
+    # load data from .pt files and detach from computation graph to avoid backward errors
+    node_pos = torch.load("case2_hidden_2d_placement.pt").detach()
+    # node_pos = torch.tensor([5, 10, 15, 20, 0, 0, 0, 0])
+    # node_pos = torch.tensor(
+    #     [5, 20, 25, 30, 5, 10, 15, 30, 0, 0, 0, 0, 10, 10, 10, 10])
+    pin_pos = torch.load("case2_hidden_2d_pinpos.pt").detach()
+    # pin_pos = torch.tensor([5, 10, 15, 20, 0, 0, 0, 0])
+    # pin_pos = torch.tensor(
+    #     [5, 20, 25, 30, 5, 10, 15, 30, 0, 0, 0, 0, 10, 10, 10, 10])
+    flat_net2pin_map = torch.load("case2_hidden_flat_net2pin_map.pt").detach()
+    # flat_net2pin_map = torch.tensor([0, 1, 2, 3, 4, 5, 6, 7])
+    # flat_net2pin_map = torch.tensor([0, 1, 2, 3])
     flat_net2pin_start_map = torch.load(
-        "case2_hidden_flat_net2pin_start_map.pt")
-    pin2node_map = torch.load("case2_hidden_pin2node_map.pt")
+        "case2_hidden_flat_net2pin_start_map.pt").detach()
+    # flat_net2pin_start_map = torch.tensor([0, 4, 8])
+    # flat_net2pin_start_map = torch.tensor([0, 4])
+    pin2node_map = torch.load("case2_hidden_pin2node_map.pt").detach()
+    # pin2node_map = torch.tensor([0, 1, 2, 3, 4, 5, 6, 7])
+    # pin2node_map = torch.tensor([0, 1, 2, 3])
 
     node_x = node_pos[:num_cells]
     node_y = node_pos[node_pos.numel() // 2:node_pos.numel() // 2 + num_cells]
     pin_pos_x = pin_pos[:pin2node_map.numel()]
     pin_pos_y = pin_pos[pin2node_map.numel():]
+    node_size_x = torch.load("case2h-node_size_x.pt").detach()
+    node_size_y = torch.load("case2h-node_size_y.pt").detach()
 
     # verify data shape
     num_pins = pin2node_map.numel()
@@ -788,6 +869,10 @@ def main():
         pin2node_map=pin2node_map,
         pin_pos_x=pin_pos_x,
         pin_pos_y=pin_pos_y,
+        node_x=node_x,
+        node_y=node_y,
+        node_size_x=node_size_x,
+        node_size_y=node_size_y,
         alpha=1.0  # initial alpha value
     )
     print(f"   - Initial alpha: {model.alpha}")
@@ -797,26 +882,36 @@ def main():
 
     # configure cutsize loss
     use_cutsize_loss = True
-    lambda_cut_start = 1.0
-    lambda_cut_end = 100.0
+    lambda_cut_start = 8000.0
+    lambda_cut_end = 8000.0
     selected_nets_for_cutsize = None  # None means apply cutsize constraint to all nets
     cutsize_net_weights = None  # None means use self.net_weights corresponding to the selected nets
     # can specify specific network subset, e.g.:
     # selected_nets_for_cutsize = torch.tensor([0, 1, 2, 10, 20, 50], dtype=torch.long)
 
+    # configure balance loss
+    use_balance_loss = True
+    lambda_balance_start = 10.0
+    lambda_balance_end = 10.0
+
     # print initial state
     print("\n3. Initial state:")
-    if use_cutsize_loss:
+    use_debug_info = use_cutsize_loss or use_balance_loss
+    if use_debug_info:
         initial_loss, debug_info = model(
             entropy_weight=0.0,
             lambda_wl=1.0,
-            lambda_cut=lambda_cut_start,
+            lambda_cut=lambda_cut_start if use_cutsize_loss else 0.0,
+            lambda_balance=lambda_balance_start if use_balance_loss else 0.0,
             selected_nets=selected_nets_for_cutsize,
             cutsize_net_weights=cutsize_net_weights,
             return_debug_info=True)
         print(f"   - Initial total loss: {initial_loss.item():.4f}")
         print(f"   - Initial HPWL: {debug_info['L_WL']:.4f}")
-        print(f"   - Initial cutsize: {debug_info['L_cut']:.4f}")
+        if use_cutsize_loss:
+            print(f"   - Initial cutsize: {debug_info['L_cut']:.4f}")
+        if use_balance_loss:
+            print(f"   - Initial balance: {debug_info['L_balance']:.4f}")
     else:
         initial_loss = model(entropy_weight=0.0)
         print(f"   - Initial total HPWL: {initial_loss.item():.4f}")
@@ -864,6 +959,14 @@ def main():
     else:
         lambda_cut_schedule = None
 
+    # lambda_balance schedule (linear schedule for balance loss weight)
+    if use_balance_loss:
+        lambda_balance_schedule = np.linspace(lambda_balance_start,
+                                              lambda_balance_end,
+                                              num_iterations)
+    else:
+        lambda_balance_schedule = None
+
     print(f"\n5. Start training ({num_iterations} iterations)...")
     print(f"   - Alpha schedule: {alpha_start} → {alpha_end}")
     print(
@@ -877,6 +980,12 @@ def main():
         )
     else:
         print(f"   - Cutsize loss disabled")
+    if use_balance_loss:
+        print(
+            f"   - Balance loss enabled: λ_balance linear schedule {lambda_balance_start} → {lambda_balance_end}"
+        )
+    else:
+        print(f"   - Balance loss disabled")
     print("-" * 60)
 
     # create directory for saving visualizations
@@ -898,16 +1007,24 @@ def main():
         else:
             lambda_cut = 0.0
 
-        # forward propagation (with entropy regularization and optional cutsize loss)
-        if use_cutsize_loss:
+        # update lambda_balance (gradually change balance loss weight)
+        if use_balance_loss:
+            lambda_balance = lambda_balance_schedule[iteration]
+        else:
+            lambda_balance = 0.0
+
+        # forward propagation (with entropy regularization and optional cutsize/balance loss)
+        if use_debug_info:
             loss, debug_info = model(entropy_weight=entropy_weight,
                                      lambda_wl=1.0,
                                      lambda_cut=lambda_cut,
+                                     lambda_balance=lambda_balance,
                                      selected_nets=selected_nets_for_cutsize,
                                      cutsize_net_weights=cutsize_net_weights,
                                      return_debug_info=True)
         else:
-            loss = model(entropy_weight=entropy_weight)
+            loss = model(entropy_weight=entropy_weight,
+                         lambda_balance=lambda_balance)
 
         # backward propagation
         optimizer.zero_grad()
@@ -934,16 +1051,14 @@ def main():
             dz_dt_norm = (z * (1 - z)).norm().item()
             stats = model.get_assignment_stats()
 
-            if use_cutsize_loss:
-                print(f"Iter {iteration+1:4d} | "
-                      f"Loss: {loss.item():8.2f} | "
-                      f"HPWL: {debug_info['L_WL']:8.2f} | "
-                      f"Cut: {debug_info['L_cut']:6.4f} | "
-                      f"λ_cut: {lambda_cut:6.4f} | "
-                      f"Alpha: {model.alpha:5.2f} | "
-                      f"||dt||: {t_grad_norm:6.4f} | "
-                      f"Top: {stats['top_cells']:3d} | "
-                      f"Bottom: {stats['bottom_cells']:3d}")
+            if use_debug_info:
+                log_str = f"Iter {iteration+1:4d} | Loss: {loss.item():8.2f} | HPWL: {debug_info['L_WL']:8.2f}"
+                if use_cutsize_loss:
+                    log_str += f" | Cut: {debug_info['L_cut']:6.4f} | λ_cut: {lambda_cut:6.4f}"
+                if use_balance_loss:
+                    log_str += f" | Balance: {debug_info['L_balance']:6.4f} | λ_balance: {lambda_balance:6.4f}"
+                log_str += f" | Alpha: {model.alpha:5.2f} | ||dt||: {t_grad_norm:6.4f} | Top: {stats['top_cells']:3d} | Bottom: {stats['bottom_cells']:3d}"
+                print(log_str)
             else:
                 print(f"Iter {iteration+1:4d} | "
                       f"Loss: {loss.item():8.2f} | "
@@ -961,19 +1076,25 @@ def main():
 
     # final results
     print("\n6. Training completed, final results:")
-    if use_cutsize_loss:
+    if use_debug_info:
         final_loss, final_debug_info = model(
             entropy_weight=entropy_end,
             lambda_wl=1.0,
-            lambda_cut=lambda_cut_end,
+            lambda_cut=lambda_cut_end if use_cutsize_loss else 0.0,
+            lambda_balance=lambda_balance_end if use_balance_loss else 0.0,
             selected_nets=selected_nets_for_cutsize,
             cutsize_net_weights=cutsize_net_weights,
             return_debug_info=True)
         print(f"   - Final total loss: {final_loss.item():.4f}")
         print(f"   - Final HPWL: {final_debug_info['L_WL']:.4f}")
-        print(f"   - Final cutsize: {final_debug_info['L_cut']:.4f}")
+        if use_cutsize_loss:
+            print(f"   - Final cutsize: {final_debug_info['L_cut']:.4f}")
+        if use_balance_loss:
+            print(f"   - Final balance: {final_debug_info['L_balance']:.4f}")
     else:
-        final_loss = model(entropy_weight=entropy_end)
+        final_loss = model(
+            entropy_weight=entropy_end,
+            lambda_balance=lambda_balance_end if use_balance_loss else 0.0)
         print(f"   - Final total HPWL: {final_loss.item():.4f}")
 
     stats = model.get_assignment_stats()
