@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-11-14 16:03:37
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2026-01-09 15:05:24
+LastEditTime: 2026-01-11 03:47:35
 FilePath: /D2D-placer/placer/tools/differentiable_partitioner/partitioner.py
 Description: Differentiable 3D Partitioner based on LogSumExp soft bounding box
 '''
@@ -10,8 +10,12 @@ import torch
 import torch.nn as nn
 import numpy as np
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+from matplotlib.cm import ScalarMappable
+from matplotlib.colors import Normalize
 import os
+
+COORD_EPSILON = 1e-2
 
 
 class LSEPartitioner(nn.Module):
@@ -51,8 +55,8 @@ class LSEPartitioner(nn.Module):
             pin_pos_y: y coordinates of pins, shape [num_pins] tensor
             alpha: LSE smoothing parameter, larger means harder to be 0 or 1
             net_weights: optional net weights, shape [num_nets] tensor
-            gumbel_tau: Gumbel Softmax temperature parameter, controlling the smoothness of the softmax
-                        smaller tau means more discrete distribution; larger tau means more smooth distribution
+            gumbel_tau: Gumbel Softmax 温度参数，控制 softmax 的平滑程度（默认 0.1）
+                        tau 越小，结果越接近离散分布；tau 越大，结果越平滑
         """
         super(LSEPartitioner, self).__init__()
 
@@ -109,7 +113,6 @@ class LSEPartitioner(nn.Module):
     def get_z(self):
         """
         map pre-activation variable t to soft assignment z
-
         Returns:
             z: shape [num_cells] tensor, representing the probability of each cell being assigned to the top layer
         """
@@ -220,7 +223,7 @@ class LSEPartitioner(nn.Module):
         Returns:
             differentiable cutsize of the specified net, scalar tensor
         """
-        # get all pin indices of the specified net
+        # 获取该网的所有pin索引
         start_idx = self.flat_net2pin_start_map[net_idx]
         end_idx = self.flat_net2pin_start_map[net_idx + 1]
         pin_indices = self.flat_net2pin_map[start_idx:end_idx]
@@ -336,10 +339,10 @@ class LSEPartitioner(nn.Module):
         # randomly choose between original value or max_val - value for each pin
         all_x_net = self.pin_pos_x[all_pin_indices]  # [total_pins]
         all_y_net = self.pin_pos_y[all_pin_indices]  # [total_pins]
-        all_x_net = all_x_net - all_x_net.min() + 1e-2
-        all_y_net = all_y_net - all_y_net.min() + 1e-2
-        all_x_net_rev = all_x_net.max() - all_x_net + 1e-2
-        all_y_net_rev = all_y_net.max() - all_y_net + 1e-2
+        all_x_net = all_x_net - all_x_net.min() + COORD_EPSILON
+        all_y_net = all_y_net - all_y_net.min() + COORD_EPSILON
+        all_x_net_rev = all_x_net.max() - all_x_net + COORD_EPSILON
+        all_y_net_rev = all_y_net.max() - all_y_net + COORD_EPSILON
 
         # compute weighted values for top layer: z_node * x_pin and z_node * y_pin
         weighted_x_top_max = all_z_net * all_x_net  # [total_pins]
@@ -522,7 +525,7 @@ class LSEPartitioner(nn.Module):
                                  if selected_nets is None, use self.net_weights
         
         Returns:
-            total_cutsize: total cutsize loss
+            total_cutsize: total cutsize loss, scalar tensor
         """
         if selected_nets is None:
             # if not specified, calculate for all nets (may be slow)
@@ -570,7 +573,7 @@ class LSEPartitioner(nn.Module):
         """
         calculate balance loss
         if the density of a bin exceeds half of the bin area, add relu penalty
-
+        
         Returns:
             balance_loss: balance loss, scalar tensor
         """
@@ -738,7 +741,9 @@ def visualize_z_single(x_coords,
                        y_coords,
                        z_values,
                        iteration,
-                       save_path=None):
+                       save_path=None,
+                       node_size_x=None,
+                       node_size_y=None):
     """
     visualize z values over xy for a single iteration
     
@@ -748,6 +753,8 @@ def visualize_z_single(x_coords,
         z_values: z values, shape [num_cells] tensor or numpy array
         iteration: current iteration number
         save_path: save path (optional)
+        node_size_x: x size of each node, shape [num_cells] tensor or numpy array (optional)
+        node_size_y: y size of each node, shape [num_cells] tensor or numpy array (optional)
     """
     # convert to numpy array
     if isinstance(x_coords, torch.Tensor):
@@ -756,24 +763,74 @@ def visualize_z_single(x_coords,
         y_coords = y_coords.detach().cpu().numpy()
     if isinstance(z_values, torch.Tensor):
         z_values = z_values.detach().cpu().numpy()
+    if node_size_x is not None and isinstance(node_size_x, torch.Tensor):
+        node_size_x = node_size_x.detach().cpu().numpy()
+    if node_size_y is not None and isinstance(node_size_y, torch.Tensor):
+        node_size_y = node_size_y.detach().cpu().numpy()
 
     # create single 3D plot
     fig = plt.figure(figsize=(10, 8))
     ax = fig.add_subplot(111, projection='3d')
 
-    # set colors based on z values (blue=bottom, red=top)
-    colors = z_values
+    # get colormap
+    cmap = plt.cm.get_cmap('RdYlBu_r')
 
-    # plot 3D scatter plot
-    scatter = ax.scatter(x_coords,
-                         y_coords,
-                         z_values,
-                         c=colors,
-                         cmap='RdYlBu_r',
-                         s=20,
-                         alpha=0.6,
-                         edgecolors='k',
-                         linewidths=0.3)
+    # normalize z values for color mapping
+    z_normalized = (z_values - z_values.min()) / (z_values.max() -
+                                                  z_values.min() + 1e-8)
+
+    # if node sizes are provided, draw rectangles; otherwise draw scatter points
+    if node_size_x is not None and node_size_y is not None:
+        # draw 2D rectangular planes for each node at their z height
+        all_faces = []
+        all_colors = []
+
+        for i in range(len(x_coords)):
+            x = x_coords[i]
+            y = y_coords[i]
+            z = z_values[i]
+            size_x = node_size_x[i]
+            size_y = node_size_y[i]
+
+            # calculate rectangle corners (centered at x, y)
+            x_min = x - size_x / 2
+            x_max = x + size_x / 2
+            y_min = y - size_y / 2
+            y_max = y + size_y / 2
+
+            # create a single 2D rectangular plane at z height (parallel to XY plane)
+            rect_face = [[x_min, y_min, z], [x_max, y_min, z],
+                         [x_max, y_max, z], [x_min, y_max, z]]
+
+            all_faces.append(rect_face)
+
+            # get color for this node based on z value
+            color = cmap(z_normalized[i])
+            all_colors.append(color)
+
+        # create Poly3DCollection
+        collection = Poly3DCollection(all_faces,
+                                      facecolors=all_colors,
+                                      edgecolors='k',
+                                      linewidths=0.2,
+                                      alpha=0.7)
+        ax.add_collection3d(collection)
+
+        # create a mappable for colorbar
+        norm = Normalize(vmin=z_values.min(), vmax=z_values.max())
+        scatter = ScalarMappable(norm=norm, cmap='RdYlBu_r')
+        scatter.set_array([])
+    else:
+        # fallback to scatter plot if node sizes not provided
+        scatter = ax.scatter(x_coords,
+                             y_coords,
+                             z_values,
+                             c=z_values,
+                             cmap='RdYlBu_r',
+                             s=20,
+                             alpha=0.6,
+                             edgecolors='k',
+                             linewidths=0.3)
 
     ax.set_xlabel('X Coordinate', fontsize=12)
     ax.set_ylabel('Y Coordinate', fontsize=12)
@@ -1070,7 +1127,14 @@ def main():
 
             save_path = os.path.join(
                 save_dir, f'z_evolution_iter_{iteration+1:04d}.png')
-            visualize_z_single(node_x, node_y, z, iteration + 1, save_path)
+        if (iteration + 1) % 50 == 0 or iteration == 0:
+            visualize_z_single(node_x,
+                               node_y,
+                               z,
+                               iteration + 1,
+                               save_path,
+                               node_size_x=node_size_x,
+                               node_size_y=node_size_y)
 
     print("-" * 60)
 
