@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-07-19 17:57:28
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-11-24 16:42:52
+LastEditTime: 2026-01-20 01:39:32
 FilePath: /D2D-placer/placer/d2d_placer.py
 Description: 
 '''
@@ -207,7 +207,7 @@ class D2Dplacer:
         # self.cut_net_mask = self.op_wrapper.d2d_op_collections.init_partition_op(
         #     self.tier, self.dreamplace.dp_2d.pos / 2, self.node_orient)
         self.cut_net_mask = self.op_wrapper.d2d_op_collections.terminal_insert_op(
-            self.tier, self.dreamplace.dp_2d.pos / 2, self.node_orient)
+            self.tier,  self.dreamplace.dp_2d.pos * 2**0.5 /2 - (2**0.5 - 1) * self.die_spec.dieSizeX / 2, self.node_orient)
 
         if self.format == Format.ICCAD2023:
             # update placedb_tier & data_tier using new terminal_insert result

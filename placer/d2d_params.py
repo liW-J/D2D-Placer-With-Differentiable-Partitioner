@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-06-13 20:00:00
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-09-15 13:09:07
+LastEditTime: 2026-01-20 02:03:44
 FilePath: /D2D-placer/placer/d2d_params.py
 Description: 
 '''
