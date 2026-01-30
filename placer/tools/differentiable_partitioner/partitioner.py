@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-11-14 16:03:37
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2026-01-30 20:24:30
+LastEditTime: 2026-01-30 23:02:38
 FilePath: /D2D-placer/placer/tools/differentiable_partitioner/partitioner.py
 Description: Differentiable 3D Partitioner based on LogSumExp soft bounding box
 '''
@@ -81,12 +81,12 @@ class LSEPartitioner(nn.Module):
 
         # trainable pre-activation variable t_i (one for each cell)
         # use small random initialization to avoid all z being 0.5 (symmetric point)
-        # self.t = nn.Parameter(torch.randn(num_cells) * 0.1)
-        self.t = torch.load("node_die_after_fm_wl.pt").float().to(
-            pin_pos_x.device)
-        self.t[self.t > 0] = 10.0
-        self.t[self.t <= 0] = -10.0
-        self.t = nn.Parameter(self.t)
+        self.t = nn.Parameter(torch.randn(num_cells) * 0.1)
+        # self.t = torch.load("node_die_after_fm_wl.pt").float().to(
+        #     pin_pos_x.device)
+        # self.t[self.t > 0] = 10.0
+        # self.t[self.t <= 0] = -10.0
+        # self.t = nn.Parameter(self.t)
 
         # initial_values = torch.tensor([10.0, -10.0, -10.0, -10.0],
         #                               device=self.pin_pos_x.device)
@@ -306,8 +306,6 @@ class LSEPartitioner(nn.Module):
 
         # calculate pin count for each net
         pin_counts = end_indices - start_indices  # [num_nets]
-
-        # filter out nets with less than 2 pins (these nets have HPWL=0)
         valid_mask = pin_counts >= 2  # [num_nets]
 
         if not valid_mask.any():
@@ -364,55 +362,100 @@ class LSEPartitioner(nn.Module):
         hpwl_bottom_per_net = torch.zeros(num_valid_nets,
                                           device=self.pin_pos_x.device)
 
-        # calculate HPWL for each net
-        pin_offset = 0
-        for i in range(num_valid_nets):
-            num_pins = valid_pin_counts[i].item()
+        # calculate HPWL for each net using vectorized approach
 
-            # top layer
+        # precompute pin offsets for all nets
+        pin_offsets = torch.cumsum(torch.cat([
+            torch.tensor([0], device=valid_pin_counts.device),
+            valid_pin_counts[:-1]
+        ]),
+                                   dim=0)  # [num_valid_nets]
+
+        # vectorized HPWL calculation by grouping nets with same pin count
+        # Strategy: group nets by pin count, then process each group in parallel
+        unique_pin_counts, inverse_indices, counts = torch.unique(
+            valid_pin_counts, return_inverse=True, return_counts=True)
+
+        # process each group of nets with same pin count
+        for group_idx, pin_count in enumerate(unique_pin_counts):
+            # get indices of nets in this group
+            group_mask = inverse_indices == group_idx
+            group_net_indices = torch.where(group_mask)[
+                0]  # [num_nets_in_group]
+            num_nets_in_group = group_net_indices.numel()
+
+            if num_nets_in_group == 0:
+                continue
+
+            pin_count_int = pin_count.item()
+
+            # get pin offsets for this group
+            group_pin_offsets = pin_offsets[
+                group_net_indices]  # [num_nets_in_group]
+
+            # create index tensor for batch slicing: [num_nets_in_group, pin_count]
+            # each row corresponds to one net's pins
+            batch_indices = (group_pin_offsets.unsqueeze(1) + torch.arange(
+                pin_count_int, device=group_pin_offsets.device).unsqueeze(0))
+
+            # batch extract data for all nets in this group
+            # shape: [num_nets_in_group, pin_count]
             if layer in ['top', 'both']:
-                wx_top_max = weighted_x_top_max[pin_offset:pin_offset +
-                                                num_pins]
-                wy_top_max = weighted_y_top_max[pin_offset:pin_offset +
-                                                num_pins]
-                x_top_max = self.lse_max(wx_top_max)
-                y_top_max = self.lse_max(wy_top_max)
+                wx_top_max_batch = weighted_x_top_max[batch_indices]
+                wy_top_max_batch = weighted_y_top_max[batch_indices]
+                wx_top_min_batch = weighted_x_top_min[batch_indices]
+                wy_top_min_batch = weighted_y_top_min[batch_indices]
 
-                wx_top_min = weighted_x_top_min[pin_offset:pin_offset +
-                                                num_pins]
-                wy_top_min = weighted_y_top_min[pin_offset:pin_offset +
-                                                num_pins]
-                x_top_min = self.lse_max(wx_top_min)
-                y_top_min = self.lse_max(wy_top_min)
+                # batch LSE computation: apply lse_max along pin dimension
+                # lse_max uses logsumexp which supports batch dimension
+                x_top_max_batch = self.lse_max(wx_top_max_batch)
+                y_top_max_batch = self.lse_max(wy_top_max_batch)
+                x_top_min_batch = self.lse_max(wx_top_min_batch)
+                y_top_min_batch = self.lse_max(wy_top_min_batch)
 
-                hpwl_top_per_net[
-                    i] = x_top_max + y_top_max + x_top_min + y_top_min - max(
-                        wx_top_max.max(), wx_top_min.max()) - max(
-                            wy_top_max.max(), wy_top_min.max())
+                # batch max computation
+                wx_top_max_max = wx_top_max_batch.max(dim=1)[0]
+                wx_top_min_max = wx_top_min_batch.max(dim=1)[0]
+                wy_top_max_max = wy_top_max_batch.max(dim=1)[0]
+                wy_top_min_max = wy_top_min_batch.max(dim=1)[0]
 
-            # bottom layer
+                # vectorized HPWL calculation for this group
+                hpwl_top_group = (
+                    x_top_max_batch + y_top_max_batch + x_top_min_batch +
+                    y_top_min_batch -
+                    torch.maximum(wx_top_max_max, wx_top_min_max) -
+                    torch.maximum(wy_top_max_max, wy_top_min_max))
+
+                # assign results back
+                hpwl_top_per_net[group_net_indices] = hpwl_top_group
+
             if layer in ['bottom', 'both']:
-                wx_bottom_max = weighted_x_bottom_max[pin_offset:pin_offset +
-                                                      num_pins]
-                wy_bottom_max = weighted_y_bottom_max[pin_offset:pin_offset +
-                                                      num_pins]
-                x_bottom_max = self.lse_max(wx_bottom_max)
-                y_bottom_max = self.lse_max(wy_bottom_max)
+                wx_bottom_max_batch = weighted_x_bottom_max[batch_indices]
+                wy_bottom_max_batch = weighted_y_bottom_max[batch_indices]
+                wx_bottom_min_batch = weighted_x_bottom_min[batch_indices]
+                wy_bottom_min_batch = weighted_y_bottom_min[batch_indices]
 
-                wx_bottom_min = weighted_x_bottom_min[pin_offset:pin_offset +
-                                                      num_pins]
-                wy_bottom_min = weighted_y_bottom_min[pin_offset:pin_offset +
-                                                      num_pins]
+                # batch LSE computation
+                x_bottom_max_batch = self.lse_max(wx_bottom_max_batch)
+                y_bottom_max_batch = self.lse_max(wy_bottom_max_batch)
+                x_bottom_min_batch = self.lse_max(wx_bottom_min_batch)
+                y_bottom_min_batch = self.lse_max(wy_bottom_min_batch)
 
-                x_bottom_min = self.lse_max(wx_bottom_min)
-                y_bottom_min = self.lse_max(wy_bottom_min)
+                # batch max computation
+                wx_bottom_max_max = wx_bottom_max_batch.max(dim=1)[0]
+                wx_bottom_min_max = wx_bottom_min_batch.max(dim=1)[0]
+                wy_bottom_max_max = wy_bottom_max_batch.max(dim=1)[0]
+                wy_bottom_min_max = wy_bottom_min_batch.max(dim=1)[0]
 
-                hpwl_bottom_per_net[
-                    i] = x_bottom_max + y_bottom_max + x_bottom_min + y_bottom_min - max(
-                        wx_bottom_max.max(), wx_bottom_min.max()) - max(
-                            wy_bottom_max.max(), wy_bottom_min.max())
+                # vectorized HPWL calculation for this group
+                hpwl_bottom_group = (
+                    x_bottom_max_batch + y_bottom_max_batch +
+                    x_bottom_min_batch + y_bottom_min_batch -
+                    torch.maximum(wx_bottom_max_max, wx_bottom_min_max) -
+                    torch.maximum(wy_bottom_max_max, wy_bottom_min_max))
 
-            pin_offset += num_pins
+                # assign results back
+                hpwl_bottom_per_net[group_net_indices] = hpwl_bottom_group
 
         # create complete result arrays (including invalid nets)
         if layer == 'both':
@@ -1120,7 +1163,7 @@ def main():
     )
 
     # configure cutsize loss
-    use_cutsize_loss = True
+    use_cutsize_loss = False
     lambda_cut_start = 10000.0
     lambda_cut_end = 10000.0
     selected_nets_for_cutsize = None  # None means apply cutsize constraint to all nets
@@ -1129,7 +1172,7 @@ def main():
     # selected_nets_for_cutsize = torch.tensor([0, 1, 2, 10, 20, 50], dtype=torch.long)
 
     # configure balance loss
-    use_balance_loss = True
+    use_balance_loss = False
     lambda_balance_start = 1.0
     lambda_balance_end = 1.0
 
