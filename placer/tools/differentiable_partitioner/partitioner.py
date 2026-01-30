@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-11-14 16:03:37
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2026-01-11 03:47:35
+LastEditTime: 2026-01-30 18:20:12
 FilePath: /D2D-placer/placer/tools/differentiable_partitioner/partitioner.py
 Description: Differentiable 3D Partitioner based on LogSumExp soft bounding box
 '''
@@ -55,8 +55,8 @@ class LSEPartitioner(nn.Module):
             pin_pos_y: y coordinates of pins, shape [num_pins] tensor
             alpha: LSE smoothing parameter, larger means harder to be 0 or 1
             net_weights: optional net weights, shape [num_nets] tensor
-            gumbel_tau: Gumbel Softmax 温度参数，控制 softmax 的平滑程度（默认 0.1）
-                        tau 越小，结果越接近离散分布；tau 越大，结果越平滑
+            gumbel_tau: Gumbel Softmax temperature parameter, controlling the smoothness of softmax (default 0.1)
+                        smaller tau means results closer to discrete distribution; larger tau means smoother distribution
         """
         super(LSEPartitioner, self).__init__()
 
@@ -223,7 +223,7 @@ class LSEPartitioner(nn.Module):
         Returns:
             differentiable cutsize of the specified net, scalar tensor
         """
-        # 获取该网的所有pin索引
+        # get all pin indices for this net
         start_idx = self.flat_net2pin_start_map[net_idx]
         end_idx = self.flat_net2pin_start_map[net_idx + 1]
         pin_indices = self.flat_net2pin_map[start_idx:end_idx]
@@ -509,13 +509,180 @@ class LSEPartitioner(nn.Module):
 
         return result
 
+    def compute_terminal_positions(self, net_indices):
+        """
+        compute terminal positions at the center of optimal region for cut nets
+        
+        Args:
+            net_indices: network indices, tensor of shape [num_nets]
+        
+        Returns:
+            terminal_positions: tensor of shape [num_nets, 2] (x, y coordinates)
+                               terminal positions for non-cut nets are NaN
+            cut_mask: boolean tensor of shape [num_nets], True indicates this net generates a terminal
+        """
+        if net_indices.numel() == 0:
+            return torch.empty((0, 2),
+                               device=self.pin_pos_x.device), torch.empty(
+                                   0,
+                                   dtype=torch.bool,
+                                   device=self.pin_pos_x.device)
+
+        num_nets = net_indices.numel()
+        terminal_positions = torch.full((num_nets, 2),
+                                        float('nan'),
+                                        device=self.pin_pos_x.device)
+
+        # get the probability of each cell being assigned to top layer
+        z = self.get_z()  # [num_cells]
+
+        # determine whether each net is cut
+        # a net is cut if its pins are not all in top (<0.5) or all in bottom (>0.5)
+        cut_mask = torch.zeros(num_nets,
+                               dtype=torch.bool,
+                               device=self.pin_pos_x.device)
+
+        for i, net_idx in enumerate(net_indices):
+            # get all pin indices for this net
+            start_idx = self.flat_net2pin_start_map[net_idx]
+            end_idx = self.flat_net2pin_start_map[net_idx + 1]
+            pin_indices = self.flat_net2pin_map[start_idx:end_idx]
+
+            if pin_indices.numel() < 2:
+                continue
+
+            # get node indices corresponding to pins
+            node_indices = self.pin2node_map[pin_indices]  # [num_pins]
+
+            # get z values for these nodes (probability of being assigned to top layer)
+            z_net = z[node_indices]  # [num_pins]
+
+            # determine if all in top (z > 0.5) or all in bottom (z < 0.5)
+            all_in_top = (z_net > 0.5).all()
+            all_in_bottom = (z_net < 0.5).all()
+
+            # if not all in top and not all in bottom, then it is cut
+            if not (all_in_top or all_in_bottom):
+                cut_mask[i] = True
+
+        if not cut_mask.any():
+            return terminal_positions, cut_mask
+
+        # for cut nets, compute their terminal positions (center of optimal region)
+        # optimal region is defined as the center of the bounding box of all pin positions for this net
+        for i in range(num_nets):
+            if not cut_mask[i]:
+                continue
+
+            net_idx = net_indices[i]
+
+            # get all pin indices for this net
+            start_idx = self.flat_net2pin_start_map[net_idx]
+            end_idx = self.flat_net2pin_start_map[net_idx + 1]
+            pin_indices = self.flat_net2pin_map[start_idx:end_idx]
+
+            if pin_indices.numel() < 2:
+                continue
+
+            # get pin positions
+            pin_x = self.pin_pos_x[pin_indices]
+            pin_y = self.pin_pos_y[pin_indices]
+
+            # compute center of bounding box (center of optimal region)
+            center_x = (pin_x.max() + pin_x.min()) / 2.0
+            center_y = (pin_y.max() + pin_y.min()) / 2.0
+
+            terminal_positions[i, 0] = center_x
+            terminal_positions[i, 1] = center_y
+
+        # breakpoint()
+
+        return terminal_positions, cut_mask
+
+    def detect_terminal_overlaps(self,
+                                 terminal_positions,
+                                 cut_mask,
+                                 overlap_threshold=1500):
+        """
+        detect whether terminals overlap
+        
+        Args:
+            terminal_positions: tensor of shape [num_nets, 2] (x, y coordinates)
+            cut_mask: boolean tensor of shape [num_nets], True indicates this net generates a terminal
+            overlap_threshold: overlap threshold, terminals with distance less than this value are considered overlapping
+        
+        Returns:
+            overlap_groups: list of lists, each sublist contains overlapping net indices
+            overlap_mask: boolean tensor of shape [num_nets], True indicates this net's terminal overlaps with other nets' terminals
+        """
+        num_nets = terminal_positions.shape[0]
+        overlap_mask = torch.zeros(num_nets,
+                                   dtype=torch.bool,
+                                   device=terminal_positions.device)
+        overlap_groups = []
+
+        # only consider nets that generate terminals
+        valid_indices = torch.where(cut_mask)[0]  # [num_valid_nets]
+
+        if valid_indices.numel() < 2:
+            return overlap_groups, overlap_mask
+
+        # get valid terminal positions
+        valid_positions = terminal_positions[
+            valid_indices]  # [num_valid_nets, 2]
+
+        # compute distances between all terminals
+        # use Euclidean distance
+        positions_expanded_1 = valid_positions.unsqueeze(
+            1)  # [num_valid_nets, 1, 2]
+        positions_expanded_2 = valid_positions.unsqueeze(
+            0)  # [1, num_valid_nets, 2]
+        distances = torch.norm(positions_expanded_1 - positions_expanded_2,
+                               dim=2)  # [num_valid_nets, num_valid_nets]
+
+        # find overlapping terminals (distance less than threshold, and not itself)
+        num_valid_nets = valid_indices.numel()
+        overlap_matrix = (distances < overlap_threshold) & (
+            distances > 0)  # [num_valid_nets, num_valid_nets]
+
+        # use union-find or simple method to find overlap groups
+        visited = torch.zeros(num_valid_nets,
+                              dtype=torch.bool,
+                              device=terminal_positions.device)
+
+        for i in range(num_valid_nets):
+            if visited[i]:
+                continue
+
+            # find all terminals overlapping with i
+            overlaps_with_i = overlap_matrix[i] | overlap_matrix[:, i]
+            if overlaps_with_i.any():
+                # create an overlap group
+                group_indices = torch.where(overlaps_with_i)[0]
+                group_original_indices = valid_indices[group_indices].tolist()
+                overlap_groups.append(group_original_indices)
+
+                # mark as visited
+                visited[group_indices] = True
+
+                # update overlap_mask
+                overlap_mask[valid_indices[group_indices]] = True
+        # breakpoint()
+
+        return overlap_groups, overlap_mask
+
     def compute_cutsize_loss(self,
                              selected_nets=None,
-                             cutsize_net_weights=None):
+                             cutsize_net_weights=None,
+                             handle_terminal_overlap=True,
+                             overlap_threshold=500,
+                             overlap_weight_penalty=1.0):
         """
         calculate total cutsize loss (only for selected nets)
         
         L_cut = Σ_{n∈selected_nets} w(n) * cutsize(n)
+        
+        if handle_terminal_overlap=True, it will detect terminal overlaps and increase the weight of one of the overlapping terminals to eliminate cutsize
         
         Args:
             selected_nets: network indices to apply cutsize constraint, tensor or list
@@ -523,6 +690,9 @@ class LSEPartitioner(nn.Module):
             cutsize_net_weights: weights for each selected net, tensor or list
                                  if None, use self.net_weights corresponding to the selected nets
                                  if selected_nets is None, use self.net_weights
+            handle_terminal_overlap: whether to handle terminal overlap, default True
+            overlap_threshold: distance threshold for terminal overlap
+            overlap_weight_penalty: multiplier to increase net weight when terminals overlap
         
         Returns:
             total_cutsize: total cutsize loss, scalar tensor
@@ -541,12 +711,10 @@ class LSEPartitioner(nn.Module):
             raise ValueError(
                 f"selected_nets index out of range [0, {self.num_nets-1}]")
 
-        total_cutsize = torch.tensor(0.0, device=self.pin_pos_x.device)
-
         # get weights
         if cutsize_net_weights is None:
             # use weights from self.net_weights corresponding to the selected nets
-            weights = self.net_weights[selected_nets]
+            weights = self.net_weights[selected_nets].clone()
         else:
             # use user-provided weights
             if isinstance(cutsize_net_weights, list):
@@ -559,7 +727,37 @@ class LSEPartitioner(nn.Module):
                     f"cutsize_net_weights length ({cutsize_net_weights.numel()}) "
                     f"must match selected_nets length ({selected_nets.numel()})"
                 )
-            weights = cutsize_net_weights
+            weights = cutsize_net_weights.clone()
+
+        weights.fill_(5.0)
+
+        # handle terminal overlap
+        if handle_terminal_overlap:
+            # compute terminal positions
+            terminal_positions, cut_mask = self.compute_terminal_positions(
+                selected_nets)
+
+            # detect terminal overlap
+            overlap_groups, overlap_mask = self.detect_terminal_overlaps(
+                terminal_positions,
+                cut_mask,
+                overlap_threshold=overlap_threshold)
+
+            # collect all overlapping net indices (deduplicated)
+            overlapping_net_indices = set()
+            for group in overlap_groups:
+                if len(group) > 0:
+                    overlapping_net_indices.update(group)
+            # breakpoint()
+
+            for net_idx in overlapping_net_indices:
+                # find the position of this net in selected_nets
+                net_pos_in_selected = (selected_nets == net_idx).nonzero(
+                    as_tuple=True)[0]
+                if net_pos_in_selected.numel() > 0:
+                    pos = net_pos_in_selected[0].item()
+                    # only set weight for nets in overlap group
+                    weights[pos] *= overlap_weight_penalty
 
         # vectorized calculation of cutsize for all selected nets
         cutsizes = self.compute_cutsize_batch(
@@ -582,14 +780,16 @@ class LSEPartitioner(nn.Module):
         top_z = z
         bottom_z = 1 - z
 
-        def compute_density_map(z, num_bin_x, num_bin_y):
+        threshold_factor = 0.6
+
+        def compute_density_map(partition_z, num_bin_x, num_bin_y):
 
             bin_size_x = self.x_range / num_bin_x
             bin_size_y = self.y_range / num_bin_y
 
             # calculate the area of each bin
-            bin_area = bin_size_x * bin_size_y
-            threshold_area = bin_area * 0.6
+            node_area_map = torch.zeros(num_bin_x, num_bin_y, device=z.device)
+            # threshold_factor = 0.42
 
             density_map = torch.zeros(num_bin_x, num_bin_y, device=z.device)
             for i in range(z.numel()):
@@ -600,22 +800,22 @@ class LSEPartitioner(nn.Module):
                 x_idx = torch.clamp(x_idx, 0, num_bin_x - 1)
                 y_idx = torch.clamp(y_idx, 0, num_bin_y - 1)
 
-                density_map[
-                    x_idx,
-                    y_idx] += self.node_size_x[i] * self.node_size_y[i] * z[i]
+                density_map[x_idx, y_idx] += self.node_size_x[
+                    i] * self.node_size_y[i] * partition_z[i]
+                node_area_map[
+                    x_idx, y_idx] += self.node_size_x[i] * self.node_size_y[i]
 
-            return density_map, threshold_area
+            return density_map, node_area_map
 
-        top_density_map, threshold_area = compute_density_map(top_z, 8, 8)
+        top_density_map, node_area_map = compute_density_map(top_z, 8, 8)
         bottom_density_map, _ = compute_density_map(bottom_z, 8, 8)
 
-        balance_loss = torch.relu(top_density_map - threshold_area).sum() + \
-                       torch.relu(bottom_density_map - threshold_area).sum()
+        balance_loss = torch.relu(top_density_map - node_area_map*threshold_factor).sum() + \
+                       torch.relu(bottom_density_map - node_area_map*threshold_factor).sum()
 
         return balance_loss
 
     def forward(self,
-                entropy_weight=0.0,
                 lambda_wl=1.0,
                 lambda_cut=0.0,
                 lambda_balance=0.0,
@@ -627,11 +827,9 @@ class LSEPartitioner(nn.Module):
         L_WL = Σ_e (HPWL_top_e + HPWL_bottom_e) * weight_e
         L_cut = Σ_{n∈selected_nets} w(n) * cutsize(n)
         L_balance = balance loss (penalizes density exceeding half bin area)
-        L_total = λ_WL * L_WL + λ_cut * L_cut + λ_balance * L_balance + entropy_weight * L_entropy
+        L_total = λ_WL * L_WL + λ_cut * L_cut + λ_balance * L_balance
         
         Args:
-            entropy_weight: entropy regularization weight, used to encourage z near 0 or 1 (default 0.0, no regularization)
-                            suggested value: 0.01-0.1, gradually increase during training
             lambda_wl: weight of HPWL loss, default 1.0
             lambda_cut: weight of cutsize loss, default 0.0
             lambda_balance: weight of balance loss, default 0.0
@@ -648,7 +846,6 @@ class LSEPartitioner(nn.Module):
                     - 'L_WL': total HPWL loss
                     - 'L_cut': total cutsize loss
                     - 'L_balance': total balance loss
-                    - 'L_entropy': entropy regularization loss
                     - 'L_total': total loss
                 return (total_loss, debug_info) tuple
             else:
@@ -664,22 +861,6 @@ class LSEPartitioner(nn.Module):
         total_hpwl = (self.net_weights *
                       (hpwl_top_all + hpwl_bottom_all)).sum()
 
-        # print(
-        #     f"total_hpwl: {total_hpwl}; hpwl_top_all: {hpwl_top_all.mean()}; hpwl_bottom_all: {hpwl_bottom_all.mean()};"
-        # )
-
-        # add entropy regularization term, encourage z near 0 or 1
-        # entropy H(z) = -z*log(z) - (1-z)*log(1-z)
-        # when z is near 0 or 1, entropy is minimized; when z=0.5, entropy is maximized
-        entropy_loss = torch.tensor(0.0, device=self.pin_pos_x.device)
-        if entropy_weight > 0:
-            z = self.get_z()
-            # numerically stable: avoid log(0)
-            eps = 1e-8
-            entropy = -(z * torch.log(z + eps) +
-                        (1 - z) * torch.log(1 - z + eps))
-            entropy_loss = entropy.mean()
-
         cutsize_loss = torch.tensor(0.0, device=self.pin_pos_x.device)
         if lambda_cut > 0:
             cutsize_loss = self.compute_cutsize_loss(
@@ -691,8 +872,7 @@ class LSEPartitioner(nn.Module):
             balance_loss = self.compute_balance_loss()
 
         total_loss = (lambda_wl * total_hpwl + lambda_cut * cutsize_loss +
-                      lambda_balance * balance_loss +
-                      entropy_weight * entropy_loss)
+                      lambda_balance * balance_loss)
 
         # if not return debug information, return total loss
         if not return_debug_info:
@@ -703,7 +883,6 @@ class LSEPartitioner(nn.Module):
             'L_WL': total_hpwl.item(),
             'L_cut': cutsize_loss.item() if lambda_cut > 0 else 0.0,
             'L_balance': balance_loss.item() if lambda_balance > 0 else 0.0,
-            'L_entropy': entropy_loss.item() if entropy_weight > 0 else 0.0,
             'L_total': total_loss.item()
         }
         return total_loss, debug_info
@@ -939,8 +1118,8 @@ def main():
 
     # configure cutsize loss
     use_cutsize_loss = True
-    lambda_cut_start = 8000.0
-    lambda_cut_end = 8000.0
+    lambda_cut_start = 10000.0
+    lambda_cut_end = 10000.0
     selected_nets_for_cutsize = None  # None means apply cutsize constraint to all nets
     cutsize_net_weights = None  # None means use self.net_weights corresponding to the selected nets
     # can specify specific network subset, e.g.:
@@ -956,7 +1135,6 @@ def main():
     use_debug_info = use_cutsize_loss or use_balance_loss
     if use_debug_info:
         initial_loss, debug_info = model(
-            entropy_weight=0.0,
             lambda_wl=1.0,
             lambda_cut=lambda_cut_start if use_cutsize_loss else 0.0,
             lambda_balance=lambda_balance_start if use_balance_loss else 0.0,
@@ -970,7 +1148,7 @@ def main():
         if use_balance_loss:
             print(f"   - Initial balance: {debug_info['L_balance']:.4f}")
     else:
-        initial_loss = model(entropy_weight=0.0)
+        initial_loss = model()
         print(f"   - Initial total HPWL: {initial_loss.item():.4f}")
     stats = model.get_assignment_stats()
     print(
@@ -988,16 +1166,10 @@ def main():
     print(f"   - Learning rate: {learning_rate}")
 
     # training parameters
-    num_iterations = 500
+    num_iterations = 2000
     alpha_start = 1.0
     alpha_end = 20.0
     alpha_schedule = np.linspace(alpha_start, alpha_end, num_iterations)
-
-    # entropy regularization weight schedule (optional, to encourage z near 0 or 1)
-    # no entropy regularization at the beginning, gradually increase later
-    entropy_start = 0.0
-    entropy_end = 0.05  # can be adjusted according to needs
-    entropy_schedule = np.linspace(entropy_start, entropy_end, num_iterations)
 
     # lambda_cut schedule (exponentially increase cutsize loss weight)
     if use_cutsize_loss:
@@ -1026,9 +1198,6 @@ def main():
 
     print(f"\n5. Start training ({num_iterations} iterations)...")
     print(f"   - Alpha schedule: {alpha_start} → {alpha_end}")
-    print(
-        f"   - Entropy regularization weight schedule: {entropy_start} → {entropy_end}"
-    )
     if use_cutsize_loss:
         num_selected = num_nets if selected_nets_for_cutsize is None else len(
             selected_nets_for_cutsize)
@@ -1056,7 +1225,6 @@ def main():
 
         # update alpha (gradually increase, making soft assignment harder)
         model.alpha = alpha_schedule[iteration]
-        entropy_weight = entropy_schedule[iteration]
 
         # update lambda_cut (gradually increase cutsize loss weight)
         if use_cutsize_loss:
@@ -1070,18 +1238,15 @@ def main():
         else:
             lambda_balance = 0.0
 
-        # forward propagation (with entropy regularization and optional cutsize/balance loss)
         if use_debug_info:
-            loss, debug_info = model(entropy_weight=entropy_weight,
-                                     lambda_wl=1.0,
+            loss, debug_info = model(lambda_wl=1.0,
                                      lambda_cut=lambda_cut,
                                      lambda_balance=lambda_balance,
                                      selected_nets=selected_nets_for_cutsize,
                                      cutsize_net_weights=cutsize_net_weights,
                                      return_debug_info=True)
         else:
-            loss = model(entropy_weight=entropy_weight,
-                         lambda_balance=lambda_balance)
+            loss = model(lambda_balance=lambda_balance)
 
         # backward propagation
         optimizer.zero_grad()
@@ -1142,7 +1307,6 @@ def main():
     print("\n6. Training completed, final results:")
     if use_debug_info:
         final_loss, final_debug_info = model(
-            entropy_weight=entropy_end,
             lambda_wl=1.0,
             lambda_cut=lambda_cut_end if use_cutsize_loss else 0.0,
             lambda_balance=lambda_balance_end if use_balance_loss else 0.0,
@@ -1157,7 +1321,6 @@ def main():
             print(f"   - Final balance: {final_debug_info['L_balance']:.4f}")
     else:
         final_loss = model(
-            entropy_weight=entropy_end,
             lambda_balance=lambda_balance_end if use_balance_loss else 0.0)
         print(f"   - Final total HPWL: {final_loss.item():.4f}")
 
