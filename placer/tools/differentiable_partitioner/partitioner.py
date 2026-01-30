@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-11-14 16:03:37
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2026-01-30 18:20:12
+LastEditTime: 2026-01-30 20:24:30
 FilePath: /D2D-placer/placer/tools/differentiable_partitioner/partitioner.py
 Description: Differentiable 3D Partitioner based on LogSumExp soft bounding box
 '''
@@ -81,11 +81,12 @@ class LSEPartitioner(nn.Module):
 
         # trainable pre-activation variable t_i (one for each cell)
         # use small random initialization to avoid all z being 0.5 (symmetric point)
-        self.t = nn.Parameter(torch.randn(num_cells) * 0.1)
-        # self.t = torch.load("case2-h-sota.pt").float().to(pin_pos_x.device)
-        # self.t[self.t > 0] = 1.0
-        # self.t[self.t <= 0] = -1.0
-        # self.t = nn.Parameter(self.t)
+        # self.t = nn.Parameter(torch.randn(num_cells) * 0.1)
+        self.t = torch.load("node_die_after_fm_wl.pt").float().to(
+            pin_pos_x.device)
+        self.t[self.t > 0] = 10.0
+        self.t[self.t <= 0] = -10.0
+        self.t = nn.Parameter(self.t)
 
         # initial_values = torch.tensor([10.0, -10.0, -10.0, -10.0],
         #                               device=self.pin_pos_x.device)
@@ -99,7 +100,7 @@ class LSEPartitioner(nn.Module):
 
         # Gumbel Softmax temperature parameter
         self.gumbel_tau = gumbel_tau
-        self.gumbel_switch_iteration = 200
+        self.gumbel_switch_iteration = 0
 
         # Current iteration counter (used to switch between sigmoid and gumbel_softmax)
         self.current_iteration = 0
@@ -729,7 +730,7 @@ class LSEPartitioner(nn.Module):
                 )
             weights = cutsize_net_weights.clone()
 
-        weights.fill_(5.0)
+        weights.fill_(1.0)
 
         # handle terminal overlap
         if handle_terminal_overlap:
@@ -807,11 +808,13 @@ class LSEPartitioner(nn.Module):
 
             return density_map, node_area_map
 
-        top_density_map, node_area_map = compute_density_map(top_z, 8, 8)
-        bottom_density_map, _ = compute_density_map(bottom_z, 8, 8)
+        top_density_map, node_area_map = compute_density_map(top_z, 10, 10)
+        bottom_density_map, _ = compute_density_map(bottom_z, 10, 10)
 
         balance_loss = torch.relu(top_density_map - node_area_map*threshold_factor).sum() + \
                        torch.relu(bottom_density_map - node_area_map*threshold_factor).sum()
+        # balance_loss = torch.relu(top_density_map - node_area_map*0.329).sum() + \
+        #                torch.relu(bottom_density_map - node_area_map*0.671).sum()
 
         return balance_loss
 
@@ -1127,8 +1130,8 @@ def main():
 
     # configure balance loss
     use_balance_loss = True
-    lambda_balance_start = 10.0
-    lambda_balance_end = 10.0
+    lambda_balance_start = 1.0
+    lambda_balance_end = 1.0
 
     # print initial state
     print("\n3. Initial state:")
@@ -1167,7 +1170,7 @@ def main():
 
     # training parameters
     num_iterations = 2000
-    alpha_start = 1.0
+    alpha_start = 20.0
     alpha_end = 20.0
     alpha_schedule = np.linspace(alpha_start, alpha_end, num_iterations)
 
@@ -1218,6 +1221,13 @@ def main():
     save_dir = os.path.join(os.path.dirname(__file__), 'visualizations')
     os.makedirs(save_dir, exist_ok=True)
 
+    # initialize lists to store training history
+    history_loss = []
+    history_hpwl = []
+    history_cut = []
+    history_balance = []
+    history_iterations = []
+
     # training loop
     for iteration in range(num_iterations):
         # update current iteration (used to switch between sigmoid and gumbel_softmax)
@@ -1245,8 +1255,23 @@ def main():
                                      selected_nets=selected_nets_for_cutsize,
                                      cutsize_net_weights=cutsize_net_weights,
                                      return_debug_info=True)
+            # record training history
+            history_iterations.append(iteration + 1)
+            history_loss.append(loss.item())
+            history_hpwl.append(debug_info['L_WL'])
+            history_cut.append(
+                debug_info.get('L_cut', 0.0) if use_cutsize_loss else 0.0)
+            history_balance.append(
+                debug_info.get('L_balance', 0.0) if use_balance_loss else 0.0)
         else:
             loss = model(lambda_balance=lambda_balance)
+            # record training history (only loss and hpwl available)
+            history_iterations.append(iteration + 1)
+            history_loss.append(loss.item())
+            history_hpwl.append(
+                loss.item())  # when no debug_info, loss is HPWL
+            history_cut.append(0.0)
+            history_balance.append(0.0)
 
         # backward propagation
         optimizer.zero_grad()
@@ -1290,8 +1315,97 @@ def main():
                       f"Top: {stats['top_cells']:3d} | "
                       f"Bottom: {stats['bottom_cells']:3d}")
 
-            save_path = os.path.join(
-                save_dir, f'z_evolution_iter_{iteration+1:04d}.png')
+            fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+
+            # Plot Loss
+            axes[0, 0].plot(history_iterations,
+                            history_loss,
+                            'b-',
+                            linewidth=2,
+                            label='Total Loss')
+            axes[0, 0].set_xlabel('Iteration', fontsize=12)
+            axes[0, 0].set_ylabel('Loss', fontsize=12)
+            axes[0, 0].set_title('Training Loss',
+                                 fontsize=14,
+                                 fontweight='bold')
+            axes[0, 0].grid(True, alpha=0.3)
+            axes[0, 0].legend(fontsize=10)
+
+            # Plot HPWL
+            axes[0, 1].plot(history_iterations,
+                            history_hpwl,
+                            'g-',
+                            linewidth=2,
+                            label='HPWL')
+            axes[0, 1].set_xlabel('Iteration', fontsize=12)
+            axes[0, 1].set_ylabel('HPWL', fontsize=12)
+            axes[0, 1].set_title('Half-Perimeter Wire Length',
+                                 fontsize=14,
+                                 fontweight='bold')
+            axes[0, 1].grid(True, alpha=0.3)
+            axes[0, 1].legend(fontsize=10)
+
+            # Plot Cutsize
+            if use_cutsize_loss and any(v > 0 for v in history_cut):
+                axes[1, 0].plot(history_iterations,
+                                history_cut,
+                                'r-',
+                                linewidth=2,
+                                label='Cutsize Loss')
+                axes[1, 0].set_xlabel('Iteration', fontsize=12)
+                axes[1, 0].set_ylabel('Cutsize Loss', fontsize=12)
+                axes[1, 0].set_title('Cutsize Loss',
+                                     fontsize=14,
+                                     fontweight='bold')
+                axes[1, 0].grid(True, alpha=0.3)
+                axes[1, 0].legend(fontsize=10)
+            else:
+                axes[1, 0].text(0.5,
+                                0.5,
+                                'Cutsize Loss\nNot Enabled',
+                                ha='center',
+                                va='center',
+                                fontsize=12,
+                                transform=axes[1, 0].transAxes)
+                axes[1, 0].set_title('Cutsize Loss',
+                                     fontsize=14,
+                                     fontweight='bold')
+
+            # Plot Balance
+            if use_balance_loss and any(v > 0 for v in history_balance):
+                axes[1, 1].plot(history_iterations,
+                                history_balance,
+                                'm-',
+                                linewidth=2,
+                                label='Balance Loss')
+                axes[1, 1].set_xlabel('Iteration', fontsize=12)
+                axes[1, 1].set_ylabel('Balance Loss', fontsize=12)
+                axes[1, 1].set_title('Balance Loss',
+                                     fontsize=14,
+                                     fontweight='bold')
+                axes[1, 1].grid(True, alpha=0.3)
+                axes[1, 1].legend(fontsize=10)
+            else:
+                axes[1, 1].text(0.5,
+                                0.5,
+                                'Balance Loss\nNot Enabled',
+                                ha='center',
+                                va='center',
+                                fontsize=12,
+                                transform=axes[1, 1].transAxes)
+                axes[1, 1].set_title('Balance Loss',
+                                     fontsize=14,
+                                     fontweight='bold')
+
+            plt.tight_layout()
+            curve_save_path = os.path.join(save_dir, 'training_curves.png')
+            plt.savefig(curve_save_path, dpi=150, bbox_inches='tight')
+            print(f"   Training curves saved to: {curve_save_path}")
+            plt.close()
+
+        save_path = os.path.join(save_dir,
+                                 f'z_evolution_iter_{iteration+1:04d}.png')
+
         if (iteration + 1) % 50 == 0 or iteration == 0:
             visualize_z_single(node_x,
                                node_y,
