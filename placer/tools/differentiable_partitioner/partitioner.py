@@ -1,5 +1,13 @@
 '''
 Author: JeanneWillis hi@jeannewillis.cn
+Date: 2025-11-14 16:06:43
+LastEditors: JeanneWillis hi@jeannewillis.cn
+LastEditTime: 2026-01-31 18:51:24
+FilePath: /D2D-placer/install/placer/tools/differentiable_partitioner/partitioner.py
+Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
+'''
+'''
+Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-11-14 16:03:37
 LastEditors: JeanneWillis hi@jeannewillis.cn
 LastEditTime: 2026-01-31 16:34:56
@@ -947,21 +955,33 @@ class LSEPartitioner(nn.Module):
 
             # calculate the area of each bin
             node_area_map = torch.zeros(num_bin_x, num_bin_y, device=z.device)
-            # threshold_factor = 0.42
-
             density_map = torch.zeros(num_bin_x, num_bin_y, device=z.device)
-            for i in range(z.numel()):
-                x_idx = ((self.node_x[i] - self.node_x.min()) /
-                         bin_size_x).long()
-                y_idx = ((self.node_y[i] - self.node_y.min()) /
-                         bin_size_y).long()
-                x_idx = torch.clamp(x_idx, 0, num_bin_x - 1)
-                y_idx = torch.clamp(y_idx, 0, num_bin_y - 1)
+            node_x_min = self.node_x.min()
+            node_y_min = self.node_y.min()
 
-                density_map[x_idx, y_idx] += self.node_size_x[
-                    i] * self.node_size_y[i] * partition_z[i]
-                node_area_map[
-                    x_idx, y_idx] += self.node_size_x[i] * self.node_size_y[i]
+            # compute bin indices for all nodes at once (vectorized)
+            x_idx = ((self.node_x - node_x_min) / bin_size_x).long()
+            y_idx = ((self.node_y - node_y_min) / bin_size_y).long()
+            x_idx = torch.clamp(x_idx, 0, num_bin_x - 1)
+            y_idx = torch.clamp(y_idx, 0, num_bin_y - 1)
+
+            # compute node areas and weighted areas (vectorized)
+            node_areas = self.node_size_x * self.node_size_y  # [num_nodes]
+            weighted_areas = node_areas * partition_z  # [num_nodes]
+
+            # use index_add_ to accumulate values (vectorized)
+            # index_add_ requires 1D indices, so we flatten the 2D indices
+            # Convert 2D indices (x_idx, y_idx) to 1D linear indices
+            linear_indices = x_idx * num_bin_y + y_idx  # [num_nodes]
+
+            # flatten density maps for index_add_
+            density_map_flat = density_map.flatten()  # [num_bin_x * num_bin_y]
+            node_area_map_flat = node_area_map.flatten(
+            )  # [num_bin_x * num_bin_y]
+            density_map_flat.index_add_(0, linear_indices, weighted_areas)
+            node_area_map_flat.index_add_(0, linear_indices, node_areas)
+            density_map = density_map_flat.view(num_bin_x, num_bin_y)
+            node_area_map = node_area_map_flat.view(num_bin_x, num_bin_y)
 
             return density_map, node_area_map
 
@@ -1272,7 +1292,7 @@ def main():
     )
 
     # configure cutsize loss
-    use_cutsize_loss = True
+    use_cutsize_loss = False
     lambda_cut_start = 10000.0
     lambda_cut_end = 10000.0
     selected_nets_for_cutsize = None  # None means apply cutsize constraint to all nets
