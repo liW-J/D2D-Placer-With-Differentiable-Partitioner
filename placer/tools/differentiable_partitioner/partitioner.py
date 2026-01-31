@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-11-14 16:03:37
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2026-01-30 23:02:38
+LastEditTime: 2026-01-31 16:34:56
 FilePath: /D2D-placer/placer/tools/differentiable_partitioner/partitioner.py
 Description: Differentiable 3D Partitioner based on LogSumExp soft bounding box
 '''
@@ -555,7 +555,7 @@ class LSEPartitioner(nn.Module):
 
     def compute_terminal_positions(self, net_indices):
         """
-        compute terminal positions at the center of optimal region for cut nets
+        compute terminal positions at the center of optimal region for cut nets (vectorized version)
         
         Args:
             net_indices: network indices, tensor of shape [num_nets]
@@ -580,66 +580,176 @@ class LSEPartitioner(nn.Module):
         # get the probability of each cell being assigned to top layer
         z = self.get_z()  # [num_cells]
 
-        # determine whether each net is cut
-        # a net is cut if its pins are not all in top (<0.5) or all in bottom (>0.5)
+        # get start and end indices for all nets
+        start_indices = self.flat_net2pin_start_map[net_indices]  # [num_nets]
+        end_indices = self.flat_net2pin_start_map[net_indices +
+                                                  1]  # [num_nets]
+
+        # calculate pin count for each net
+        pin_counts = end_indices - start_indices  # [num_nets]
+        valid_mask = pin_counts >= 2  # [num_nets]
+
+        if not valid_mask.any():
+            cut_mask = torch.zeros(num_nets,
+                                   dtype=torch.bool,
+                                   device=self.pin_pos_x.device)
+            return terminal_positions, cut_mask
+
+        # only process valid nets
+        valid_start_indices = start_indices[valid_mask]  # [num_valid_nets]
+        valid_end_indices = end_indices[valid_mask]  # [num_valid_nets]
+        valid_pin_counts = pin_counts[valid_mask]  # [num_valid_nets]
+        valid_net_indices = net_indices[valid_mask]  # [num_valid_nets]
+        num_valid_nets = valid_pin_counts.numel()
+
+        # collect all valid net's pin indices
+        all_pin_indices = []
+        for i in range(num_valid_nets):
+            start_idx = valid_start_indices[i].item()
+            end_idx = valid_end_indices[i].item()
+            all_pin_indices.append(self.flat_net2pin_map[start_idx:end_idx])
+
+        all_pin_indices = torch.cat(all_pin_indices)  # [total_pins]
+
+        # get all pin corresponding node indices and z values
+        all_node_indices = self.pin2node_map[all_pin_indices]  # [total_pins]
+        all_z_net = z[all_node_indices]  # [total_pins]
+
+        # vectorized cut detection: determine whether each net is cut
+        # a net is cut if its pins are not all in top (z > 0.5) or all in bottom (z < 0.5)
         cut_mask = torch.zeros(num_nets,
                                dtype=torch.bool,
                                device=self.pin_pos_x.device)
 
-        for i, net_idx in enumerate(net_indices):
-            # get all pin indices for this net
-            start_idx = self.flat_net2pin_start_map[net_idx]
-            end_idx = self.flat_net2pin_start_map[net_idx + 1]
-            pin_indices = self.flat_net2pin_map[start_idx:end_idx]
+        # precompute pin offsets for all valid nets
+        pin_offsets = torch.cumsum(torch.cat([
+            torch.tensor([0], device=valid_pin_counts.device),
+            valid_pin_counts[:-1]
+        ]),
+                                   dim=0)  # [num_valid_nets]
 
-            if pin_indices.numel() < 2:
+        # vectorized cut detection by grouping nets with same pin count
+        unique_pin_counts, inverse_indices, counts = torch.unique(
+            valid_pin_counts, return_inverse=True, return_counts=True)
+
+        # process each group of nets with same pin count
+        for group_idx, pin_count in enumerate(unique_pin_counts):
+            # find all nets in this group
+            group_mask = inverse_indices == group_idx
+            group_net_indices_in_valid = group_mask.nonzero(
+                as_tuple=True)[0]  # indices in valid_nets
+            num_group_nets = group_net_indices_in_valid.numel()
+
+            if num_group_nets == 0:
                 continue
 
-            # get node indices corresponding to pins
-            node_indices = self.pin2node_map[pin_indices]  # [num_pins]
+            # get pin offsets for this group
+            group_pin_offsets = pin_offsets[
+                group_net_indices_in_valid]  # [num_group_nets]
 
-            # get z values for these nodes (probability of being assigned to top layer)
-            z_net = z[node_indices]  # [num_pins]
+            # create batch indices for all pins in this group
+            # shape: [num_group_nets, pin_count]
+            batch_indices = group_pin_offsets.unsqueeze(1) + torch.arange(
+                pin_count, device=group_pin_offsets.device).unsqueeze(0)
 
-            # determine if all in top (z > 0.5) or all in bottom (z < 0.5)
-            all_in_top = (z_net > 0.5).all()
-            all_in_bottom = (z_net < 0.5).all()
+            # get z values for all pins in this group
+            z_net_batch = all_z_net[
+                batch_indices]  # [num_group_nets, pin_count]
+
+            # determine if all in top (z > 0.5) or all in bottom (z < 0.5) for each net
+            all_in_top = (z_net_batch > 0.5).all(dim=1)  # [num_group_nets]
+            all_in_bottom = (z_net_batch < 0.5).all(dim=1)  # [num_group_nets]
 
             # if not all in top and not all in bottom, then it is cut
-            if not (all_in_top or all_in_bottom):
-                cut_mask[i] = True
+            group_cut_mask = ~(all_in_top | all_in_bottom)  # [num_group_nets]
+
+            # map back to original net indices
+            valid_net_positions = group_net_indices_in_valid[group_cut_mask]
+            if valid_net_positions.numel() > 0:
+                # find corresponding positions in original net_indices
+                original_positions = valid_mask.nonzero(
+                    as_tuple=True)[0][valid_net_positions]
+                cut_mask[original_positions] = True
 
         if not cut_mask.any():
             return terminal_positions, cut_mask
 
         # for cut nets, compute their terminal positions (center of optimal region)
         # optimal region is defined as the center of the bounding box of all pin positions for this net
-        for i in range(num_nets):
-            if not cut_mask[i]:
+        cut_valid_mask = valid_mask & cut_mask  # [num_nets]
+        cut_valid_positions = cut_valid_mask.nonzero(
+            as_tuple=True)[0]  # positions in net_indices
+
+        if cut_valid_positions.numel() == 0:
+            return terminal_positions, cut_mask
+
+        # get cut nets' start and end indices
+        cut_start_indices = start_indices[cut_valid_mask]  # [num_cut_nets]
+        cut_end_indices = end_indices[cut_valid_mask]  # [num_cut_nets]
+        cut_pin_counts = pin_counts[cut_valid_mask]  # [num_cut_nets]
+        num_cut_nets = cut_pin_counts.numel()
+
+        # collect all cut net's pin indices
+        all_cut_pin_indices = []
+        for i in range(num_cut_nets):
+            start_idx = cut_start_indices[i].item()
+            end_idx = cut_end_indices[i].item()
+            all_cut_pin_indices.append(
+                self.flat_net2pin_map[start_idx:end_idx])
+
+        all_cut_pin_indices = torch.cat(
+            all_cut_pin_indices)  # [total_cut_pins]
+
+        # get all cut pin positions
+        all_cut_pin_x = self.pin_pos_x[all_cut_pin_indices]  # [total_cut_pins]
+        all_cut_pin_y = self.pin_pos_y[all_cut_pin_indices]  # [total_cut_pins]
+
+        # vectorized terminal position calculation by grouping nets with same pin count
+        cut_pin_offsets = torch.cumsum(torch.cat([
+            torch.tensor([0], device=cut_pin_counts.device),
+            cut_pin_counts[:-1]
+        ]),
+                                       dim=0)  # [num_cut_nets]
+
+        # group cut nets by pin count
+        cut_unique_pin_counts, cut_inverse_indices, cut_counts = torch.unique(
+            cut_pin_counts, return_inverse=True, return_counts=True)
+
+        # process each group of cut nets with same pin count
+        for group_idx, pin_count in enumerate(cut_unique_pin_counts):
+            # find all cut nets in this group
+            group_mask = cut_inverse_indices == group_idx
+            group_net_indices_in_cut = group_mask.nonzero(
+                as_tuple=True)[0]  # indices in cut_nets
+            num_group_nets = group_net_indices_in_cut.numel()
+
+            if num_group_nets == 0:
                 continue
 
-            net_idx = net_indices[i]
+            # get pin offsets for this group
+            group_pin_offsets = cut_pin_offsets[
+                group_net_indices_in_cut]  # [num_group_nets]
 
-            # get all pin indices for this net
-            start_idx = self.flat_net2pin_start_map[net_idx]
-            end_idx = self.flat_net2pin_start_map[net_idx + 1]
-            pin_indices = self.flat_net2pin_map[start_idx:end_idx]
+            # create batch indices for all pins in this group
+            batch_indices = group_pin_offsets.unsqueeze(1) + torch.arange(
+                pin_count, device=group_pin_offsets.device).unsqueeze(0)
 
-            if pin_indices.numel() < 2:
-                continue
+            # get pin positions for all pins in this group
+            pin_x_batch = all_cut_pin_x[
+                batch_indices]  # [num_group_nets, pin_count]
+            pin_y_batch = all_cut_pin_y[
+                batch_indices]  # [num_group_nets, pin_count]
 
-            # get pin positions
-            pin_x = self.pin_pos_x[pin_indices]
-            pin_y = self.pin_pos_y[pin_indices]
+            # compute center of bounding box for each net (vectorized)
+            center_x_batch = (pin_x_batch.max(dim=1)[0] + pin_x_batch.min(
+                dim=1)[0]) / 2.0  # [num_group_nets]
+            center_y_batch = (pin_y_batch.max(dim=1)[0] + pin_y_batch.min(
+                dim=1)[0]) / 2.0  # [num_group_nets]
 
-            # compute center of bounding box (center of optimal region)
-            center_x = (pin_x.max() + pin_x.min()) / 2.0
-            center_y = (pin_y.max() + pin_y.min()) / 2.0
-
-            terminal_positions[i, 0] = center_x
-            terminal_positions[i, 1] = center_y
-
-        # breakpoint()
+            # map back to original net positions
+            original_positions = cut_valid_positions[group_net_indices_in_cut]
+            terminal_positions[original_positions, 0] = center_x_batch
+            terminal_positions[original_positions, 1] = center_y_batch
 
         return terminal_positions, cut_mask
 
@@ -711,14 +821,13 @@ class LSEPartitioner(nn.Module):
 
                 # update overlap_mask
                 overlap_mask[valid_indices[group_indices]] = True
-        # breakpoint()
 
         return overlap_groups, overlap_mask
 
     def compute_cutsize_loss(self,
                              selected_nets=None,
                              cutsize_net_weights=None,
-                             handle_terminal_overlap=True,
+                             handle_terminal_overlap=False,
                              overlap_threshold=500,
                              overlap_weight_penalty=1.0):
         """
@@ -780,28 +889,33 @@ class LSEPartitioner(nn.Module):
             # compute terminal positions
             terminal_positions, cut_mask = self.compute_terminal_positions(
                 selected_nets)
-
-            # detect terminal overlap
             overlap_groups, overlap_mask = self.detect_terminal_overlaps(
                 terminal_positions,
                 cut_mask,
                 overlap_threshold=overlap_threshold)
 
-            # collect all overlapping net indices (deduplicated)
-            overlapping_net_indices = set()
-            for group in overlap_groups:
-                if len(group) > 0:
-                    overlapping_net_indices.update(group)
-            # breakpoint()
+            if overlap_groups:
+                # concatenate all groups into a single tensor
+                all_overlapping_indices = torch.cat([
+                    torch.tensor(group,
+                                 dtype=torch.long,
+                                 device=selected_nets.device)
+                    for group in overlap_groups if len(group) > 0
+                ])
+                # remove duplicates using torch.unique
+                overlapping_net_indices = torch.unique(all_overlapping_indices)
 
-            for net_idx in overlapping_net_indices:
-                # find the position of this net in selected_nets
-                net_pos_in_selected = (selected_nets == net_idx).nonzero(
-                    as_tuple=True)[0]
-                if net_pos_in_selected.numel() > 0:
-                    pos = net_pos_in_selected[0].item()
-                    # only set weight for nets in overlap group
-                    weights[pos] *= overlap_weight_penalty
+                # expand selected_nets to [num_selected_nets, 1] and overlapping_net_indices to [1, num_overlapping_nets]
+                # then compare to find matches
+                selected_nets_expanded = selected_nets.unsqueeze(
+                    1)  # [num_selected_nets, 1]
+                overlapping_expanded = overlapping_net_indices.unsqueeze(
+                    0)  # [1, num_overlapping_nets]
+
+                # find matches: [num_selected_nets, num_overlapping_nets]
+                matches = (selected_nets_expanded == overlapping_expanded)
+                matching_positions = matches.any(dim=1)  # [num_selected_nets]
+                weights[matching_positions] *= overlap_weight_penalty
 
         # vectorized calculation of cutsize for all selected nets
         cutsizes = self.compute_cutsize_batch(
@@ -1063,13 +1177,8 @@ def visualize_z_single(x_coords,
     ax.set_title(f'Iteration {iteration} - Z Distribution over XY',
                  fontsize=14,
                  fontweight='bold')
-
-    # set z axis range
     ax.set_zlim(0, 1)
-
-    # add color bar
     plt.colorbar(scatter, ax=ax, shrink=0.8, label='Z Value')
-
     plt.tight_layout()
 
     if save_path:
@@ -1163,7 +1272,7 @@ def main():
     )
 
     # configure cutsize loss
-    use_cutsize_loss = False
+    use_cutsize_loss = True
     lambda_cut_start = 10000.0
     lambda_cut_end = 10000.0
     selected_nets_for_cutsize = None  # None means apply cutsize constraint to all nets
@@ -1172,7 +1281,7 @@ def main():
     # selected_nets_for_cutsize = torch.tensor([0, 1, 2, 10, 20, 50], dtype=torch.long)
 
     # configure balance loss
-    use_balance_loss = False
+    use_balance_loss = True
     lambda_balance_start = 1.0
     lambda_balance_end = 1.0
 
@@ -1212,8 +1321,8 @@ def main():
     print(f"   - Learning rate: {learning_rate}")
 
     # training parameters
-    num_iterations = 2000
-    alpha_start = 20.0
+    num_iterations = 5000
+    alpha_start = 1.0
     alpha_end = 20.0
     alpha_schedule = np.linspace(alpha_start, alpha_end, num_iterations)
 
@@ -1275,8 +1384,6 @@ def main():
     for iteration in range(num_iterations):
         # update current iteration (used to switch between sigmoid and gumbel_softmax)
         model.current_iteration = iteration
-
-        # update alpha (gradually increase, making soft assignment harder)
         model.alpha = alpha_schedule[iteration]
 
         # update lambda_cut (gradually increase cutsize loss weight)
@@ -1357,6 +1464,18 @@ def main():
                       f"||dz/dt||: {dz_dt_norm:6.4f} | "
                       f"Top: {stats['top_cells']:3d} | "
                       f"Bottom: {stats['bottom_cells']:3d}")
+
+        if (iteration + 1) % 50 == 0 or iteration == 0:
+            save_path = os.path.join(
+                save_dir, f'z_evolution_iter_{iteration+1:04d}.png')
+            z = model.get_z()
+            visualize_z_single(node_x,
+                               node_y,
+                               z,
+                               iteration + 1,
+                               save_path,
+                               node_size_x=node_size_x,
+                               node_size_y=node_size_y)
 
             fig, axes = plt.subplots(2, 2, figsize=(14, 10))
 
@@ -1445,18 +1564,6 @@ def main():
             plt.savefig(curve_save_path, dpi=150, bbox_inches='tight')
             print(f"   Training curves saved to: {curve_save_path}")
             plt.close()
-
-        save_path = os.path.join(save_dir,
-                                 f'z_evolution_iter_{iteration+1:04d}.png')
-
-        if (iteration + 1) % 50 == 0 or iteration == 0:
-            visualize_z_single(node_x,
-                               node_y,
-                               z,
-                               iteration + 1,
-                               save_path,
-                               node_size_x=node_size_x,
-                               node_size_y=node_size_y)
 
     print("-" * 60)
 
