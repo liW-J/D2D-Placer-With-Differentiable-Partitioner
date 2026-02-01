@@ -1,13 +1,5 @@
 '''
 Author: JeanneWillis hi@jeannewillis.cn
-Date: 2025-11-14 16:06:43
-LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2026-01-31 18:51:24
-FilePath: /D2D-placer/install/placer/tools/differentiable_partitioner/partitioner.py
-Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
-'''
-'''
-Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-11-14 16:03:37
 LastEditors: JeanneWillis hi@jeannewillis.cn
 LastEditTime: 2026-01-31 16:34:56
@@ -213,6 +205,59 @@ class LSEPartitioner(nn.Module):
 
         # return -(1/α) * log_sum_exp(-α * weighted_vals)
         return -lse / self.alpha
+
+    def segment_logsumexp(self, values, segment_ids, num_segments):
+        """
+        numerically stable segment-based logsumexp calculation
+        
+        Args:
+            values: input values, shape [total_elements] tensor
+            segment_ids: segment id for each element, shape [total_elements] tensor
+            num_segments: number of segments
+            
+        Returns:
+            logsumexp result for each segment, shape [num_segments] tensor
+        """
+        # find max value in each segment for numerical stability
+        # use scatter_reduce if available (PyTorch 1.12+), otherwise use fallback
+        if hasattr(torch.Tensor, 'scatter_reduce_'):
+            segment_max = torch.full((num_segments, ),
+                                     float('-inf'),
+                                     device=values.device,
+                                     dtype=values.dtype)
+            segment_max = segment_max.scatter_reduce_(0,
+                                                      segment_ids,
+                                                      values,
+                                                      reduce='amax',
+                                                      include_self=False)
+        else:
+            # fallback: compute max for each segment (segment count is usually small)
+            segment_max = torch.zeros(num_segments,
+                                      device=values.device,
+                                      dtype=values.dtype)
+            for seg_id in range(num_segments):
+                mask = segment_ids == seg_id
+                if mask.any():
+                    segment_max[seg_id] = values[mask].max()
+                else:
+                    segment_max[seg_id] = float('-inf')
+
+        # subtract max from values for numerical stability
+        values_shifted = values - segment_max[segment_ids]  # [total_elements]
+
+        # compute exp of shifted values
+        exp_values = torch.exp(values_shifted)  # [total_elements]
+
+        # sum exp values for each segment
+        segment_sum = torch.zeros(num_segments,
+                                  device=values.device,
+                                  dtype=values.dtype)
+        segment_sum = segment_sum.scatter_add_(0, segment_ids, exp_values)
+
+        # compute logsumexp: log(sum(exp)) = max + log(sum(exp(values - max)))
+        logsumexp_per_segment = segment_max + torch.log(segment_sum + 1e-10)
+
+        return logsumexp_per_segment
 
     def compute_cutsize(self, net_idx):
         """
@@ -517,39 +562,32 @@ class LSEPartitioner(nn.Module):
         valid_pin_counts = pin_counts[valid_mask]  # [num_valid_nets]
         num_valid_nets = valid_pin_counts.numel()
 
-        # collect all valid net's pin indices
-        all_pin_indices = []
-        for i in range(num_valid_nets):
-            start_idx = valid_start_indices[i].item()
-            end_idx = valid_end_indices[i].item()
-            all_pin_indices.append(self.flat_net2pin_map[start_idx:end_idx])
+        # vectorized collection of all valid net's pin indices
+        total_pins = valid_pin_counts.sum().item()
+        if total_pins == 0:
+            return torch.zeros(num_nets, device=self.pin_pos_x.device)
 
-        all_pin_indices = torch.cat(all_pin_indices)  # [total_pins]
+        # create segment indices for grouping pins by net (used later for grouped operations)
+        segment_ids = torch.repeat_interleave(
+            torch.arange(num_valid_nets, device=self.pin_pos_x.device),
+            valid_pin_counts)  # [total_pins]
 
-        # get all pin corresponding node indices and z values
+        # optimized extraction of pin indices using list comprehension (more memory efficient than broadcasting)
+        # this avoids creating a large max_pins x num_valid_nets matrix
+        all_pin_indices = torch.cat([
+            self.flat_net2pin_map[valid_start_indices[i]:valid_end_indices[i]]
+            for i in range(num_valid_nets)
+        ])  # [total_pins]
+
         all_node_indices = self.pin2node_map[all_pin_indices]  # [total_pins]
         all_z_net = z[all_node_indices]  # [total_pins]
-
-        # vectorized calculation of LSE-max and LSE-min for each net
-        # using grouped calculation: calculate logsumexp for each net separately
-        lse_max_per_net = torch.zeros(num_valid_nets,
-                                      device=self.pin_pos_x.device)
-        lse_min_per_net = torch.zeros(num_valid_nets,
-                                      device=self.pin_pos_x.device)
-
-        # calculate LSE-max and LSE-min for each net
-        pin_offset = 0
-        for i in range(num_valid_nets):
-            num_pins = valid_pin_counts[i].item()
-            z_net = all_z_net[pin_offset:pin_offset + num_pins]
-
-            # LSE-max: logsumexp(α * z) / α
-            lse_max_per_net[i] = self.lse_max(z_net)
-
-            # LSE-min: -logsumexp(-α * z) / α
-            lse_min_per_net[i] = self.lse_min(z_net)
-
-            pin_offset += num_pins
+        # using segment-based logsumexp operations
+        alpha_z = self.alpha * all_z_net  # [total_pins]
+        lse_max_per_net = self.segment_logsumexp(alpha_z, segment_ids,
+                                                 num_valid_nets) / self.alpha
+        neg_alpha_z = -self.alpha * all_z_net  # [total_pins]
+        lse_min_per_net = -self.segment_logsumexp(neg_alpha_z, segment_ids,
+                                                  num_valid_nets) / self.alpha
 
         # calculate cutsize: (1 - lse_min) * lse_max
         valid_cutsizes = (
@@ -610,14 +648,10 @@ class LSEPartitioner(nn.Module):
         valid_net_indices = net_indices[valid_mask]  # [num_valid_nets]
         num_valid_nets = valid_pin_counts.numel()
 
-        # collect all valid net's pin indices
-        all_pin_indices = []
-        for i in range(num_valid_nets):
-            start_idx = valid_start_indices[i].item()
-            end_idx = valid_end_indices[i].item()
-            all_pin_indices.append(self.flat_net2pin_map[start_idx:end_idx])
-
-        all_pin_indices = torch.cat(all_pin_indices)  # [total_pins]
+        all_pin_indices = torch.cat([
+            self.flat_net2pin_map[valid_start_indices[i]:valid_end_indices[i]]
+            for i in range(num_valid_nets)
+        ])  # [total_pins]
 
         # get all pin corresponding node indices and z values
         all_node_indices = self.pin2node_map[all_pin_indices]  # [total_pins]
@@ -697,16 +731,11 @@ class LSEPartitioner(nn.Module):
         cut_pin_counts = pin_counts[cut_valid_mask]  # [num_cut_nets]
         num_cut_nets = cut_pin_counts.numel()
 
-        # collect all cut net's pin indices
-        all_cut_pin_indices = []
-        for i in range(num_cut_nets):
-            start_idx = cut_start_indices[i].item()
-            end_idx = cut_end_indices[i].item()
-            all_cut_pin_indices.append(
-                self.flat_net2pin_map[start_idx:end_idx])
-
-        all_cut_pin_indices = torch.cat(
-            all_cut_pin_indices)  # [total_cut_pins]
+        # use list comprehension for better performance than explicit loop
+        all_cut_pin_indices = torch.cat([
+            self.flat_net2pin_map[cut_start_indices[i]:cut_end_indices[i]]
+            for i in range(num_cut_nets)
+        ])  # [total_cut_pins]
 
         # get all cut pin positions
         all_cut_pin_x = self.pin_pos_x[all_cut_pin_indices]  # [total_cut_pins]
@@ -835,7 +864,7 @@ class LSEPartitioner(nn.Module):
     def compute_cutsize_loss(self,
                              selected_nets=None,
                              cutsize_net_weights=None,
-                             handle_terminal_overlap=False,
+                             handle_terminal_overlap=True,
                              overlap_threshold=500,
                              overlap_weight_penalty=1.0):
         """
@@ -1292,7 +1321,7 @@ def main():
     )
 
     # configure cutsize loss
-    use_cutsize_loss = False
+    use_cutsize_loss = True
     lambda_cut_start = 10000.0
     lambda_cut_end = 10000.0
     selected_nets_for_cutsize = None  # None means apply cutsize constraint to all nets
