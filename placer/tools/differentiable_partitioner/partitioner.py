@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-11-14 16:03:37
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2026-01-31 16:34:56
+LastEditTime: 2026-02-05 15:30:54
 FilePath: /D2D-placer/placer/tools/differentiable_partitioner/partitioner.py
 Description: Differentiable 3D Partitioner based on LogSumExp soft bounding box
 '''
@@ -16,8 +16,6 @@ from matplotlib.colors import Normalize
 import os
 
 COORD_EPSILON = 1e-2
-
-
 class LSEPartitioner(nn.Module):
     """
     Differentiable 3D Partitioner based on LogSumExp soft bounding box
@@ -81,12 +79,11 @@ class LSEPartitioner(nn.Module):
 
         # trainable pre-activation variable t_i (one for each cell)
         # use small random initialization to avoid all z being 0.5 (symmetric point)
-        self.t = nn.Parameter(torch.randn(num_cells) * 0.1)
-        # self.t = torch.load("node_die_after_fm_wl.pt").float().to(
-        #     pin_pos_x.device)
-        # self.t[self.t > 0] = 10.0
-        # self.t[self.t <= 0] = -10.0
-        # self.t = nn.Parameter(self.t)
+        t = torch.randn(num_cells) * 0.1
+        # t = torch.load("case2-hmetis.pt").float().to(pin_pos_x.device)
+        # t[t > 0] = 5.0
+        # t[t <= 0] = -5.0
+        self.t = nn.Parameter(t)
 
         # initial_values = torch.tensor([10.0, -10.0, -10.0, -10.0],
         #                               device=self.pin_pos_x.device)
@@ -374,14 +371,29 @@ class LSEPartitioner(nn.Module):
         valid_net_indices = net_indices[valid_mask]  # [num_valid_nets]
         num_valid_nets = valid_pin_counts.numel()
 
-        # collect all valid net's pin indices
-        all_pin_indices = []
-        for i in range(num_valid_nets):
-            start_idx = valid_start_indices[i].item()
-            end_idx = valid_end_indices[i].item()
-            all_pin_indices.append(self.flat_net2pin_map[start_idx:end_idx])
+        if num_valid_nets > 0:
+            repeated_start_indices = torch.repeat_interleave(
+                valid_start_indices, valid_pin_counts)
+            cumsum_pin_counts = torch.cumsum(valid_pin_counts,
+                                             dim=0)  # [num_valid_nets]
+            net_start_positions = torch.cat([
+                torch.tensor([0], device=valid_pin_counts.device),
+                cumsum_pin_counts[:-1]
+            ])  # [num_valid_nets]
 
-        all_pin_indices = torch.cat(all_pin_indices)  # [total_pins]
+            repeated_net_starts = torch.repeat_interleave(
+                net_start_positions, valid_pin_counts)
+            total_pins = cumsum_pin_counts[-1].item()
+            global_indices = torch.arange(total_pins,
+                                          device=valid_start_indices.device,
+                                          dtype=torch.long)
+            pin_offsets_per_net = global_indices - repeated_net_starts
+            all_pin_indices = self.flat_net2pin_map[repeated_start_indices +
+                                                    pin_offsets_per_net]
+        else:
+            all_pin_indices = torch.empty(0,
+                                          dtype=torch.long,
+                                          device=self.pin_pos_x.device)
 
         # get all pin corresponding node indices and z values
         all_node_indices = self.pin2node_map[all_pin_indices]  # [total_pins]
@@ -866,7 +878,7 @@ class LSEPartitioner(nn.Module):
                              cutsize_net_weights=None,
                              handle_terminal_overlap=True,
                              overlap_threshold=500,
-                             overlap_weight_penalty=1.0):
+                             overlap_weight_penalty=2.0):
         """
         calculate total cutsize loss (only for selected nets)
         
@@ -919,7 +931,7 @@ class LSEPartitioner(nn.Module):
                 )
             weights = cutsize_net_weights.clone()
 
-        weights.fill_(1.0)
+        weights.fill_(0.0)
 
         # handle terminal overlap
         if handle_terminal_overlap:
@@ -952,7 +964,7 @@ class LSEPartitioner(nn.Module):
                 # find matches: [num_selected_nets, num_overlapping_nets]
                 matches = (selected_nets_expanded == overlapping_expanded)
                 matching_positions = matches.any(dim=1)  # [num_selected_nets]
-                weights[matching_positions] *= overlap_weight_penalty
+                weights[matching_positions] += overlap_weight_penalty
 
         # vectorized calculation of cutsize for all selected nets
         cutsizes = self.compute_cutsize_batch(
@@ -975,7 +987,7 @@ class LSEPartitioner(nn.Module):
         top_z = z
         bottom_z = 1 - z
 
-        threshold_factor = 0.6
+        threshold_factor = 0.7
 
         def compute_density_map(partition_z, num_bin_x, num_bin_y):
 
@@ -1322,7 +1334,7 @@ def main():
 
     # configure cutsize loss
     use_cutsize_loss = True
-    lambda_cut_start = 10000.0
+    lambda_cut_start = 10.0
     lambda_cut_end = 10000.0
     selected_nets_for_cutsize = None  # None means apply cutsize constraint to all nets
     cutsize_net_weights = None  # None means use self.net_weights corresponding to the selected nets
@@ -1331,8 +1343,8 @@ def main():
 
     # configure balance loss
     use_balance_loss = True
-    lambda_balance_start = 1.0
-    lambda_balance_end = 1.0
+    lambda_balance_start = 0.0
+    lambda_balance_end = 5.0
 
     # print initial state
     print("\n3. Initial state:")
@@ -1371,32 +1383,26 @@ def main():
 
     # training parameters
     num_iterations = 5000
-    alpha_start = 1.0
+    alpha_start = 20.0
     alpha_end = 20.0
     alpha_schedule = np.linspace(alpha_start, alpha_end, num_iterations)
 
     # lambda_cut schedule (exponentially increase cutsize loss weight)
     if use_cutsize_loss:
-        if lambda_cut_start <= 0:
-            # if start value is 0 or negative, use a small value as start value, then exponential growth
-            eps = 1e-6
-            lambda_cut_schedule = np.logspace(
-                np.log10(max(eps, lambda_cut_start + eps)),
-                np.log10(lambda_cut_end), num_iterations)
-            if lambda_cut_start == 0:
-                lambda_cut_schedule[0] = 0.0
-        else:
-            lambda_cut_schedule = np.logspace(np.log10(lambda_cut_start),
-                                              np.log10(lambda_cut_end),
-                                              num_iterations)
+        gamma = 0.2
+        t = np.linspace(0.0, 1.0, num_iterations)
+        lambda_cut_schedule = lambda_cut_start + \
+            (lambda_cut_end - lambda_cut_start) * (t ** gamma)
+
     else:
         lambda_cut_schedule = None
 
     # lambda_balance schedule (linear schedule for balance loss weight)
     if use_balance_loss:
-        lambda_balance_schedule = np.linspace(lambda_balance_start,
-                                              lambda_balance_end,
-                                              num_iterations)
+        gamma = 10
+        t = np.linspace(0.0, 1.0, num_iterations)
+        lambda_balance_schedule = lambda_balance_start + \
+            (lambda_balance_end - lambda_balance_start) * (t ** gamma)
     else:
         lambda_balance_schedule = None
 
