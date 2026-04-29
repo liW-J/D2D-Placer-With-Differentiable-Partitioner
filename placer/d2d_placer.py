@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-07-19 17:57:28
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2026-01-20 01:39:32
+LastEditTime: 2026-03-11 19:30:56
 FilePath: /D2D-placer/placer/d2d_placer.py
 Description: 
 '''
@@ -222,7 +222,7 @@ class D2Dplacer:
         filename = self.params.result_dir_root + "/final-partition-block.png"
         self.op_wrapper.d2d_op_collections.draw_block_op(
             self.dreamplace.dp_2d.pos, filename, self.tier)
-        breakpoint()
+        # breakpoint()
 
     def terminal_insert(self):
         # create terminal aux for collaborative optimization by tier[0]

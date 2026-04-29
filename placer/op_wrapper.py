@@ -7,7 +7,6 @@ FilePath: /D2D-placer/placer/op_wrapper.py
 Description:
 '''
 import configure
-from placer.ops.hmetis.hmetis import Hmetis
 from placer.ops.multi_bipartition.multi_bipartition import MultiBipartition
 from placer.ops.partition_aux.partition_aux import PartitionAux
 from placer.ops.avg_cut.avg_cut import AvgCut
