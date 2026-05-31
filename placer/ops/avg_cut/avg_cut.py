@@ -23,8 +23,10 @@ class AvgCutFunction(Function):
     def forward(flat_netpin, netpin_start, pin2node_map, net_weights,
                 num_movable_nodes, pos, node_size_x, node_size_y):
         func = avg_cut_cpp.avg_cut
-        output = func(flat_netpin, netpin_start, pin2node_map, net_weights,
-                      num_movable_nodes, pos, node_size_x, node_size_y)
+        # avg_cut_cpp is a CPU-only operator; move tensors off GPU if needed
+        output = func(flat_netpin.cpu(), netpin_start.cpu(), pin2node_map.cpu(),
+                      net_weights.cpu(), num_movable_nodes,
+                      pos.cpu(), node_size_x.cpu(), node_size_y.cpu())
         return output
 
 

@@ -24,9 +24,12 @@ class MultiBipartitionFunction(Function):
                 net_mask, num_movable_nodes, flat_node2pin_map,
                 flat_node2pin_start_map, pin2net_map):
         func = multi_bipartition_cpp.multi_bipartition
-        output = func(pos, flat_netpin, netpin_start, pin2node_map,
-                      net_weights, net_mask, num_movable_nodes,
-                      flat_node2pin_map, flat_node2pin_start_map, pin2net_map)
+        # multi_bipartition_cpp is a CPU-only operator; move tensors off GPU if needed
+        output = func(pos.cpu(),
+                      flat_netpin.cpu(), netpin_start.cpu(), pin2node_map.cpu(),
+                      net_weights.cpu(), net_mask.cpu(), num_movable_nodes,
+                      flat_node2pin_map.cpu(), flat_node2pin_start_map.cpu(),
+                      pin2net_map.cpu())
         # breakpoint()
         return output
 

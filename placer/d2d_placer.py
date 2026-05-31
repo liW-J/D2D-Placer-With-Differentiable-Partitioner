@@ -36,6 +36,9 @@ import torch
 import matplotlib.pyplot as plt
 
 from placer.tools.d2d_result_analyzer.d2d_result_analyzer import D2DResultAnalyzer
+from placer.tools.diff_d2d_wirelength import D2DCoPlace
+from placer.tools.openroad_3d_export import export_openroad_3d_inputs
+import dreamplace.NesterovAcceleratedGradientOptimizer as NesterovOpt
 
 
 def printWelcome():
@@ -170,19 +173,195 @@ class D2Dplacer:
         return self.hpwl_d2d(logger)
 
     def die_terminal_co_place(self,
-                              global_place_flag,
-                              legalize_flag,
-                              detailed_place_flag,
-                              random_center_init_flag,
-                              ntuplace_flag,
+                              global_place_flag=True,
+                              legalize_flag=False,
+                              detailed_place_flag=False,
+                              random_center_init_flag=True,
+                              ntuplace_flag=False,
                               logger=logging):
         """
-        三层共同优化：同时优化 top die 和 bottom die
-        HPWL_D2D = top_hpwl + bottom_hpwl（terminal 已在网表中）
-        每层有独立的 density 约束
-        
-        参考 DREAMPlace NonLinearPlace 的多阶段优化结构
+        Coplace-style 2.5D global placement:
+        simultaneously optimize top tier cells, bottom tier cells, and D2D
+        terminal_NIs under a single Nesterov optimizer.
+
+        Each placedb is wrapped by a dreamplace ``PlaceObj``, so its
+        ``obj_and_grad_fn`` already integrates wirelength + density penalty
+        with the diagonal preconditioner; the outer loop also drives each
+        layer's adaptive ``update_density_weight_op`` and ``update_gamma_op``.
+
+        A single ``mov_node_pos_all = [top_cell | bot_cell | terminal]`` is
+        shared by the three placedbs; per-layer preconditioned grads are
+        scattered back to it before the Nesterov step.
+
+        Prerequisites: ``partition()`` and ``terminal_insert()`` must have
+        been called so that ``dp_tier[0/1]`` and ``dp_terminal`` are properly
+        built and contain their per-tier net topology with D2D terminal_NIs
+        in place.
         """
+        # dp_terminal has already been built+GP'd inside terminal_insert(),
+        # so we keep its current (legalized) pos as the warm start.
+        # Reload tier placedb/netlist after terminal_insert. Force
+        # random_center_init_flag=False so BasicPlace does not discard the
+        # warm-start / legalized partition .pl (otherwise iter0 piles cells at
+        # die center and density later pushes them toward a corner).
+        self.params.set_die_place_flags(
+            global_place_flag=global_place_flag,
+            legalize_flag=legalize_flag,
+            detailed_place_flag=detailed_place_flag,
+            random_center_init_flag=False,
+            ntuplace_flag=ntuplace_flag)
+        self.dreamplace.reload_die_basic_place(self.params, self.timer)
+
+        co = D2DCoPlace(self)
+        mov_node_pos_all = co.pack_initial()
+
+        # ----- Per-layer PlaceObj initialization (density_weight + gamma) -----
+        co.initialize_models(mov_node_pos_all)
+
+        target_overflow = float(self.params.co_place_stop_overflow)
+        max_iter = int(self.params.co_place_iteration)
+
+        obj_and_grad_fn = co.make_obj_and_grad_fn()
+
+        # ----- Estimate initial learning rate via dreamplace's heuristic. -----
+        with torch.enable_grad():
+            obj0, g0 = obj_and_grad_fn(mov_node_pos_all)
+            x_minus = mov_node_pos_all.detach().clone() \
+                - self.params.co_place_lr * g0.detach()
+            x_minus.requires_grad_(True)
+            obj1, g1 = obj_and_grad_fn(x_minus)
+            num = (mov_node_pos_all.detach() - x_minus.detach()).norm(p=2)
+            den = (g0.detach() - g1.detach()).norm(p=2)
+            init_lr = (num / den).item() if den.item() > 1e-12 else \
+                self.params.co_place_lr
+        logger.info("co-place init learning rate %.3E", init_lr)
+
+        # mov_node_pos_all has been written into via .data; reset its grad.
+        if mov_node_pos_all.grad is not None:
+            mov_node_pos_all.grad.zero_()
+
+        optimizer = NesterovOpt.NesterovAcceleratedGradientOptimizer(
+            [mov_node_pos_all],
+            lr=init_lr,
+            obj_and_grad_fn=obj_and_grad_fn,
+            constraint_fn=co.constraint_fn,
+            use_bb=True)
+
+        # ----- Main loop: nesterov + adaptive density_weight + gamma -----
+        # Track best solution by *normalized* overflow (sum of three layers).
+        best_overflow = float("inf")
+        best_pos = None
+        log_freq = 20
+        plot_freq = int(self.params.co_place_plot_freq)
+
+        # Initial layout (iter 0) before any optimization step.
+        if plot_freq > 0:
+            co.plot(mov_node_pos_all, 0)
+
+        prev_metrics = None
+        for it in range(max_iter):
+            # 1) Eval cur per-layer metrics (hpwl + normalized overflow)
+            cur_metrics = co.evaluate_metrics(mov_node_pos_all, it)
+            cur_top, cur_bot, cur_term = cur_metrics
+            ov_top = float(cur_top.overflow.mean().item())
+            ov_bot = float(cur_bot.overflow.mean().item())
+            ov_term = float(cur_term.overflow.mean().item())
+            ov_sum = ov_top + ov_bot + ov_term
+            ov_max = max(ov_top, ov_bot, ov_term)
+
+            # Best-solution book-keeping (use sum to avoid one layer dominating).
+            if ov_sum < best_overflow:
+                best_overflow = ov_sum
+                best_pos = mov_node_pos_all.detach().clone()
+
+            if it % log_freq == 0 or it == max_iter - 1:
+                logger.info(
+                    "co-place iter %4d | overflow (top, bot, term) = "
+                    "(%.4f, %.4f, %.4f) | dens_w (%.3E, %.3E, %.3E) | "
+                    "gamma (%.3E, %.3E, %.3E) | hpwl (%.3E, %.3E, %.3E)", it,
+                    ov_top, ov_bot, ov_term,
+                    co.model_top.density_weight.mean().item(),
+                    co.model_bot.density_weight.mean().item(),
+                    co.model_term.density_weight.mean().item(),
+                    co.model_top.gamma.item(), co.model_bot.gamma.item(),
+                    co.model_term.gamma.item(),
+                    float(cur_top.hpwl.item()), float(cur_bot.hpwl.item()),
+                    float(cur_term.hpwl.item()))
+
+            if plot_freq > 0 and ((it + 1) % plot_freq == 0
+                                  or it == max_iter - 1):
+                co.plot(mov_node_pos_all, it + 1)
+
+            # Early stop on normalized overflow (matches dreamplace convention).
+            if ov_max < target_overflow:
+                logger.info(
+                    "co-place early stop at iter %d (max overflow %.4f < %.4f)",
+                    it, ov_max, target_overflow)
+                if plot_freq > 0:
+                    co.plot(mov_node_pos_all, it + 1)
+                break
+
+            # 2) Nesterov line-search step (calls obj_and_grad_fn internally).
+            optimizer.step()
+
+            # 3) Adaptive density-weight update (HPWL-based, per layer).
+            if prev_metrics is not None:
+                co.update_density_weights(cur_metrics, prev_metrics, it + 1)
+
+            # 4) Gamma annealing (per layer, based on its own overflow).
+            co.update_gammas(it, cur_metrics)
+
+            prev_metrics = cur_metrics
+
+        # ----- Roll back to best solution if available. -----
+        if best_pos is not None:
+            mov_node_pos_all.data.copy_(best_pos)
+            logger.info("co-place: rolled back to best overflow %.4f",
+                        best_overflow)
+            if plot_freq > 0:
+                co.plot(mov_node_pos_all, max_iter + 1)
+
+        # Write final positions back to placedbs.
+        co.writeback(mov_node_pos_all)
+
+        # Persist co-place tier positions to partition pl files so that the
+        # subsequent die_by_die_place(global_place_flag=False, ntuplace=True)
+        # step starts from the co-place result instead of the raw partition
+        # positions.  (reload_die_basic_place re-reads the partition pl files
+        # from disk; without this write-back the co-place result would be
+        # silently discarded.)
+        for i in range(self.num_tiers):
+            dp_t = self.dreamplace.dp_tier[i]
+            pos_t = dp_t.basic_place.data_collections.pos[0]
+            n_phys = dp_t.placedb.num_physical_nodes
+            N_t = dp_t.placedb.num_nodes
+            node_x_out = pos_t[:n_phys].detach().cpu().numpy()
+            node_y_out = pos_t[N_t:N_t + n_phys].detach().cpu().numpy()
+            partition_pl = self.params.partition_tier[i].aux_input.replace(
+                ".aux", ".pl")
+            dp_t.placedb.write_pl(self.params.partition_tier[i], partition_pl,
+                                  node_x_out, node_y_out)
+            logger.info(
+                "co-place: wrote tier%d co-place positions to %s", i,
+                partition_pl)
+
+        # Persist terminal layer positions (movable D2D terminals only).
+        dp_term = self.dreamplace.dp_terminal
+        pos_term = dp_term.basic_place.data_collections.pos[0]
+        n_phys_term = dp_term.placedb.num_physical_nodes
+        N_term = dp_term.placedb.num_nodes
+        term_x_out = pos_term[:n_phys_term].detach().cpu().numpy()
+        term_y_out = pos_term[N_term:N_term + n_phys_term].detach().cpu().numpy()
+        terminal_pl = self.params.terminal.aux_input.replace(".aux", ".pl")
+        dp_term.placedb.write_pl(self.params.terminal, terminal_pl, term_x_out,
+                                 term_y_out)
+        logger.info("co-place: wrote terminal co-place positions to %s",
+                    terminal_pl)
+
+        # Sync dp_2d.pos so HPWL_D2D / downstream stages see the latest result.
+        self.op_wrapper.d2d_op_collections.pos_flattened_op(
+            self.tier, self.dreamplace.dp_2d.pos,
+            [self.dreamplace.dp_tier[i].pos for i in range(self.num_tiers)])
 
         return self.hpwl_d2d(logger)
 
@@ -192,22 +371,22 @@ class D2Dplacer:
     def partition(self, logger=logging):
 
         # temporarily call tier result from file
-        # self.tier = torch.load(
-        #     '/home/placer/D2D-placer/install/placer/partition_tensor/case2-tp-0.pt'
-        # )
-        # self.tier = torch.load(self.params.flatten_2d.tier_path)
-        # self.tier = self.tier.to(torch.int32)
-
-        self.tier = self.op_wrapper.d2d_op_collections.partition_flow_op(
-            partitioner="tritonpart", logger=logger)
+        _partition_pt = os.path.join(
+            '/export/home/lwjiang/Projects/research/Differentiable-3D-Partitioner/results',
+            f'{self.params.case_name}-bookself',
+            'binary_assignment.pt'
+        )
+        self.tier = torch.load(_partition_pt, map_location='cpu').to(torch.int32)
+        # self.tier = self.op_wrapper.d2d_op_collections.partition_flow_op(
+        #     partitioner="hmetis", logger=logger)
         torch.save(self.tier, self.params.result_dir_root + "/tier.pt")
 
         # return partition result but not receive now
         # pos_2d/2 beceuse of 3d-placer set flattened_die size as die_size*2
-        # self.cut_net_mask = self.op_wrapper.d2d_op_collections.init_partition_op(
-        #     self.tier, self.dreamplace.dp_2d.pos / 2, self.node_orient)
-        self.cut_net_mask = self.op_wrapper.d2d_op_collections.terminal_insert_op(
-            self.tier,  self.dreamplace.dp_2d.pos * 2**0.5 /2 - (2**0.5 - 1) * self.die_spec.dieSizeX / 2, self.node_orient)
+        self.cut_net_mask = self.op_wrapper.d2d_op_collections.init_partition_op(
+            self.tier, self.dreamplace.dp_2d.pos / 2, self.node_orient)
+        # self.cut_net_mask = self.op_wrapper.d2d_op_collections.terminal_insert_op(
+        #     self.tier,  self.dreamplace.dp_2d.pos * 2**0.5 /2 - (2**0.5 - 1) * self.die_spec.dieSizeX / 2, self.node_orient)
 
         if self.format == Format.ICCAD2023:
             # update placedb_tier & data_tier using new terminal_insert result
@@ -222,7 +401,12 @@ class D2Dplacer:
         filename = self.params.result_dir_root + "/final-partition-block.png"
         self.op_wrapper.d2d_op_collections.draw_block_op(
             self.dreamplace.dp_2d.pos, filename, self.tier)
-        # breakpoint()
+
+    def export_openroad_3d_inputs(self, logger=logging):
+        return export_openroad_3d_inputs(self.params,
+                                         self.dreamplace.dp_2d.placedb,
+                                         self.dreamplace.dp_2d.pos, self.tier,
+                                         logger)
 
     def terminal_insert(self):
         # create terminal aux for collaborative optimization by tier[0]
@@ -350,27 +534,63 @@ if __name__ == "__main__":
     d2d_placer.flatten_2d_place()
 
     d2d_placer.partition(d2d_logger)
-    d2d_placer.die_by_die_place(global_place_flag=True,
-                                legalize_flag=False,
-                                detailed_place_flag=False,
-                                random_center_init_flag=True,
-                                ntuplace_flag=False)
 
-    d2d_placer.terminal_insert()
-    d2d_placer.die_by_die_place(global_place_flag=True,
-                                legalize_flag=False,
-                                detailed_place_flag=False,
-                                random_center_init_flag=True,
-                                ntuplace_flag=False)
+    if d2d_placer.params.co_place_flag:
+        d2d_logger.info("=== Running coplace-style 2.5D global placement ===")
+        # Warm-start the tier placedbs with a quick GP so that co-place begins
+        # from a spread-out (not random-center) configuration.
+        d2d_placer.die_by_die_place(global_place_flag=True,
+                                    legalize_flag=False,
+                                    detailed_place_flag=False,
+                                    random_center_init_flag=True,
+                                    ntuplace_flag=False)
+        d2d_placer.terminal_insert()
+        # Co-place: jointly optimise top cells, bottom cells, and terminals.
+        # Writes the final positions back to dp_tier[i] (in memory) and to
+        # the partition/tier{i}.pl files on disk.
+        d2d_placer.die_terminal_co_place(global_place_flag=True,
+                                         legalize_flag=False,
+                                         detailed_place_flag=False,
+                                         random_center_init_flag=False,
+                                         ntuplace_flag=False,
+                                         logger=d2d_logger)
+        # FM refinement: updates tier assignment and re-inserts terminals.
+        # terminal_insert_op inside refinement() re-writes partition pl files
+        # from dp_2d.pos (synced from co-place result), so NTUplace3 below
+        # will start from the co-place positions rather than a fresh GP.
+        # d2d_placer.refinement()
+        # Legalization + detailed placement from co-place positions.
+        # global_place_flag=False skips the GP re-run;
+        # random_center_init_flag=False preserves what is in partition pl files.
+        d2d_placer.die_by_die_place(global_place_flag=False,
+                                    legalize_flag=False,
+                                    detailed_place_flag=False,
+                                    random_center_init_flag=False,
+                                    ntuplace_flag=True,
+                                    logger=d2d_logger)
+    else:
+        d2d_placer.die_by_die_place(global_place_flag=True,
+                                    legalize_flag=False,
+                                    detailed_place_flag=False,
+                                    random_center_init_flag=True,
+                                    ntuplace_flag=False)
 
-    d2d_placer.refinement()
-    d2d_placer.die_by_die_place(global_place_flag=True,
-                                legalize_flag=False,
-                                detailed_place_flag=False,
-                                random_center_init_flag=True,
-                                ntuplace_flag=True,
-                                logger=d2d_logger)
+        d2d_placer.terminal_insert()
+        d2d_placer.die_by_die_place(global_place_flag=True,
+                                    legalize_flag=False,
+                                    detailed_place_flag=False,
+                                    random_center_init_flag=True,
+                                    ntuplace_flag=False)
+
+        # d2d_placer.refinement()
+        d2d_placer.die_by_die_place(global_place_flag=True,
+                                    legalize_flag=False,
+                                    detailed_place_flag=False,
+                                    random_center_init_flag=True,
+                                    ntuplace_flag=True,
+                                    logger=d2d_logger)
 
     d2d_placer.hpwl_d2d(d2d_logger)
+    d2d_placer.export_openroad_3d_inputs(d2d_logger)
     d2d_placer.output()
     d2d_placer.analyze_results()

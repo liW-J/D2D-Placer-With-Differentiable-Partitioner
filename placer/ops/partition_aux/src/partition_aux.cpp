@@ -68,8 +68,11 @@ void terminal_insert(const int *tier, const T *pin_x, const T *pin_y,
       // LOG(WARN,
       //     "inner_min_x: %f, inner_max_x: %f, inner_min_y: %f, inner_max_y:
       //     %f", inner_min_x, inner_max_x, inner_min_y, inner_max_y);
+      // Bonding center from cross-tier pin bbox; DreamPlace pos is left-bottom.
       T center_x = (inner_min_x + inner_max_x) / 2;
       T center_y = (inner_min_y + inner_max_y) / 2;
+      const float pin_ox = static_cast<float>(terminal_size_x) / 2.f;
+      const float pin_oy = static_cast<float>(terminal_size_y) / 2.f;
 
       terminal_count++;
       for (int tier_id = 0; tier_id < num_tiers; ++tier_id) {
@@ -81,7 +84,8 @@ void terminal_insert(const int *tier, const T *pin_x, const T *pin_y,
           for (int terminal_id = 0; terminal_id < num_terminals;
                ++terminal_id) {
             if (net_names[net_id] == terminal_names[terminal_id]) {
-              // dreamplace pos is left-bottom corner
+              // dp_terminal pos is outer-box left-bottom; tier NI is terminalSize
+              // box with the same bonding center -> shift by spacing/2.
               x = terminal_x[terminal_id] + terminal_spacing / 2;
               y = terminal_y[terminal_id] + terminal_spacing / 2;
               // LOG(INFO, "net_id: %d, terminal_count: %d, i: %d", net_id,
@@ -92,13 +96,14 @@ void terminal_insert(const int *tier, const T *pin_x, const T *pin_y,
           auxListRef[tier_id].add_node(net_names[net_id], terminal_size_x,
                                        terminal_size_y, x, y, TERMINAL_NI);
         } else {
+          const T x = center_x - static_cast<T>(terminal_size_x) / 2;
+          const T y = center_y - static_cast<T>(terminal_size_y) / 2;
           auxListRef[tier_id].add_node(net_names[net_id], terminal_size_x,
-                                       terminal_size_y, center_x, center_y,
-                                       TERMINAL_NI);
+                                       terminal_size_y, x, y, TERMINAL_NI);
           // LOG(DEBUG, "Intersection Center: (%f, %f)", center_x, center_y);
         }
         auxListRef[tier_id].add_pin(net_names[net_id], net_names[net_id], 'O',
-                                    0, 0);
+                                    pin_ox, pin_oy);
       }
     }
   }

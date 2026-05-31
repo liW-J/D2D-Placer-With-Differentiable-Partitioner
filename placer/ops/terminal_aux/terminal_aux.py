@@ -27,13 +27,17 @@ class TerminalAuxFunction(Function):
                 terminal_legalize_flag, pos_terminal_legalized, num_terminals,
                 terminal_names):
         func = terminal_aux_cpp.terminal_aux
-        output = func(tier, flat_netpin, netpin_start, pin2node_map,
-                      net_weights, num_movable_nodes, node_size_x, node_size_y,
-                      pin_offset_x, pin_offset_y, die_size_x, die_size_y,
-                      row_height, terminal_size_x, terminal_size_y,
-                      terminal_spacing, pin_pos, node_names, net_names, pos_2d,
+        # terminal_aux_cpp is a CPU-only operator; move tensors off GPU if needed
+        output = func(tier,
+                      flat_netpin.cpu(), netpin_start.cpu(), pin2node_map.cpu(),
+                      net_weights.cpu(), num_movable_nodes,
+                      node_size_x.cpu(), node_size_y.cpu(),
+                      pin_offset_x.cpu(), pin_offset_y.cpu(),
+                      die_size_x, die_size_y, row_height,
+                      terminal_size_x, terminal_size_y, terminal_spacing,
+                      pin_pos.cpu(), node_names, net_names, pos_2d.cpu(),
                       case_name, terminal_legalize_flag,
-                      pos_terminal_legalized, num_terminals, terminal_names)
+                      pos_terminal_legalized.cpu(), num_terminals, terminal_names)
 
         return output
 

@@ -23,13 +23,15 @@ class HPWLD2DFunction(Function):
                 num_terminals, net_names, terminal_names):
 
         func = hpwl_d2d_cpp.hpwl_d2d
-        output = func(pin_pos.view(pin_pos.numel()), flat_netpin, netpin_start,
-                      pin2node_map, net_weights, cut_net_mask, tier, num_tiers,
-                      pos_terminal_legalized, terminal_size_x, terminal_size_y,
-                      terminal_spacing, num_terminals, net_names,
-                      terminal_names)
+        # hpwl_d2d_cpp is a CPU-only operator; move tensors off GPU if needed
+        output = func(pin_pos.cpu().view(pin_pos.numel()),
+                      flat_netpin.cpu(), netpin_start.cpu(),
+                      pin2node_map.cpu(), net_weights.cpu(),
+                      cut_net_mask.cpu(), tier.cpu(), num_tiers,
+                      pos_terminal_legalized.cpu(),
+                      terminal_size_x, terminal_size_y, terminal_spacing,
+                      num_terminals, net_names, terminal_names)
         return output
-
 
 class HPWLD2D(object):
     """ 
