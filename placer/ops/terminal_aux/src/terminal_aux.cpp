@@ -63,8 +63,15 @@ void terminal_insert(
       // LOG(WARN,
       //     "inner_min_x: %f, inner_max_x: %f, inner_min_y: %f, inner_max_y:
       //     %f", inner_min_x, inner_max_x, inner_min_y, inner_max_y);
+      // Bonding center from cross-tier pin bbox; DreamPlace pos is left-bottom.
       T center_x = (inner_min_x + inner_max_x) / 2;
       T center_y = (inner_min_y + inner_max_y) / 2;
+      const T term_w =
+          static_cast<T>(terminal_size_x + terminal_spacing);
+      const T term_h =
+          static_cast<T>(terminal_size_y + terminal_spacing);
+      const float pin_ox = static_cast<float>(term_w) / 2.f;
+      const float pin_oy = static_cast<float>(term_h) / 2.f;
 
       terminal_count++;
       // LOG(INFO, "terminal_count: %d", terminal_count);
@@ -73,7 +80,7 @@ void terminal_insert(
         // LOG(INFO, "net_names[net_id]: %s", net_names[net_id]);
         for (int terminal_id = 0; terminal_id < num_terminals; ++terminal_id) {
           if (net_names[net_id] == terminal_names[terminal_id]) {
-            // dreamplace pos is left-bottom corner
+            // dreamplace pos is left-bottom corner (includes spacing box)
             x = terminal_x[terminal_id];
             y = terminal_y[terminal_id];
             // LOG(INFO, "net_id: %d, terminal_count: %d, i: %d", net_id,
@@ -85,16 +92,19 @@ void terminal_insert(
             net_names[net_id], terminal_size_x + terminal_spacing,
             terminal_size_y + terminal_spacing, x, y, MOVABLE);
       } else {
+        const T x = center_x - term_w / 2;
+        const T y = center_y - term_h / 2;
         terminalAuxRef.add_node(
             net_names[net_id], terminal_size_x + terminal_spacing,
-            terminal_size_y + terminal_spacing, center_x, center_y, MOVABLE);
+            terminal_size_y + terminal_spacing, x, y, MOVABLE);
       }
       for (int tier_id = 0; tier_id < num_tiers; ++tier_id) {
         string tier_net_name = net_names[net_id] + "_" + to_string(tier_id);
 
         // LOG(DEBUG, "Intersection Center: (%f, %f)", center_x, center_y);
 
-        terminalAuxRef.add_pin(tier_net_name, net_names[net_id], 'O', 0, 0);
+        terminalAuxRef.add_pin(tier_net_name, net_names[net_id], 'O', pin_ox,
+                               pin_oy);
       }
     }
   }

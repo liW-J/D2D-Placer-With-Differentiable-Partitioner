@@ -15,3 +15,5 @@ install
 .vscode/*
 .idea/*
 benchmarks/ppa-public-case
+benchmarks/iccad2022/*_x*.txt
+benchmarks/iccad2022/*_hidden_x*.txt

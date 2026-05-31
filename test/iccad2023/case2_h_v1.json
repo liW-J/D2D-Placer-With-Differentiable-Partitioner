@@ -1,5 +1,5 @@
 {
-"txt_input" : "benchmarks/iccad2022/case2_hidden.txt",
+"txt_input" : "benchmarks/iccad2023/case2_h_v1.txt",
 "gpu" : 0,
 "num_bins_x" : 512,
 "num_bins_y" : 512,
@@ -17,15 +17,16 @@
 "global_place_flag" : 1,
 "legalize_flag" : 1,
 "detailed_place_flag" : 1,
-"detailed_place_engine" : "thirdparty/ntuplace3", 
+"detailed_place_engine" : "", 
 "detailed_place_command" : "", 
 "stop_overflow" : 0.07, 
 "dtype" : "float32", 
-"plot_flag" : 0, 
+"plot_flag" : 1, 
 "random_center_init_flag" : 1, 
 "gift_init_flag" : 0, 
 "sort_nets_by_degree" : 0, 
 "num_threads" : 8,
 "deterministic_flag" : 1,
-"ntuplace_flag" : 0
+"macro_place_flag" : 1,
+"use_bb" : 1
 }

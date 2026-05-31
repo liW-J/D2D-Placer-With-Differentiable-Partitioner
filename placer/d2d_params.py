@@ -2,7 +2,7 @@
 Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-06-13 20:00:00
 LastEditors: JeanneWillis hi@jeannewillis.cn
-LastEditTime: 2025-09-15 13:09:07
+LastEditTime: 2026-01-20 02:03:44
 FilePath: /D2D-placer/placer/d2d_params.py
 Description: 
 '''
@@ -62,6 +62,22 @@ class D2DParams:
         self.flatten_2d.detailed_place_flag = False
         self.flatten_2d.ntuplace_flag = True
         # self.flatten_2d.target_density = 2.0
+
+        # co-placement (top cell + bottom cell + terminal optimized together)
+        # falls back to legacy iterative die-by-die flow when False
+        self.co_place_flag = bool(getattr(self.flatten_2d, "co_place_flag",
+                                          True))
+        # tunables for the co-place inner GP loop; can be overridden via json
+        self.co_place_iteration = int(
+            getattr(self.flatten_2d, "co_place_iteration", 1000))
+        self.co_place_stop_overflow = float(
+            getattr(self.flatten_2d, "co_place_stop_overflow", 0.10))
+        self.co_place_lr = float(getattr(self.flatten_2d, "co_place_lr", 0.01))
+        self.co_place_target_density = float(
+            getattr(self.flatten_2d, "co_place_target_density", 1.0))
+        # plotting cadence for co-place; <=0 disables, otherwise plot every N iters
+        self.co_place_plot_freq = int(
+            getattr(self.flatten_2d, "co_place_plot_freq", 50))
 
     def set_die_place_flags(self,
                             random_center_init_flag=False,
