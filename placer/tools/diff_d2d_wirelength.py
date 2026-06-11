@@ -611,6 +611,19 @@ class D2DCoPlace(object):
 
         return cur_top, cur_bot, cur_term
 
+    def evaluate_d2d_hpwl(self, mov_node_pos_all):
+        """Evaluate current co-place state with the final D2D HPWL metric."""
+        with torch.no_grad():
+            pos_top, pos_bot, pos_term = self._build_all_pos(mov_node_pos_all)
+            flat_pos = self.dreamplace.dp_2d.pos.detach().clone()
+            self.placer.op_wrapper.d2d_op_collections.pos_flattened_op(
+                self.placer.tier, flat_pos, [pos_top, pos_bot])
+            terminal_names = self.dp_term.placedb.node_names[
+                :self.num_terminal_NIs]
+            return self.placer.op_wrapper.d2d_op_collections.hpwl_d2d_op(
+                flat_pos, self.placer.cut_net_mask, self.placer.tier,
+                pos_term, self.num_terminal_NIs, terminal_names)
+
     # ------------------------------------------------------------------
     # Outer-loop schedulers (gamma + density_weight)
     # ------------------------------------------------------------------

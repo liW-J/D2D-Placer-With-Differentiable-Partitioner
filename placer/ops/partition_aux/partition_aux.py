@@ -26,19 +26,21 @@ class PartitionAuxFunction(Function):
                 terminal_instert_flag, terminal_legalize_flag,
                 pos_terminal_legalized, num_terminals, node_names, net_names,
                 terminal_names, pos_2d, case_name, node_orient):
+        target_device = tier.device
         func = partition_aux_cpp.partition_aux
-        # partition_aux_cpp is a CPU-only operator; move tensors off GPU if needed
         output = func(tier,
-                      flat_netpin.cpu(), netpin_start.cpu(), pin2node_map.cpu(),
-                      net_weights.cpu(), num_movable_nodes,
-                      node_size_x.cpu(), node_size_y.cpu(),
-                      pin_offset_x.cpu(), pin_offset_y.cpu(),
+                      flat_netpin, netpin_start, pin2node_map,
+                      net_weights, num_movable_nodes,
+                      node_size_x, node_size_y,
+                      pin_offset_x, pin_offset_y,
                       die_size_x, die_size_y, row_height,
                       terminal_size_x, terminal_size_y, terminal_spacing,
-                      pin_pos.cpu(), terminal_instert_flag, terminal_legalize_flag,
-                      pos_terminal_legalized.cpu(), num_terminals,
+                      pin_pos, terminal_instert_flag, terminal_legalize_flag,
+                      pos_terminal_legalized, num_terminals,
                       node_names, net_names, terminal_names,
-                      pos_2d.cpu(), case_name, node_orient)
+                      pos_2d, case_name, node_orient)
+        if torch.is_tensor(output) and target_device.type == "cuda":
+            output = output.to(target_device, non_blocking=True)
 
         return output
 
@@ -76,6 +78,14 @@ class PartitionAux(object):
         self.terminal_spacing = terminal_spacing
 
         self.case_name = case_name
+        self.flat_netpin_cpu = flat_netpin.detach().cpu().contiguous()
+        self.netpin_start_cpu = netpin_start.detach().cpu().contiguous()
+        self.pin2node_map_cpu = pin2node_map.detach().cpu().contiguous()
+        self.net_weights_cpu = net_weights.detach().cpu().contiguous()
+        self.node_size_x_cpu = node_size_x.detach().cpu().contiguous()
+        self.node_size_y_cpu = node_size_y.detach().cpu().contiguous()
+        self.pin_offset_x_cpu = pin_offset_x.detach().cpu().contiguous()
+        self.pin_offset_y_cpu = pin_offset_y.detach().cpu().contiguous()
 
     def __call__(self,
                  tier,
@@ -85,16 +95,27 @@ class PartitionAux(object):
                  num_terminals=0,
                  pos_2d=torch.empty(0),
                  terminal_names=[]):
-        return PartitionAuxFunction.forward(
-            tier, self.flat_netpin, self.netpin_start, self.pin2node_map,
-            self.net_weights, self.num_movable_nodes, self.node_size_x,
-            self.node_size_y, self.pin_offset_x, self.pin_offset_y,
+        output = PartitionAuxFunction.forward(
+            tier.cpu().contiguous(),
+            self.flat_netpin_cpu,
+            self.netpin_start_cpu,
+            self.pin2node_map_cpu,
+            self.net_weights_cpu,
+            self.num_movable_nodes,
+            self.node_size_x_cpu,
+            self.node_size_y_cpu,
+            self.pin_offset_x_cpu,
+            self.pin_offset_y_cpu,
             self.die_size_x, self.die_size_y, self.row_height,
             self.terminal_size_x, self.terminal_size_y, self.terminal_spacing,
-            pin_pos, self.terminal_instert_flag, self.terminal_legalize_flag,
-            pos_terminal_legalized, num_terminals, self.node_names,
-            self.net_names, terminal_names, pos_2d, self.case_name,
+            pin_pos.cpu().contiguous(), self.terminal_instert_flag,
+            self.terminal_legalize_flag, pos_terminal_legalized.cpu().contiguous(),
+            num_terminals, self.node_names, self.net_names, terminal_names,
+            pos_2d.cpu().contiguous(), self.case_name,
             node_orient)
+        if torch.is_tensor(output) and tier.is_cuda:
+            output = output.to(tier.device, non_blocking=True)
+        return output
 
 
 if __name__ == "__main__":
