@@ -26,6 +26,7 @@ class D2DParams:
         self.flatten_2d.load(json_path)
         self.terminal.load(json_path)
         self.num_tiers = self.flatten_2d.num_tiers
+        self.partitioner = getattr(self.flatten_2d, "partitioner", "hmetis")
 
         self.flatten_2d.aux_input = f"{self.run_tmp_dir_root}/flattened-2d/flattened-2d.aux"
         self.terminal.aux_input = f"{self.run_tmp_dir_root}/terminal/terminal.aux"
@@ -48,8 +49,12 @@ class D2DParams:
                 i].aux_input = f"{self.run_tmp_dir_root}/partition/tier{i}.aux"
 
         # special params
+        # Use intersection-center positions written by terminal_insert (.pl file)
+        # instead of placing all terminals at the die center, so co-place starts
+        # with a well-spread initial distribution and avoids the large iter-0
+        # density overflow that causes density_weight to accumulate excessively.
         self.terminal.random_center_init_flag = True
-        self.terminal.global_place_stages[0]["iteration"] = 500
+        self.terminal.global_place_stages[0]["iteration"] = 1000
         self.terminal.stop_overflow = 0.01
 
         self.terminal.global_place_flag = True
@@ -70,8 +75,13 @@ class D2DParams:
         # tunables for the co-place inner GP loop; can be overridden via json
         self.co_place_iteration = int(
             getattr(self.flatten_2d, "co_place_iteration", 1000))
+        # Default lowered from 0.10 to 0.07: when terminals start at their
+        # intersection-center positions (random_center_init_flag=False), initial
+        # die overflow is ~0.097, which is just below the old 0.10 threshold and
+        # would trigger an immediate early stop. 0.07 stays below the natural
+        # starting die overflow while still allowing early exit once converged.
         self.co_place_stop_overflow = float(
-            getattr(self.flatten_2d, "co_place_stop_overflow", 0.10))
+            getattr(self.flatten_2d, "co_place_stop_overflow", 0.07))
         self.co_place_lr = float(getattr(self.flatten_2d, "co_place_lr", 0.01))
         self.co_place_target_density = float(
             getattr(self.flatten_2d, "co_place_target_density", 1.0))

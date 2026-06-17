@@ -27,6 +27,8 @@ from dreamplace.ops.pin_pos.pin_pos import PinPos
 
 from placer.tools.thirdparty_api.specpart_base import SpecPartBase
 from placer.tools.thirdparty_api.tritonpart_base import TritonPartBase
+from placer.tools.thirdparty_api.differentiable_3d_partitioner_base import \
+    Differentiable3DPartitionerBase
 
 import torch
 import numpy as np
@@ -103,6 +105,13 @@ class OpWrapper(object):
             data_collections.pin_offset_y
             for data_collections in self.data_collections_tier
         ])
+        self.d2d_hpwl_net_weights = torch.ones_like(
+            self.data_collections_2d.net_weights)
+        logging.info(
+            "D2D HPWL/FM net weights: using unity weights; flattened original "
+            "range=(%.3E, %.3E)",
+            float(self.data_collections_2d.net_weights.min().item()),
+            float(self.data_collections_2d.net_weights.max().item()))
 
         self.top_die_max_util = self.die_spec.topDieMaxUtil / 100
         self.bottom_die_max_util = self.die_spec.bottomDieMaxUtil / 100
@@ -120,6 +129,7 @@ class OpWrapper(object):
             ]) - np.mean([data.placedb.yl for data in self.data_tier])
 
         self.row_height = [data.placedb.row_height for data in self.data_tier]
+        self._logged_d2d_pin_pos_builder = False
 
         self.hmetis_op = self.build_hmetis()
         self.multi_bipartition_op = self.build_multi_bipartition()
@@ -221,17 +231,7 @@ class OpWrapper(object):
             case_name=self.case_name)
 
         def build_init_partition_op(tier, pos_2d, node_orient):
-            pin_pos_x = torch.stack([
-                self.pin_pos_tier_op[tier_id](pos_2d)
-                [:self.data_collections_2d.pin2node_map.numel()]
-                for tier_id in range(self.num_tiers)
-            ])
-            pin_pos_y = torch.stack([
-                self.pin_pos_tier_op[tier_id](pos_2d)
-                [self.data_collections_2d.pin2node_map.numel():]
-                for tier_id in range(self.num_tiers)
-            ])
-            pin_pos = torch.cat([pin_pos_x, pin_pos_y], dim=0)
+            pin_pos = self.build_d2d_pin_pos(pos_2d)
 
             return init_partition_op(tier, node_orient, pin_pos, pos_2d)
 
@@ -276,17 +276,7 @@ class OpWrapper(object):
             case_name=self.case_name)
 
         def build_terminal_insert_op(tier, pos_2d, node_orient):
-            pin_pos_x = torch.stack([
-                self.pin_pos_tier_op[tier_id](pos_2d)
-                [:self.data_collections_2d.pin2node_map.numel()]
-                for tier_id in range(self.num_tiers)
-            ])
-            pin_pos_y = torch.stack([
-                self.pin_pos_tier_op[tier_id](pos_2d)
-                [self.data_collections_2d.pin2node_map.numel():]
-                for tier_id in range(self.num_tiers)
-            ])
-            pin_pos = torch.cat([pin_pos_x, pin_pos_y], dim=0)
+            pin_pos = self.build_d2d_pin_pos(pos_2d)
 
             return terminal_insert_op(tier,
                                       node_orient,
@@ -308,6 +298,30 @@ class OpWrapper(object):
             algorithm="node-by-node")
 
         return pin_pos_op
+
+    def build_d2d_pin_pos(self, pos_2d):
+        """Build tiered pin positions in flattened-2D pin order."""
+        if not self._logged_d2d_pin_pos_builder:
+            logging.info("D2D pin_pos: using direct flattened pin builder")
+            self._logged_d2d_pin_pos_builder = True
+        device = pos_2d.device
+        dtype = pos_2d.dtype
+        num_nodes = pos_2d.numel() // 2
+        pin2node = self.data_collections_2d.pin2node_map.to(
+            device=device, dtype=torch.long)
+        num_pins = pin2node.numel()
+
+        node_x = pos_2d[:num_nodes]
+        node_y = pos_2d[num_nodes:]
+        base_x = node_x.index_select(0, pin2node).unsqueeze(0)
+        base_y = node_y.index_select(0, pin2node).unsqueeze(0)
+        pin_offset_x = self.pin_offset_x[:, :num_pins].to(device=device,
+                                                          dtype=dtype)
+        pin_offset_y = self.pin_offset_y[:, :num_pins].to(device=device,
+                                                          dtype=dtype)
+        pin_pos_x = base_x + pin_offset_x
+        pin_pos_y = base_y + pin_offset_y
+        return torch.cat([pin_pos_x, pin_pos_y], dim=0).contiguous()
 
     def build_pin_pos_terminal(self):
 
@@ -376,17 +390,7 @@ class OpWrapper(object):
         def build_terminal_legalize_op(tier, pos_2d, pos_terminal,
                                        num_terminal_NIs, terminal_names,
                                        node_orient):
-            pin_pos_x = torch.stack([
-                self.pin_pos_tier_op[tier_id](pos_2d)
-                [:self.data_collections_2d.pin2node_map.numel()]
-                for tier_id in range(self.num_tiers)
-            ])
-            pin_pos_y = torch.stack([
-                self.pin_pos_tier_op[tier_id](pos_2d)
-                [self.data_collections_2d.pin2node_map.numel():]
-                for tier_id in range(self.num_tiers)
-            ])
-            pin_pos = torch.cat([pin_pos_x, pin_pos_y], dim=0)
+            pin_pos = self.build_d2d_pin_pos(pos_2d)
             return terminal_legalize_op(tier, node_orient, pin_pos,
                                         pos_terminal, num_terminal_NIs, pos_2d,
                                         terminal_names)
@@ -431,17 +435,7 @@ class OpWrapper(object):
             terminal_legalize_flag=False)
 
         def build_terminal_insert_aux_op(tier, pos_2d):
-            pin_pos_x = torch.stack([
-                self.pin_pos_tier_op[tier_id](pos_2d)
-                [:self.data_collections_2d.pin2node_map.numel()]
-                for tier_id in range(self.num_tiers)
-            ])
-            pin_pos_y = torch.stack([
-                self.pin_pos_tier_op[tier_id](pos_2d)
-                [self.data_collections_2d.pin2node_map.numel():]
-                for tier_id in range(self.num_tiers)
-            ])
-            pin_pos = torch.cat([pin_pos_x, pin_pos_y], dim=0)
+            pin_pos = self.build_d2d_pin_pos(pos_2d)
             return terminal_insert_aux_op(tier, pin_pos, pos_2d)
 
         return build_terminal_insert_aux_op
@@ -471,17 +465,7 @@ class OpWrapper(object):
 
         def build_terminal_legalize_aux_op(tier, pos_2d, pos_terminal,
                                            num_terminal_NIs, terminal_names):
-            pin_pos_x = torch.stack([
-                self.pin_pos_tier_op[tier_id](pos_2d)
-                [:self.data_collections_2d.pin2node_map.numel()]
-                for tier_id in range(self.num_tiers)
-            ])
-            pin_pos_y = torch.stack([
-                self.pin_pos_tier_op[tier_id](pos_2d)
-                [self.data_collections_2d.pin2node_map.numel():]
-                for tier_id in range(self.num_tiers)
-            ])
-            pin_pos = torch.cat([pin_pos_x, pin_pos_y], dim=0)
+            pin_pos = self.build_d2d_pin_pos(pos_2d)
 
             return terminal_legalize_aux_op(tier, pin_pos, pos_2d,
                                             pos_terminal, num_terminal_NIs,
@@ -505,17 +489,7 @@ class OpWrapper(object):
 
         def build_refinement_op(tier, pos_2d, pos_terminal, num_terminal_NIs,
                                 terminal_names):
-            pin_pos_x = torch.stack([
-                self.pin_pos_tier_op[tier_id](pos_2d)
-                [:self.data_collections_2d.pin2node_map.numel()]
-                for tier_id in range(self.num_tiers)
-            ])
-            pin_pos_y = torch.stack([
-                self.pin_pos_tier_op[tier_id](pos_2d)
-                [self.data_collections_2d.pin2node_map.numel():]
-                for tier_id in range(self.num_tiers)
-            ])
-            pin_pos = torch.cat([pin_pos_x, pin_pos_y], dim=0)
+            pin_pos = self.build_d2d_pin_pos(pos_2d)
             return refinement_op(tier, pin_pos, pos_2d, pos_terminal,
                                  num_terminal_NIs, terminal_names)
 
@@ -527,7 +501,7 @@ class OpWrapper(object):
             self.data_collections_2d.flat_net2pin_map,
             self.data_collections_2d.flat_net2pin_start_map,
             self.data_collections_2d.pin2node_map,
-            self.data_collections_2d.net_weights,
+            self.d2d_hpwl_net_weights,
             self.placedb_2d.num_movable_nodes, self.placedb_2d.node_names,
             self.placedb_2d.net_names, self.node_size_x, self.node_size_y,
             self.pin_offset_x, self.pin_offset_y, self.die_size_x,
@@ -540,17 +514,7 @@ class OpWrapper(object):
 
         def build_bin_based_fm_op(tier, pos_2d, pos_terminal, num_terminal_NIs,
                                   terminal_names):
-            pin_pos_x = torch.stack([
-                self.pin_pos_tier_op[tier_id](pos_2d)
-                [:self.data_collections_2d.pin2node_map.numel()]
-                for tier_id in range(self.num_tiers)
-            ])
-            pin_pos_y = torch.stack([
-                self.pin_pos_tier_op[tier_id](pos_2d)
-                [self.data_collections_2d.pin2node_map.numel():]
-                for tier_id in range(self.num_tiers)
-            ])
-            pin_pos = torch.cat([pin_pos_x, pin_pos_y], dim=0)
+            pin_pos = self.build_d2d_pin_pos(pos_2d)
             return bin_based_fm_op(tier, pin_pos, pos_2d, pos_terminal,
                                    num_terminal_NIs, terminal_names)
 
@@ -561,7 +525,7 @@ class OpWrapper(object):
         hpwl_d2d_op = HPWLD2D(self.data_collections_2d.flat_net2pin_map,
                               self.data_collections_2d.flat_net2pin_start_map,
                               self.data_collections_2d.pin2node_map,
-                              self.data_collections_2d.net_weights,
+                              self.d2d_hpwl_net_weights,
                               self.die_spec.terminalSizeX,
                               self.die_spec.terminalSizeY,
                               self.die_spec.terminalSpacing,
@@ -573,17 +537,7 @@ class OpWrapper(object):
                               pos_terminal=torch.empty(0),
                               num_terminal_NIs=0,
                               terminal_names=np.array([], dtype=np.bytes_)):
-            pin_pos_x = torch.stack([
-                self.pin_pos_tier_op[tier_id](pos_2d)
-                [:self.data_collections_2d.pin2node_map.numel()]
-                for tier_id in range(self.num_tiers)
-            ])
-            pin_pos_y = torch.stack([
-                self.pin_pos_tier_op[tier_id](pos_2d)
-                [self.data_collections_2d.pin2node_map.numel():]
-                for tier_id in range(self.num_tiers)
-            ])
-            pin_pos = torch.cat([pin_pos_x, pin_pos_y], dim=0)
+            pin_pos = self.build_d2d_pin_pos(pos_2d)
 
             return hpwl_d2d_op(pin_pos, cut_net_mask, tier, pos_terminal,
                                num_terminal_NIs, terminal_names)
@@ -651,6 +605,14 @@ class OpWrapper(object):
                 specpart = SpecPartBase(self.d2d_params)
                 tier = specpart.flow(hgr_generator_op=self.hgr_generator_op,
                                      parts_reader_op=self.parts_reader_op)
+
+            elif Differentiable3DPartitionerBase.is_partition_name(
+                    partitioner):
+                d3d_partitioner = Differentiable3DPartitionerBase(
+                    self.d2d_params, data_2d=self.data_2d, logger=logger)
+                tier = d3d_partitioner.flow(
+                    hgr_generator_op=self.hgr_generator_op,
+                    parts_reader_op=self.parts_reader_op)
 
             else:
                 logger.info(

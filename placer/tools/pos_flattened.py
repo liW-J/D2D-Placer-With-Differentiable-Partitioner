@@ -9,7 +9,6 @@ Description:
 import time
 import logging
 import torch
-import re
 
 
 class PosFlattened:
@@ -19,31 +18,28 @@ class PosFlattened:
         self.data_2d = data_2d
         self.data_tier = data_tier
 
-    def sort_node(self, node_names):
+    def map_tier_to_2d(self, node_names):
         """
-        @brief 
-        @param 
+        @brief Map tier movable node names to flattened-2D placedb node ids.
+
+        NOTE: do NOT assume node "Ck" has 2D node id k-1. dreamplace's
+        PlaceDB reorders movable nodes internally (e.g. large movable
+        macros are handled separately), so the only safe mapping is the
+        2D placedb's node_name2id_map.
         """
-        # create a boolean mask, identify the nodes start with 'C'
-        c_mask = torch.tensor([name.startswith(b'C') for name in node_names])
-        # get the index of the nodes that satisfy the condition
-        c_indices = torch.nonzero(c_mask, as_tuple=True)[0]
-
-        c_numbers = []
-        for idx in c_indices:
-            name = node_names[idx].decode('utf-8')
-            # extract the number after C
-            match = re.match(r'C(\d+)', name)
-            if match:
-                c_numbers.append(int(match.group(1)))
-            else:
-                c_numbers.append(0)
-
-        # convert the extracted numbers to a PyTorch tensor
-        c_numbers = torch.tensor(c_numbers, dtype=torch.int64)
-
-        # index start from 0
-        return c_numbers - 1
+        name2id = self.data_2d.placedb.node_name2id_map
+        ids = []
+        for name in node_names:
+            key = name.decode('utf-8') if isinstance(name, bytes) else name
+            idx = name2id.get(key)
+            if idx is None:
+                idx = name2id.get(name)
+            if idx is None:
+                raise KeyError(
+                    "pos_flattened: tier node %s not found in flattened-2D "
+                    "placedb" % key)
+            ids.append(idx)
+        return torch.tensor(ids, dtype=torch.int64)
 
     def __call__(self, tier, pos_2d, pos_tier):
         """
@@ -51,19 +47,19 @@ class PosFlattened:
             @param 
             """
         num_tiers = self.params.num_tiers
-        # net_mask = torch.zeros(self.placedb.num_nets)
+        num_nodes_2d = len(pos_2d) // 2
 
         tt = time.time()
         for i in range(num_tiers):
-
-            node_x = pos_tier[i][:self.data_tier[i].placedb.num_movable_nodes]
+            num_movable = self.data_tier[i].placedb.num_movable_nodes
+            node_x = pos_tier[i][:num_movable]
             node_y = pos_tier[i][len(pos_tier[i]) // 2:len(pos_tier[i]) // 2 +
-                                 self.data_tier[i].placedb.num_movable_nodes]
-            c_numbers = self.sort_node(self.data_tier[i].placedb.node_names)
-            pos_2d.data[:self.data_2d.placedb.
-                        num_movable_nodes][c_numbers] = node_x
-            pos_2d.data[len(pos_2d) // 2:len(pos_2d) // 2 + self.data_2d.
-                        placedb.num_movable_nodes][c_numbers] = node_y
+                                 num_movable]
+            ids_2d = self.map_tier_to_2d(
+                self.data_tier[i].placedb.node_names[:num_movable]).to(
+                    pos_2d.device)
+            pos_2d.data[ids_2d] = node_x
+            pos_2d.data[num_nodes_2d + ids_2d] = node_y
 
         logging.info("pos_flattened takes %.3f seconds" % (time.time() - tt))
 

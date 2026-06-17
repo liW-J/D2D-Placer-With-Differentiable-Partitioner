@@ -112,13 +112,22 @@ class D2Dplacer:
 
     def hpwl_d2d(self, logger=logging):
         if self.dreamplace.dp_terminal.pos is not None:
+            terminal_names = self.dreamplace.dp_terminal.placedb.node_names[
+                :self.num_terminal_NIs]
             hpwl_d2d = self.op_wrapper.d2d_op_collections.hpwl_d2d_op(
                 self.dreamplace.dp_2d.pos, self.cut_net_mask, self.tier,
                 self.dreamplace.dp_terminal.pos, self.num_terminal_NIs,
-                self.dreamplace.dp_terminal.placedb.node_names)
+                terminal_names)
         else:
             hpwl_d2d = self.op_wrapper.d2d_op_collections.hpwl_d2d_op(
                 self.dreamplace.dp_2d.pos, self.cut_net_mask, self.tier)
+        if all(dp.pos is not None for dp in self.dreamplace.dp_tier):
+            tier_hpwl = sum(
+                float(dp.basic_place.op_collections.hpwl_op(dp.pos))
+                for dp in self.dreamplace.dp_tier)
+            ratio = float(hpwl_d2d) / tier_hpwl if tier_hpwl > 0 else 0.0
+            logger.info("HPWL_D2D_CHECK: tier_hpwl_sum=%.6f ratio=%.6f",
+                        tier_hpwl, ratio)
         logger.info("HPWL_D2D:%.6f " % (hpwl_d2d))
 
         return hpwl_d2d
@@ -135,6 +144,13 @@ class D2Dplacer:
             self.params.flatten_2d.num_threads)
 
         self.dreamplace.init_all_basic_place(self.params, self.timer)
+        logging.info(
+            "Thread config effective: torch.get_num_threads()=%d, "
+            "OMP_NUM_THREADS=%s, params.num_threads=%s, flatten_2d.num_threads=%s",
+            torch.get_num_threads(),
+            os.environ.get("OMP_NUM_THREADS", "unset"),
+            str(getattr(self.params, "num_threads", "unset")),
+            str(getattr(self.params.flatten_2d, "num_threads", "unset")))
         self.node_orient = [Orient.N.name
                             ] * self.dreamplace.dp_2d.placedb.num_movable_nodes
 
@@ -198,12 +214,7 @@ class D2Dplacer:
         built and contain their per-tier net topology with D2D terminal_NIs
         in place.
         """
-        # dp_terminal has already been built+GP'd inside terminal_insert(),
-        # so we keep its current (legalized) pos as the warm start.
-        # Reload tier placedb/netlist after terminal_insert. Force
-        # random_center_init_flag=False so BasicPlace does not discard the
-        # warm-start / legalized partition .pl (otherwise iter0 piles cells at
-        # die center and density later pushes them toward a corner).
+        
         self.params.set_die_place_flags(
             global_place_flag=global_place_flag,
             legalize_flag=legalize_flag,
@@ -267,7 +278,11 @@ class D2Dplacer:
             ov_bot = float(cur_bot.overflow.mean().item())
             ov_term = float(cur_term.overflow.mean().item())
             ov_sum = ov_top + ov_bot + ov_term
+            # Terminal overflow can legitimately be 0 from the start when
+            # terminals are pre-placed at intersection centers; exclude it from
+            # the convergence check so die cells are still fully optimized.
             ov_max = max(ov_top, ov_bot, ov_term)
+            ov_die_max = max(ov_top, ov_bot)
 
             # Best-solution book-keeping (use sum to avoid one layer dominating).
             if ov_sum < best_overflow:
@@ -275,10 +290,12 @@ class D2Dplacer:
                 best_pos = mov_node_pos_all.detach().clone()
 
             if it % log_freq == 0 or it == max_iter - 1:
+                d2d_hpwl = float(co.evaluate_d2d_hpwl(mov_node_pos_all))
                 logger.info(
                     "co-place iter %4d | overflow (top, bot, term) = "
                     "(%.4f, %.4f, %.4f) | dens_w (%.3E, %.3E, %.3E) | "
-                    "gamma (%.3E, %.3E, %.3E) | hpwl (%.3E, %.3E, %.3E)", it,
+                    "gamma (%.3E, %.3E, %.3E) | local hpwl "
+                    "(%.3E, %.3E, %.3E) | d2d_hpwl %.3E", it,
                     ov_top, ov_bot, ov_term,
                     co.model_top.density_weight.mean().item(),
                     co.model_bot.density_weight.mean().item(),
@@ -286,17 +303,18 @@ class D2Dplacer:
                     co.model_top.gamma.item(), co.model_bot.gamma.item(),
                     co.model_term.gamma.item(),
                     float(cur_top.hpwl.item()), float(cur_bot.hpwl.item()),
-                    float(cur_term.hpwl.item()))
+                    float(cur_term.hpwl.item()), d2d_hpwl)
 
-            if plot_freq > 0 and ((it + 1) % plot_freq == 0
+            if plot_freq > 0 and ((it + 1) % 500 == 0
                                   or it == max_iter - 1):
                 co.plot(mov_node_pos_all, it + 1)
 
-            # Early stop on normalized overflow (matches dreamplace convention).
-            if ov_max < target_overflow:
+            # Early stop when die layers are converged (terminal overflow excluded:
+            # it can be 0 from the start when pre-placed at intersection centers).
+            if ov_die_max < target_overflow:
                 logger.info(
-                    "co-place early stop at iter %d (max overflow %.4f < %.4f)",
-                    it, ov_max, target_overflow)
+                    "co-place early stop at iter %d (die max overflow %.4f < %.4f)",
+                    it, ov_die_max, target_overflow)
                 if plot_freq > 0:
                     co.plot(mov_node_pos_all, it + 1)
                 break
@@ -323,6 +341,13 @@ class D2Dplacer:
 
         # Write final positions back to placedbs.
         co.writeback(mov_node_pos_all)
+
+        # Immediately free the three PlaceObj GPU models: they are the bulk of
+        # the ~80 GB co-place footprint and are no longer needed after writeback.
+        # Without explicit deletion the tensors stay in PyTorch's allocator cache
+        # and leave no room for the terminal placement in refinement().
+        del co.model_top, co.model_bot, co.model_term
+        del optimizer, mov_node_pos_all, best_pos
 
         # Persist co-place tier positions to partition pl files so that the
         # subsequent die_by_die_place(global_place_flag=False, ntuplace=True)
@@ -371,22 +396,17 @@ class D2Dplacer:
     def partition(self, logger=logging):
 
         # temporarily call tier result from file
-        _partition_pt = os.path.join(
-            '/export/home/lwjiang/Projects/research/Differentiable-3D-Partitioner/results',
-            f'{self.params.case_name}-bookself',
-            'binary_assignment.pt'
-        )
-        self.tier = torch.load(_partition_pt, map_location='cpu').to(torch.int32)
-        # self.tier = self.op_wrapper.d2d_op_collections.partition_flow_op(
-        #     partitioner="hmetis", logger=logger)
+        partitioner = getattr(self.params, "partitioner", "hmetis")
+        self.tier = self.op_wrapper.d2d_op_collections.partition_flow_op(
+            partitioner=partitioner, logger=logger)
         torch.save(self.tier, self.params.result_dir_root + "/tier.pt")
 
         # return partition result but not receive now
         # pos_2d/2 beceuse of 3d-placer set flattened_die size as die_size*2
-        self.cut_net_mask = self.op_wrapper.d2d_op_collections.init_partition_op(
-            self.tier, self.dreamplace.dp_2d.pos / 2, self.node_orient)
-        # self.cut_net_mask = self.op_wrapper.d2d_op_collections.terminal_insert_op(
-        #     self.tier,  self.dreamplace.dp_2d.pos * 2**0.5 /2 - (2**0.5 - 1) * self.die_spec.dieSizeX / 2, self.node_orient)
+        # self.cut_net_mask = self.op_wrapper.d2d_op_collections.init_partition_op(
+        #     self.tier, self.dreamplace.dp_2d.pos / 2, self.node_orient)
+        self.cut_net_mask = self.op_wrapper.d2d_op_collections.terminal_insert_op(
+            self.tier,  self.dreamplace.dp_2d.pos * 2**0.5 /2 - (2**0.5 - 1) * self.die_spec.dieSizeX / 2, self.node_orient)
 
         if self.format == Format.ICCAD2023:
             # update placedb_tier & data_tier using new terminal_insert result
@@ -443,10 +463,12 @@ class D2Dplacer:
             self.dreamplace.dp_terminal.placedb.node_names, self.node_orient)
 
     def refinement(self):
+        terminal_names = self.dreamplace.dp_terminal.placedb.node_names[
+            :self.num_terminal_NIs]
         self.tier = self.op_wrapper.d2d_op_collections.bin_based_fm_op(
             self.tier, self.dreamplace.dp_2d.pos,
             self.dreamplace.dp_terminal.pos, self.num_terminal_NIs,
-            self.dreamplace.dp_terminal.placedb.node_names)
+            terminal_names)
 
         self.cut_net_mask = self.op_wrapper.d2d_op_collections.terminal_insert_op(
             self.tier, self.dreamplace.dp_2d.pos, self.node_orient)
@@ -534,6 +556,7 @@ if __name__ == "__main__":
     d2d_placer.flatten_2d_place()
 
     d2d_placer.partition(d2d_logger)
+    # breakpoint()
 
     if d2d_placer.params.co_place_flag:
         d2d_logger.info("=== Running coplace-style 2.5D global placement ===")
@@ -554,11 +577,19 @@ if __name__ == "__main__":
                                          random_center_init_flag=False,
                                          ntuplace_flag=False,
                                          logger=d2d_logger)
+        # Release co-place model GPU cache before refinement to avoid OOM:
+        # die_terminal_co_place runs 3 simultaneous PlaceObj models which
+        # exhaust nearly all VRAM; PyTorch retains the cache after the function
+        # returns, so we must explicitly free it here.
+        import gc; gc.collect()
+        torch.cuda.empty_cache()
+        d2d_logger.info("GPU cache cleared before refinement: %.1f GiB free",
+                        torch.cuda.mem_get_info()[0] / 1024**3)
         # FM refinement: updates tier assignment and re-inserts terminals.
         # terminal_insert_op inside refinement() re-writes partition pl files
         # from dp_2d.pos (synced from co-place result), so NTUplace3 below
         # will start from the co-place positions rather than a fresh GP.
-        # d2d_placer.refinement()
+        d2d_placer.refinement()
         # Legalization + detailed placement from co-place positions.
         # global_place_flag=False skips the GP re-run;
         # random_center_init_flag=False preserves what is in partition pl files.
