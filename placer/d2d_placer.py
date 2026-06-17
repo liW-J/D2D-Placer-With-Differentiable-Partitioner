@@ -214,12 +214,7 @@ class D2Dplacer:
         built and contain their per-tier net topology with D2D terminal_NIs
         in place.
         """
-        # dp_terminal has already been built+GP'd inside terminal_insert(),
-        # so we keep its current (legalized) pos as the warm start.
-        # Reload tier placedb/netlist after terminal_insert. Force
-        # random_center_init_flag=False so BasicPlace does not discard the
-        # warm-start / legalized partition .pl (otherwise iter0 piles cells at
-        # die center and density later pushes them toward a corner).
+        
         self.params.set_die_place_flags(
             global_place_flag=global_place_flag,
             legalize_flag=legalize_flag,
@@ -401,14 +396,8 @@ class D2Dplacer:
     def partition(self, logger=logging):
 
         # temporarily call tier result from file
-        _partition_pt = os.path.join(
-            '/export/home/lwjiang/Projects/research/Differentiable-3D-Partitioner/results',
-            f'{self.params.case_name}-bookself',
-            'binary_assignment.pt'
-        )
-        self.tier = torch.load(_partition_pt, map_location=self.dreamplace.dp_2d.pos.device).to(torch.int32)
-        # self.tier = self.op_wrapper.d2d_op_collections.partition_flow_op(
-        #     partitioner="hmetis", logger=logger)
+        self.tier = self.op_wrapper.d2d_op_collections.partition_flow_op(
+            partitioner="hmetis", logger=logger)
         torch.save(self.tier, self.params.result_dir_root + "/tier.pt")
 
         # return partition result but not receive now
