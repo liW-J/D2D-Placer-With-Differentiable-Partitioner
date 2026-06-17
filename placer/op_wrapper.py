@@ -27,6 +27,8 @@ from dreamplace.ops.pin_pos.pin_pos import PinPos
 
 from placer.tools.thirdparty_api.specpart_base import SpecPartBase
 from placer.tools.thirdparty_api.tritonpart_base import TritonPartBase
+from placer.tools.thirdparty_api.differentiable_3d_partitioner_base import \
+    Differentiable3DPartitionerBase
 
 import torch
 import numpy as np
@@ -603,6 +605,14 @@ class OpWrapper(object):
                 specpart = SpecPartBase(self.d2d_params)
                 tier = specpart.flow(hgr_generator_op=self.hgr_generator_op,
                                      parts_reader_op=self.parts_reader_op)
+
+            elif Differentiable3DPartitionerBase.is_partition_name(
+                    partitioner):
+                d3d_partitioner = Differentiable3DPartitionerBase(
+                    self.d2d_params, data_2d=self.data_2d, logger=logger)
+                tier = d3d_partitioner.flow(
+                    hgr_generator_op=self.hgr_generator_op,
+                    parts_reader_op=self.parts_reader_op)
 
             else:
                 logger.info(

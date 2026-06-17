@@ -26,6 +26,7 @@ class D2DParams:
         self.flatten_2d.load(json_path)
         self.terminal.load(json_path)
         self.num_tiers = self.flatten_2d.num_tiers
+        self.partitioner = getattr(self.flatten_2d, "partitioner", "hmetis")
 
         self.flatten_2d.aux_input = f"{self.run_tmp_dir_root}/flattened-2d/flattened-2d.aux"
         self.terminal.aux_input = f"{self.run_tmp_dir_root}/terminal/terminal.aux"
@@ -53,7 +54,7 @@ class D2DParams:
         # with a well-spread initial distribution and avoids the large iter-0
         # density overflow that causes density_weight to accumulate excessively.
         self.terminal.random_center_init_flag = True
-        self.terminal.global_place_stages[0]["iteration"] = 500
+        self.terminal.global_place_stages[0]["iteration"] = 1000
         self.terminal.stop_overflow = 0.01
 
         self.terminal.global_place_flag = True

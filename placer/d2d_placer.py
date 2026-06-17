@@ -396,8 +396,9 @@ class D2Dplacer:
     def partition(self, logger=logging):
 
         # temporarily call tier result from file
+        partitioner = getattr(self.params, "partitioner", "hmetis")
         self.tier = self.op_wrapper.d2d_op_collections.partition_flow_op(
-            partitioner="hmetis", logger=logger)
+            partitioner=partitioner, logger=logger)
         torch.save(self.tier, self.params.result_dir_root + "/tier.pt")
 
         # return partition result but not receive now
