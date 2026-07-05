@@ -10,6 +10,7 @@ from torch.autograd import Function
 import torch
 
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +96,7 @@ class PartitionAux(object):
                  num_terminals=0,
                  pos_2d=torch.empty(0),
                  terminal_names=[]):
+        os.makedirs(f"./run_tmp/{self.case_name}/partition", exist_ok=True)
         output = PartitionAuxFunction.forward(
             tier.cpu().contiguous(),
             self.flat_netpin_cpu,

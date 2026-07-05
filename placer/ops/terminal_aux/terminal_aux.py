@@ -10,6 +10,7 @@ from torch.autograd import Function
 import torch
 
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +92,7 @@ class TerminalAux(object):
                  pos_terminal_legalized=torch.empty(0),
                  num_terminals=0,
                  terminal_names=[]):
+        os.makedirs(f"./run_tmp/{self.case_name}/terminal", exist_ok=True)
         output = TerminalAuxFunction.forward(
             tier.cpu().contiguous(),
             self.flat_netpin_cpu,

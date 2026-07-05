@@ -1,194 +1,254 @@
-# 3D(D2D) Placer
+# D2D-Placer with Differentiable 3D Partitioner
 
-3D placement engine based on DREAMPlace.
+D2D-Placer is a 2.5D/3D placement flow built on DREAMPlace. This repository
+also integrates `thirdparty/Differentiable-3D-Partitioner`, including its nested
+DREAMPlace submodule, so a top-level build can compile and install the complete
+flow.
 
-# Dependency
+## Quick Start
 
-- [Python](https://www.python.org/) 3.5/3.6/3.7/3.8/3.9
+Run all commands from the repository root unless noted otherwise.
 
-- [Pytorch](https://pytorch.org/) 1.6/1.7/1.8/2.0
+### 1. Fetch submodules
 
-  - Other versions may also work, but not tested
+If you cloned without `--recursive`, initialize every submodule, including the
+nested DREAMPlace under Differentiable-3D-Partitioner:
 
-- [GCC](https://gcc.gnu.org/)
-
-  - Recommend GCC 7.5 (with `c++17` support).
-  - Do not recommend GCC 9 or later due to backward compatibility issues.
-  - Other compilers may also work, but not tested.
-
-- [Boost](https://www.boost.org) >= 1.55.0
-  - Need to install and visible for linking
-- [Bison](https://www.gnu.org/software/bison) >= 3.3
-
-  - Need to install
-
-(Optional)
-
-- If installed and found, GPU acceleration will be enabled.
-- Otherwise, only CPU implementation is enabled.
-
-- GPU architecture compatibility 6.0 or later (Optional)
-  - Code has been tested on GPUs with compute compatibility 6.0, 7.0, and 7.5.
-  - Please check the [compatibility](https://developer.nvidia.com/cuda-gpus) of the GPU devices.
-  - The default compilation target is compatibility 6.0. This is the minimum requirement and lower compatibility is not supported for the GPU feature.
-  - For compatibility 7.0, it is necessary to set the CMAKE_CUDA_FLAGS to -gencode=arch=compute_70,code=sm_70.
-- [Cairo](https://github.com/freedesktop/cairo) (Optional)
-
-  - If installed and found, the plotting functions will be faster by using C/C++ implementation.
-  - Otherwise, python implementation is used.
-
-- [NTUPlace3](http://eda.ee.ntu.edu.tw/research.htm) (Optional)
-  - If the binary is provided, it can be used to perform detailed placement.
-
-To pull git submodules in the root directory
-
-```
-git submodule init
-git submodule update
+```bash
+git submodule update --init --recursive
 ```
 
-Or alternatively, pull all the submodules when cloning the repository.
+### 2. Activate the build environment
 
-```
-git clone --recursive https://github.com/limbo018/DREAMPlace.git
-```
+On the current lab machine, use the prepared micromamba environment:
 
-# How to Install Python Dependency
-
-Go to the root directory.
-
-```
-pip install -r requirements.txt
+```bash
+source /export/home/lwjiang/micromamba/env_setup.sh
+micromamba activate dreamplace
 ```
 
-# How to Build
+For a custom environment, make sure it provides Python 3.9, PyTorch, a C++17
+compiler, Boost, Bison, Flex, Zlib, and CMake 3.x.
 
-Two options are provided for building: with and without [Docker](https://hub.docker.com).
+### 3. Build and install
 
-## Build with Docker
-
-You can use the Docker container to avoid building all the dependencies yourself.
-
-1. Install Docker on [Windows](https://docs.docker.com/docker-for-windows/), [Mac](https://docs.docker.com/docker-for-mac/) or [Linux](https://docs.docker.com/install/).
-2. To enable the GPU features, install [NVIDIA-docker](https://github.com/NVIDIA/nvidia-docker); otherwise, skip this step.
-3. Navigate to the repository.
-4. Get the docker container with either of the following options.
-   - Option 1: pull from the cloud [limbo018/dreamplace](https://hub.docker.com/r/limbo018/dreamplace).
-
-   ```
-   docker pull limbo018/dreamplace:cuda
-   ```
-
-   - Option 2: build the container.
-
-   ```
-   docker build . --file Dockerfile --tag your_name/dreamplace:cuda
-   ```
-
-5. Enter bash environment of the container. Replace `limbo018` with your name if option 2 is chosen in the previous step.
-
-Run with GPU on Linux.
-
-```
-docker run --gpus 1 -it -v $(pwd):/DREAMPlace limbo018/dreamplace:cuda bash
-```
-
-Run with GPU on Windows.
-
-```
-docker run --gpus 1 -it -v /dreamplace limbo018/dreamplace:cuda bash
-```
-
-Run without GPU on Linux.
-
-```
-docker run -it -v $(pwd):/DREAMPlace limbo018/dreamplace:cuda bash
-```
-
-Run without GPU on Windows.
-
-```
-docker run -it -v /dreamplace limbo018/dreamplace:cuda bash
-```
-
-6. `cd /DREAMPlace`.
-7. Go to [next section](#build-without-docker) to complete building within the container.
-
-## Build without Docker
-
-[CMake](https://cmake.org) is adopted as the makefile system.
-To build, go to the root directory.
-
-```
-mkdir build
-cd build # we call this <build directory>
-cmake .. -DCMAKE_INSTALL_PREFIX=<installation directory> -DPython_EXECUTABLE=$(which python)
-make
+```bash
+make -j$(nproc)
 make install
 ```
 
-Where `<build directory>` is the directory where you compile the code, and `<installation directory>` is the directory where you want to install DREAMPlace (e.g., `../install`).
-Third party submodules are automatically built except for [Boost](https://www.boost.org).
+The default install prefix is `./install`. The top-level `Makefile` also builds
+the DREAMPlace submodule inside Differentiable-3D-Partitioner.
 
-To clean, go to the root directory.
+On this machine the `dreamplace` environment contains CMake 4.x, which is too
+new for the bundled DREAMPlace/Limbo policy settings. The `Makefile` therefore
+prefers `/export/home/lwjiang/micromamba/bin/cmake` by default. To override
+paths explicitly:
 
-```
-rm -r build
-```
-
-`<build directory>` can be removed after installation if you do not need incremental compilation later.
-
-Here are the available options for CMake.
-
-- CMAKE_INSTALL_PREFIX: installation directory
-  - Example `cmake -DCMAKE_INSTALL_PREFIX=path/to/your/directory`
-- CMAKE_CUDA_FLAGS: custom string for NVCC (default -gencode=arch=compute_60,code=sm_60)
-  - Example `cmake -DCMAKE_CUDA_FLAGS=-gencode=arch=compute_60,code=sm_60`
-- CMAKE_CXX_ABI: 0|1 for the value of \_GLIBCXX_USE_CXX11_ABI for C++ compiler, default is 0.
-  - Example `cmake -DCMAKE_CXX_ABI=0`
-  - It must be consistent with the \_GLIBCXX_USE_CXX11_ABI for compling all the C++ dependencies, such as Boost and PyTorch.
-  - PyTorch in default is compiled with \_GLIBCXX_USE_CXX11_ABI=0, but in a customized PyTorch environment, it might be compiled with \_GLIBCXX_USE_CXX11_ABI=1.
-
-# How to Get Benchmarks
-
-To get ISPD 2005 and 2015 benchmarks, run the following script from the directory.
-
-```
-python benchmarks/ispd2005_2015.py
+```bash
+make DREAMPLACE_ENV=$CONDA_PREFIX \
+     CMAKE=/export/home/lwjiang/micromamba/bin/cmake \
+     -j$(nproc)
+make install
 ```
 
-# How to Run
+### 4. Verify the install
 
-Before running, make sure the benchmarks have been downloaded and the python dependency packages have been installed.
-Go to the **install directory** and run with JSON configuration file for full placement.
+```bash
+export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 
+(
+  cd install
+  python - <<'PY'
+import importlib
+import placer
+importlib.import_module("placer.ops.draw_layout_result.draw_layout_result_cpp")
+importlib.import_module("thirdparty.DREAMPlace.dreamplace.ops.place_io.place_io_cpp")
+print("D2D install import OK")
+PY
+)
+
+(
+  cd install/thirdparty/Differentiable-3D-Partitioner/thirdparty/DREAMPlace/install
+  python - <<'PY'
+import importlib
+import dreamplace
+importlib.import_module("dreamplace.ops.place_io.place_io_cpp")
+print("nested DREAMPlace install import OK")
+PY
+)
 ```
-cd <installation directory>
-python dreamplace/Placer.py test/ispd2005/adaptec1.json
+
+### 5. Run a placement case with the integrated D3D partitioner
+
+Run from the install directory so benchmark and result paths match the installed
+configuration. The example below copies `case2.json` to `/tmp`, keeps the file
+name as `case2.json` so it matches `configs/iccad2022/case2.yaml`, and enables
+the integrated Differentiable-3D-Partitioner:
+
+```bash
+cd install
+export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
+
+mkdir -p /tmp/d2d-case2-d3d
+python - <<'PY'
+import json
+from pathlib import Path
+
+src = Path("test/iccad2022/case2.json")
+dst = Path("/tmp/d2d-case2-d3d/case2.json")
+cfg = json.loads(src.read_text())
+cfg["partitioner"] = "d3d"
+cfg["differentiable_partitioner_config_root"] = "iccad2022"
+dst.write_text(json.dumps(cfg, indent=2) + "\n")
+print(dst)
+PY
+
+python placer/d2d_placer.py /tmp/d2d-case2-d3d/case2.json
 ```
 
-Test individual `pytorch` op with the unit tests in the root directory.
+Results are written to:
 
-```
-cd <installation directory>
-python unittest/ops/hpwl_unittest.py
-```
-
-# Configurations
-
-Descriptions of options in JSON configuration file can be found by running the following command.
-
-```
-cd <installation directory>
-python dreamplace/Placer.py --help
+```text
+install/results/<case>/<timestamp>/
 ```
 
-The list of options as follows will be shown.
+Runtime partitioners and detailed placers are selected by the JSON config. Some
+flows require external tools such as `bin/hmetis`, `openroad`, SpecPart, or
+NTUPlace. See [Partitioner Selection](#partitioner-selection).
 
-| JSON Parameter | Default                | Description                                                                               |
-| -------------- | ---------------------- | ----------------------------------------------------------------------------------------- |
-| aux_input      | required for Bookshelf | input .aux file                                                                           |
-| lef_input      | required for LEF/DEF   | input LEF file                                                                            |
-| def_input      | required for LEF/DEF   | input DEF file                                                                            |
-| verilog_input  | optional for LEF/DEF   | input VERILOG file, provide circuit netlist information if it is not included in DEF file |
-| gpu            | 1                      | enable gpu or not                                                                         |
+## What `make install` Installs
+
+```text
+install/
+  placer/                                  D2D-Placer Python package and ops
+  thirdparty/DREAMPlace/                   Top-level DREAMPlace install tree
+  thirdparty/Differentiable-3D-Partitioner/ D3D partitioner source/package
+    thirdparty/DREAMPlace/install/         Nested DREAMPlace built for D3D
+  benchmarks/                              Installed benchmark inputs
+  test/                                    Installed JSON configs
+  results/                                 Runtime output directory
+  run_tmp/                                 Runtime scratch directory
+```
+
+## Partitioner Selection
+
+Set the `partitioner` field in the placement JSON file.
+
+```json
+{
+  "txt_input": "benchmarks/iccad2022/case2.txt",
+  "partitioner": "d3d",
+  "differentiable_partitioner_config_root": "iccad2022"
+}
+```
+
+Supported values:
+
+- `hmetis`: default fallback; expects an executable at `bin/hmetis` relative to
+  the runtime working directory.
+- `tritonpart`: uses OpenROAD and `placer/scripts/tritonpart.tcl`.
+- `bin-based-tritonpart`: uses OpenROAD with placement-aware bin partitioning.
+- `specpart`: uses the SpecPart flow under `thirdparty/HypergraphPartitioning`.
+- `d3d`, `d3d_partitioner`, `differentiable-3d-partitioner`: uses the integrated
+  Differentiable-3D-Partitioner.
+
+For the differentiable partitioner, D2D looks for YAML configs inside:
+
+```text
+install/thirdparty/Differentiable-3D-Partitioner/configs/
+```
+
+If `differentiable_partitioner_config_root` is set, D2D loads:
+
+```text
+configs/<differentiable_partitioner_config_root>/<case_name>.yaml
+```
+
+For example, `test/iccad2022/case2.json` with
+`"differentiable_partitioner_config_root": "iccad2022"` uses
+`configs/iccad2022/case2.yaml`.
+
+## Useful Build Variables
+
+The top-level `Makefile` accepts these overrides:
+
+```bash
+make BUILD_DIR=/tmp/d2d-build INSTALL_PREFIX=/tmp/d2d-install
+make CMAKE=/path/to/cmake3 PYTHON_EXECUTABLE=/path/to/python
+make DREAMPLACE_ENV=/path/to/micromamba/envs/dreamplace
+make CUDA_TOOLKIT_ROOT_DIR=/path/to/cuda
+make BOOST_INCLUDE_DIR=/path/to/boost/include BOOST_LIBRARY_DIR=/path/to/boost/lib
+```
+
+Common maintenance commands:
+
+```bash
+make clean
+make distclean
+```
+
+`distclean` removes both `build/` and `install/`.
+
+## Troubleshooting
+
+### Missing nested DREAMPlace
+
+If configure reports that the Differentiable-3D-Partitioner DREAMPlace submodule
+is missing, run:
+
+```bash
+git submodule update --init --recursive
+```
+
+### CMake 4.x fails in DREAMPlace/Limbo
+
+Some bundled DREAMPlace/Limbo revisions set `CMP0048` to `OLD`, which CMake 4.x
+rejects. Use CMake 3.x:
+
+```bash
+make CMAKE=/path/to/cmake3 -j$(nproc)
+```
+
+If CMake 3.x is not available, a local uncommitted workaround is to change
+`CMAKE_POLICY(SET CMP0048 OLD)` to `CMAKE_POLICY(SET CMP0048 NEW)` in both
+DREAMPlace checkouts. Do not commit that change unless you intentionally own the
+third-party submodule.
+
+### `GLIBCXX_*` import errors
+
+Use the same micromamba environment at runtime and put its C++ runtime first:
+
+```bash
+source /export/home/lwjiang/micromamba/env_setup.sh
+micromamba activate dreamplace
+export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
+```
+
+### External runtime tool is missing
+
+The build installs D2D, DREAMPlace, and Differentiable-3D-Partitioner. It does
+not automatically install every optional runtime binary. Depending on your JSON
+config, you may still need to provide:
+
+- `bin/hmetis` for the default HMetis path.
+- `openroad` for TritonPart-based partitioning.
+- SpecPart/Julia dependencies for `partitioner: "specpart"`.
+- NTUPlace binaries if your flow enables external detailed placement.
+
+## Development Notes
+
+- Avoid editing DREAMPlace, nested DREAMPlace, 3d-placer, or other third-party
+  submodule source unless the change is intentionally local. These repositories
+  are not owned by this wrapper project.
+- The integrated build support for Differentiable-3D-Partitioner lives in that
+  LiW-J-owned submodule. Commit changes there first, then commit the updated
+  submodule pointer in this top-level repository.
+- Before handing off a build change, run:
+
+```bash
+source /export/home/lwjiang/micromamba/env_setup.sh
+micromamba activate dreamplace
+make -j$(nproc)
+make install
+```

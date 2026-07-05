@@ -72,6 +72,13 @@ set_property(GLOBAL PROPERTY POSITION_INDEPENDENT_CODE TRUE)
 find_package(OpenMP REQUIRED)
 #find_program(PYTHON "python" REQUIRED)
 find_package(ZLIB REQUIRED)
+set(Boost_NO_BOOST_CMAKE TRUE)
+find_package(Boost 1.55.0 REQUIRED)
+include_directories(
+  ${ZLIB_INCLUDE_DIRS}
+  ${ZLIB_INCLUDE_DIR}
+  ${Boost_INCLUDE_DIRS}
+  ${Boost_INCLUDE_DIR})
 message(STATUS "Boost_INCLUDE_DIRS = ${Boost_INCLUDE_DIRS}")
 
 # thirdparty libraries 
@@ -91,6 +98,16 @@ message(STATUS "3DPLACER_SOURCE_DIR ${3DPLACER_SOURCE_DIR}")
 include_directories(${3DPLACER_SOURCE_DIR})
 set(3DPLACER_INCLUDE_DIRS ${3DPLACER_SOURCE_DIR}/placer)
 set(3DPLACER_LIBRARIES ${PLACER_BINARY_DIR}/thirdparty/3d-placer/placer/lib3d_placer_lib.a)
+
+set(NTUPLACE3_EXECUTABLE ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/ntuplace3)
+if(EXISTS ${NTUPLACE3_EXECUTABLE})
+  install(PROGRAMS ${NTUPLACE3_EXECUTABLE} DESTINATION thirdparty)
+else()
+  message(WARNING
+    "NTUplace3 executable not found at ${NTUPLACE3_EXECUTABLE}; "
+    "D2D-Placer will skip external detailed placement unless "
+    "detailed_place_engine points to an existing executable.")
+endif()
 
 if (CUDA_FOUND)
   if (NOT CMAKE_CUDA_ARCHITECTURES)
