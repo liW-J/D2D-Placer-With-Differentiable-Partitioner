@@ -115,14 +115,17 @@ Results are written to:
 install/results/<case>/<timestamp>/
 ```
 
-Runtime partitioners and detailed placers are selected by the JSON config. Some
-flows require external tools such as `bin/hmetis`, `openroad`, SpecPart, or
-NTUPlace. See [Partitioner Selection](#partitioner-selection).
+Runtime partitioners and detailed placers are selected by the JSON config. The
+build installs bundled hMETIS to `install/bin/hmetis`; other flows may still
+require external tools such as `openroad`, SpecPart, or NTUPlace. See
+[Partitioner Selection](#partitioner-selection).
 
 ## What `make install` Installs
 
 ```text
 install/
+  bin/hmetis                               Bundled hMETIS wrapper
+  bin/hmetis2.0pre1                        Bundled hMETIS binary
   placer/                                  D2D-Placer Python package and ops
   thirdparty/DREAMPlace/                   Top-level DREAMPlace install tree
   thirdparty/Differentiable-3D-Partitioner/ D3D partitioner source/package
@@ -147,8 +150,8 @@ Set the `partitioner` field in the placement JSON file.
 
 Supported values:
 
-- `hmetis`: default fallback; expects an executable at `bin/hmetis` relative to
-  the runtime working directory.
+- `hmetis`: default fallback; uses the bundled executable installed at
+  `bin/hmetis` relative to the runtime working directory.
 - `tritonpart`: uses OpenROAD and `placer/scripts/tritonpart.tcl`.
 - `bin-based-tritonpart`: uses OpenROAD with placement-aware bin partitioning.
 - `specpart`: uses the SpecPart flow under `thirdparty/HypergraphPartitioning`.
@@ -250,7 +253,6 @@ The build installs D2D, DREAMPlace, and Differentiable-3D-Partitioner. It does
 not automatically install every optional runtime binary. Depending on your JSON
 config, you may still need to provide:
 
-- `bin/hmetis` for the default HMetis path.
 - `openroad` for TritonPart-based partitioning.
 - SpecPart/Julia dependencies for `partitioner: "specpart"`.
 - `thirdparty/ntuplace3`, which is installed to `install/thirdparty/ntuplace3`

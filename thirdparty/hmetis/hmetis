@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+HMETIS_BIN="${SCRIPT_DIR}/hmetis2.0pre1"
+
+if [[ ! -x "${HMETIS_BIN}" ]]; then
+  echo "Missing bundled hmetis binary: ${HMETIS_BIN}" >&2
+  exit 127
+fi
+
+if [[ $# -eq 0 ]]; then
+  exec "${HMETIS_BIN}"
+fi
+
+# hMETIS 2.0pre1 supports GNU-style flags. Keep that path untouched.
+if [[ "${1}" == -* ]]; then
+  exec "${HMETIS_BIN}" "$@"
+fi
+
+# Backward-compatible wrapper for the legacy hMETIS 1.5 CLI:
+#   hmetis <file> <nparts> <ubfactor> <nruns> <ctype> <rtype> <vcycle> <reconst> <dbglvl> [seed]
+if [[ $# -lt 9 ]]; then
+  echo "Usage (legacy): hmetis <file> <nparts> <ubfactor> <nruns> <ctype> <rtype> <vcycle> <reconst> <dbglvl> [seed]" >&2
+  echo "Usage (native): hmetis [options] <file> <nparts>" >&2
+  exit 2
+fi
+
+file="$1"
+nparts="$2"
+ufactor="$3"
+nruns="$4"
+ctype_legacy="$5"
+rtype_legacy="$6"
+nvcycles="$7"
+reconst="$8"
+dbglvl="$9"
+seed="${10:-}"
+
+map_legacy_ctype() {
+  case "$1" in
+    1) echo "h1" ;;
+    2) echo "gfc1" ;;
+    3) echo "h2" ;;
+    4) echo "h12" ;;
+    *) echo "h1" ;;
+  esac
+}
+
+map_legacy_rtype() {
+  case "$1" in
+    1) echo "fast" ;;
+    2) echo "moderate" ;;
+    3) echo "slow" ;;
+    *) echo "fast" ;;
+  esac
+}
+
+args=(
+  "-ufactor=${ufactor}"
+  "-nruns=${nruns}"
+  "-ctype=$(map_legacy_ctype "${ctype_legacy}")"
+  "-rtype=$(map_legacy_rtype "${rtype_legacy}")"
+  "-nvcycles=${nvcycles}"
+  "-dbglvl=${dbglvl}"
+)
+
+if [[ "${reconst}" != "0" ]]; then
+  args+=("-reconst")
+fi
+
+if [[ -n "${seed}" ]]; then
+  args+=("-seed=${seed}")
+fi
+
+exec "${HMETIS_BIN}" "${args[@]}" "${file}" "${nparts}"

@@ -219,7 +219,7 @@ class D2Dplacer:
             global_place_flag=global_place_flag,
             legalize_flag=legalize_flag,
             detailed_place_flag=detailed_place_flag,
-            random_center_init_flag=False,
+            random_center_init_flag=random_center_init_flag,
             ntuplace_flag=ntuplace_flag)
         self.dreamplace.reload_die_basic_place(self.params, self.timer)
 
