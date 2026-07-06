@@ -18,17 +18,16 @@ nested DREAMPlace under Differentiable-3D-Partitioner:
 git submodule update --init --recursive
 ```
 
-### 2. Activate the build environment
+### 2. Prepare the build environment
 
-On the current lab machine, use the prepared micromamba environment:
+Make sure the following tools and libraries are available from your normal
+shell environment: Python 3.9, PyTorch, a C++17 compiler, Boost, Bison, Flex,
+Zlib, and CMake 3.x. CMake must be available as `cmake3` or `cmake` in `PATH`,
+or passed explicitly with `CMAKE=/path/to/cmake3`.
 
-```bash
-source /export/home/lwjiang/micromamba/env_setup.sh
-micromamba activate dreamplace
-```
-
-For a custom environment, make sure it provides Python 3.9, PyTorch, a C++17
-compiler, Boost, Bison, Flex, Zlib, and CMake 3.x.
+The Makefile does not assume conda, micromamba, or any named environment. If
+your dependencies are installed in a non-standard prefix, pass `ENV_PREFIX` in
+the build commands below.
 
 ### 3. Build and install
 
@@ -37,25 +36,28 @@ make -j$(nproc)
 make install
 ```
 
+For dependencies installed in a non-standard prefix:
+
+```bash
+make ENV_PREFIX=/path/to/env -j$(nproc)
+make ENV_PREFIX=/path/to/env install
+```
+
 The default install prefix is `./install`. The top-level `Makefile` also builds
 the DREAMPlace submodule inside Differentiable-3D-Partitioner.
 
-On this machine the `dreamplace` environment contains CMake 4.x, which is too
-new for the bundled DREAMPlace/Limbo policy settings. The `Makefile` therefore
-prefers `/export/home/lwjiang/micromamba/bin/cmake` by default. To override
-paths explicitly:
+If your active environment exposes CMake 4.x and DREAMPlace/Limbo rejects its
+policy settings, point the wrapper to a CMake 3.x executable explicitly:
 
 ```bash
-make DREAMPLACE_ENV=$CONDA_PREFIX \
-     CMAKE=/export/home/lwjiang/micromamba/bin/cmake \
-     -j$(nproc)
-make install
+make ENV_PREFIX=/path/to/env CMAKE=/path/to/cmake3 -j$(nproc)
+make ENV_PREFIX=/path/to/env CMAKE=/path/to/cmake3 install
 ```
 
 ### 4. Verify the install
 
 ```bash
-export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=/path/to/env/lib:$LD_LIBRARY_PATH
 
 (
   cd install
@@ -88,7 +90,7 @@ the integrated Differentiable-3D-Partitioner:
 
 ```bash
 cd install
-export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=/path/to/env/lib:$LD_LIBRARY_PATH
 
 mkdir -p /tmp/d2d-case2-d3d
 python - <<'PY'
@@ -176,7 +178,7 @@ The top-level `Makefile` accepts these overrides:
 ```bash
 make BUILD_DIR=/tmp/d2d-build INSTALL_PREFIX=/tmp/d2d-install
 make CMAKE=/path/to/cmake3 PYTHON_EXECUTABLE=/path/to/python
-make DREAMPLACE_ENV=/path/to/micromamba/envs/dreamplace
+make ENV_PREFIX=/path/to/env
 make CUDA_TOOLKIT_ROOT_DIR=/path/to/cuda
 make BOOST_INCLUDE_DIR=/path/to/boost/include BOOST_LIBRARY_DIR=/path/to/boost/lib
 ```
@@ -201,6 +203,25 @@ is missing, run:
 git submodule update --init --recursive
 ```
 
+### CMake is not found
+
+If `make` reports `env: cmake: No such file or directory`, CMake is not in your
+`PATH`. Install CMake 3.x, load it with your site module system, or pass it
+explicitly:
+
+```bash
+make CMAKE=/path/to/cmake3 -j$(nproc)
+make CMAKE=/path/to/cmake3 install
+```
+
+If CMake is inside a non-standard dependency prefix, `ENV_PREFIX` is enough as
+long as `${ENV_PREFIX}/bin/cmake` or `${ENV_PREFIX}/bin/cmake3` exists:
+
+```bash
+make ENV_PREFIX=/path/to/env -j$(nproc)
+make ENV_PREFIX=/path/to/env install
+```
+
 ### CMake 4.x fails in DREAMPlace/Limbo
 
 Some bundled DREAMPlace/Limbo revisions set `CMP0048` to `OLD`, which CMake 4.x
@@ -217,12 +238,10 @@ third-party submodule.
 
 ### `GLIBCXX_*` import errors
 
-Use the same micromamba environment at runtime and put its C++ runtime first:
+If runtime libraries are installed in a non-standard prefix, put that prefix first:
 
 ```bash
-source /export/home/lwjiang/micromamba/env_setup.sh
-micromamba activate dreamplace
-export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=/path/to/env/lib:$LD_LIBRARY_PATH
 ```
 
 ### External runtime tool is missing
@@ -234,7 +253,8 @@ config, you may still need to provide:
 - `bin/hmetis` for the default HMetis path.
 - `openroad` for TritonPart-based partitioning.
 - SpecPart/Julia dependencies for `partitioner: "specpart"`.
-- NTUPlace binaries if your flow enables external detailed placement.
+- `thirdparty/ntuplace3`, which is installed to `install/thirdparty/ntuplace3`
+  when present in the source tree.
 
 ## Development Notes
 
@@ -247,8 +267,6 @@ config, you may still need to provide:
 - Before handing off a build change, run:
 
 ```bash
-source /export/home/lwjiang/micromamba/env_setup.sh
-micromamba activate dreamplace
 make -j$(nproc)
 make install
 ```

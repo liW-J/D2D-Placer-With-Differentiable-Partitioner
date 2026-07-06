@@ -1,16 +1,15 @@
-DREAMPLACE_ENV ?= /export/home/lwjiang/micromamba/envs/dreamplace
-CMAKE3 ?= /export/home/lwjiang/micromamba/bin/cmake
-DEFAULT_CMAKE := $(shell if [ -x "$(CMAKE3)" ]; then printf '%s\n' "$(CMAKE3)"; elif command -v cmake >/dev/null 2>&1; then command -v cmake; elif [ -x "$(DREAMPLACE_ENV)/bin/cmake" ]; then printf '%s\n' "$(DREAMPLACE_ENV)/bin/cmake"; else printf '%s\n' cmake; fi)
-DEFAULT_PYTHON := $(shell if [ -x "$(DREAMPLACE_ENV)/bin/python3.9" ]; then printf '%s\n' "$(DREAMPLACE_ENV)/bin/python3.9"; elif command -v python >/dev/null 2>&1; then command -v python; else command -v python3 2>/dev/null; fi)
-DEFAULT_C_COMPILER := $(shell if [ -x "$(DREAMPLACE_ENV)/bin/x86_64-conda-linux-gnu-cc" ]; then printf '%s\n' "$(DREAMPLACE_ENV)/bin/x86_64-conda-linux-gnu-cc"; fi)
-DEFAULT_CXX_COMPILER := $(shell if [ -x "$(DREAMPLACE_ENV)/bin/x86_64-conda-linux-gnu-c++" ]; then printf '%s\n' "$(DREAMPLACE_ENV)/bin/x86_64-conda-linux-gnu-c++"; fi)
-DEFAULT_CUDA_TOOLKIT_ROOT := $(shell if [ -d "/export/home/lwjiang/cuda-11.6" ]; then printf '%s\n' "/export/home/lwjiang/cuda-11.6"; fi)
-DEFAULT_BOOST_INCLUDE_DIR := $(shell if [ -f "$(DREAMPLACE_ENV)/include/boost/version.hpp" ]; then printf '%s\n' "$(DREAMPLACE_ENV)/include"; fi)
-DEFAULT_BOOST_LIBRARY_DIR := $(shell if [ -d "/export/home/zrbi/boost/rootboost/rootboost/lib" ]; then printf '%s\n' "/export/home/zrbi/boost/rootboost/rootboost/lib"; fi)
-DEFAULT_BISON_EXECUTABLE := $(shell if [ -x "$(DREAMPLACE_ENV)/bin/bison" ]; then printf '%s\n' "$(DREAMPLACE_ENV)/bin/bison"; fi)
-DEFAULT_FLEX_EXECUTABLE := $(shell if [ -x "$(DREAMPLACE_ENV)/bin/flex" ]; then printf '%s\n' "$(DREAMPLACE_ENV)/bin/flex"; fi)
-DEFAULT_ZLIB_INCLUDE_DIR := $(shell if [ -f "$(DREAMPLACE_ENV)/include/zlib.h" ]; then printf '%s\n' "$(DREAMPLACE_ENV)/include"; fi)
-DEFAULT_ZLIB_LIBRARY := $(shell if [ -e "$(DREAMPLACE_ENV)/lib/libz.so" ]; then printf '%s\n' "$(DREAMPLACE_ENV)/lib/libz.so"; fi)
+ENV_PREFIX ?=
+DEFAULT_CMAKE := $(shell if [ -n "$(ENV_PREFIX)" ] && [ -x "$(ENV_PREFIX)/bin/cmake3" ]; then printf '%s\n' "$(ENV_PREFIX)/bin/cmake3"; elif [ -n "$(ENV_PREFIX)" ] && [ -x "$(ENV_PREFIX)/bin/cmake" ]; then printf '%s\n' "$(ENV_PREFIX)/bin/cmake"; elif command -v cmake3 >/dev/null 2>&1; then command -v cmake3; elif command -v cmake >/dev/null 2>&1; then command -v cmake; fi)
+DEFAULT_PYTHON := $(shell if [ -n "$(ENV_PREFIX)" ] && [ -x "$(ENV_PREFIX)/bin/python" ]; then printf '%s\n' "$(ENV_PREFIX)/bin/python"; elif [ -n "$(ENV_PREFIX)" ] && [ -x "$(ENV_PREFIX)/bin/python3" ]; then printf '%s\n' "$(ENV_PREFIX)/bin/python3"; elif command -v python3 >/dev/null 2>&1; then command -v python3; else command -v python 2>/dev/null; fi)
+DEFAULT_C_COMPILER := $(shell if [ -n "$(ENV_PREFIX)" ] && [ -x "$(ENV_PREFIX)/bin/cc" ]; then printf '%s\n' "$(ENV_PREFIX)/bin/cc"; fi)
+DEFAULT_CXX_COMPILER := $(shell if [ -n "$(ENV_PREFIX)" ] && [ -x "$(ENV_PREFIX)/bin/c++" ]; then printf '%s\n' "$(ENV_PREFIX)/bin/c++"; fi)
+DEFAULT_CUDA_TOOLKIT_ROOT := $(shell if [ -n "$$CUDA_HOME" ]; then printf '%s\n' "$$CUDA_HOME"; elif [ -n "$$CUDA_PATH" ]; then printf '%s\n' "$$CUDA_PATH"; fi)
+DEFAULT_BOOST_INCLUDE_DIR := $(shell if [ -n "$(ENV_PREFIX)" ] && [ -f "$(ENV_PREFIX)/include/boost/version.hpp" ]; then printf '%s\n' "$(ENV_PREFIX)/include"; fi)
+DEFAULT_BOOST_LIBRARY_DIR := $(shell if [ -n "$(ENV_PREFIX)" ] && { [ -e "$(ENV_PREFIX)/lib/libboost_graph.so" ] || [ -e "$(ENV_PREFIX)/lib/libboost_graph.a" ]; }; then printf '%s\n' "$(ENV_PREFIX)/lib"; fi)
+DEFAULT_BISON_EXECUTABLE := $(shell if [ -n "$(ENV_PREFIX)" ] && [ -x "$(ENV_PREFIX)/bin/bison" ]; then printf '%s\n' "$(ENV_PREFIX)/bin/bison"; fi)
+DEFAULT_FLEX_EXECUTABLE := $(shell if [ -n "$(ENV_PREFIX)" ] && [ -x "$(ENV_PREFIX)/bin/flex" ]; then printf '%s\n' "$(ENV_PREFIX)/bin/flex"; fi)
+DEFAULT_ZLIB_INCLUDE_DIR := $(shell if [ -n "$(ENV_PREFIX)" ] && [ -f "$(ENV_PREFIX)/include/zlib.h" ]; then printf '%s\n' "$(ENV_PREFIX)/include"; fi)
+DEFAULT_ZLIB_LIBRARY := $(shell if [ -n "$(ENV_PREFIX)" ] && [ -e "$(ENV_PREFIX)/lib/libz.so" ]; then printf '%s\n' "$(ENV_PREFIX)/lib/libz.so"; fi)
 
 CMAKE ?= $(DEFAULT_CMAKE)
 BUILD_DIR ?= $(CURDIR)/build
@@ -26,7 +25,7 @@ BOOST_GRAPH_LIBRARY ?= $(if $(BOOST_LIBRARY_DIR),$(BOOST_LIBRARY_DIR)/libboost_g
 BOOST_REGEX_LIBRARY ?= $(if $(BOOST_LIBRARY_DIR),$(BOOST_LIBRARY_DIR)/libboost_regex.so)
 BISON_EXECUTABLE ?= $(DEFAULT_BISON_EXECUTABLE)
 FLEX_EXECUTABLE ?= $(DEFAULT_FLEX_EXECUTABLE)
-FLEX_INCLUDE_DIR ?= $(if $(DEFAULT_FLEX_EXECUTABLE),$(DREAMPLACE_ENV)/include)
+FLEX_INCLUDE_DIR ?= $(if $(DEFAULT_FLEX_EXECUTABLE),$(ENV_PREFIX)/include)
 ZLIB_INCLUDE_DIR ?= $(DEFAULT_ZLIB_INCLUDE_DIR)
 ZLIB_LIBRARY ?= $(DEFAULT_ZLIB_LIBRARY)
 CMAKE_ARGS ?=
@@ -88,6 +87,10 @@ all: configure
 	$(BUILD_ENV) $(MAKE) -C $(BUILD_DIR)
 
 configure:
+	@if [ -z "$(strip $(CMAKE))" ]; then \
+		echo "Error: CMake was not found. Install CMake 3.x, add it to PATH, pass CMAKE=/path/to/cmake3, or pass ENV_PREFIX=/path/to/env."; \
+		exit 127; \
+	fi
 	$(BUILD_ENV) $(CMAKE) $(CMAKE_CONFIGURE_ARGS) $(CMAKE_ARGS)
 
 install: all
