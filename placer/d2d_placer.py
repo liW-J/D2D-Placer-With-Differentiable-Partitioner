@@ -640,8 +640,6 @@ if __name__ == "__main__":
         # returns, so we must explicitly free it here.
         import gc; gc.collect()
         torch.cuda.empty_cache()
-        d2d_logger.info("GPU cache cleared before refinement: %.1f GiB free",
-                        torch.cuda.mem_get_info()[0] / 1024**3)
         # FM refinement: updates tier assignment and re-inserts terminals.
         # terminal_insert_op inside refinement() re-writes partition pl files
         # from dp_2d.pos (synced from co-place result), so NTUplace3 below
