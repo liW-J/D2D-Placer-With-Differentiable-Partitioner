@@ -133,17 +133,34 @@ class D2Dplacer:
         return hpwl_d2d
 
     def init_spec(self):
-        if self.params.flatten_2d.txt_input:
+        if self.params.is_txt_input:
+            if not self.params.flatten_2d.txt_input:
+                raise ValueError("txt input mode requires txt_input in json")
             logging.info("parsing iccad txt input......")
             # parser iccad txt format to die_spec
             parser_txt = ParserTxt(self.params.flatten_2d.txt_input)
             self.die_spec = parser_txt()
+        elif self.params.is_lefdef_input:
+            logging.info("using LEF/DEF input directly with DREAMPlace......")
+            self.die_spec = self.params.build_lefdef_die_spec()
+        else:
+            raise ValueError("unsupported input format: %s" %
+                             self.params.input_format)
 
         # control numpy multithreading
         os.environ["OMP_NUM_THREADS"] = "%d" % (
             self.params.flatten_2d.num_threads)
 
         self.dreamplace.init_all_basic_place(self.params, self.timer)
+        if self.params.is_lefdef_input:
+            self.params.finalize_lefdef_die_spec(self.die_spec,
+                                                 self.dreamplace)
+            self._validate_lefdef_alignment()
+            logging.info(
+                "LEF/DEF die spec: dieSize=(%d,%d), terminal=(%d,%d), spacing=%d",
+                self.die_spec.dieSizeX, self.die_spec.dieSizeY,
+                self.die_spec.terminalSizeX, self.die_spec.terminalSizeY,
+                self.die_spec.terminalSpacing)
         logging.info(
             "Thread config effective: torch.get_num_threads()=%d, "
             "OMP_NUM_THREADS=%s, params.num_threads=%s, flatten_2d.num_threads=%s",
@@ -162,6 +179,39 @@ class D2Dplacer:
         self.op_wrapper = OpWrapper(self.dreamplace.dp_2d,
                                     self.dreamplace.dp_tier, self.params,
                                     self.die_spec)
+
+    def _movable_node_names(self, placedb):
+        names = []
+        for name in placedb.node_names[:placedb.num_movable_nodes]:
+            if isinstance(name, bytes):
+                names.append(name.decode("utf-8"))
+            else:
+                names.append(str(name))
+        return names
+
+    def _validate_lefdef_alignment(self):
+        ref_names = self._movable_node_names(self.dreamplace.dp_2d.placedb)
+        for tier_id, dp_tier in enumerate(self.dreamplace.dp_tier):
+            tier_names = self._movable_node_names(dp_tier.placedb)
+            if tier_names == ref_names:
+                continue
+
+            ref_set = set(ref_names)
+            tier_set = set(tier_names)
+            missing = sorted(ref_set - tier_set)[:5]
+            extra = sorted(tier_set - ref_set)[:5]
+            mismatch = None
+            for idx, (ref_name, tier_name) in enumerate(
+                    zip(ref_names, tier_names)):
+                if ref_name != tier_name:
+                    mismatch = (idx, ref_name, tier_name)
+                    break
+            detail = "missing=%s extra=%s" % (missing, extra)
+            if mismatch is not None:
+                detail += " first_mismatch=%s" % (mismatch, )
+            raise ValueError(
+                "LEF/DEF tier%d movable nodes must match flattened-2D "
+                "movable node order; %s" % (tier_id, detail))
 
     def die_by_die_place(self,
                          global_place_flag,
@@ -402,11 +452,14 @@ class D2Dplacer:
         torch.save(self.tier, self.params.result_dir_root + "/tier.pt")
 
         # return partition result but not receive now
-        # pos_2d/2 beceuse of 3d-placer set flattened_die size as die_size*2
-        # self.cut_net_mask = self.op_wrapper.d2d_op_collections.init_partition_op(
-        #     self.tier, self.dreamplace.dp_2d.pos / 2, self.node_orient)
+        if self.params.is_lefdef_input:
+            terminal_insert_pos = self.dreamplace.dp_2d.pos
+        else:
+            # 3d-placer sets flattened_die size as die_size*2 for txt input.
+            terminal_insert_pos = (self.dreamplace.dp_2d.pos * 2**0.5 / 2 -
+                                   (2**0.5 - 1) * self.die_spec.dieSizeX / 2)
         self.cut_net_mask = self.op_wrapper.d2d_op_collections.terminal_insert_op(
-            self.tier,  self.dreamplace.dp_2d.pos * 2**0.5 /2 - (2**0.5 - 1) * self.die_spec.dieSizeX / 2, self.node_orient)
+            self.tier, terminal_insert_pos, self.node_orient)
 
         if self.format == Format.ICCAD2023:
             # update placedb_tier & data_tier using new terminal_insert result
@@ -535,10 +588,14 @@ class D2Dplacer:
                                          logger=logger)
             return analyzer.run_comprehensive_analysis()
 
-        analyze_placer_output(self.params.flatten_2d.txt_input,
-                              self.params.result_dir_root)
+        if self.params.is_txt_input and self.params.flatten_2d.txt_input:
+            analyze_placer_output(self.params.flatten_2d.txt_input,
+                                  self.params.result_dir_root)
+            self.op_wrapper.d2d_op_collections.draw_layout_result_op()
+        else:
+            logging.info(
+                "LEF/DEF input: skip ICCAD txt analyzer and txt layout drawer")
 
-        self.op_wrapper.d2d_op_collections.draw_layout_result_op()
         self.draw_d2d_layout()
 
 

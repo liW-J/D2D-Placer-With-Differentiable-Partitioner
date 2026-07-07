@@ -7,18 +7,56 @@ FilePath: /D2D-placer/placer/d2d_params.py
 Description: 
 '''
 import dreamplace.Params as Params
-import time
+import json
 import os
+import time
+from pathlib import Path
 from configure import compile_configurations
+
+
+class D2DDieSpec:
+
+    def __init__(self,
+                 numTechnologies=2,
+                 dieSizeX=0,
+                 dieSizeY=0,
+                 topDieMaxUtil=100,
+                 bottomDieMaxUtil=100,
+                 terminalSizeX=0,
+                 terminalSizeY=0,
+                 terminalSpacing=0):
+        self.numTechnologies = numTechnologies
+        self.dieSizeX = dieSizeX
+        self.dieSizeY = dieSizeY
+        self.topDieMaxUtil = topDieMaxUtil
+        self.bottomDieMaxUtil = bottomDieMaxUtil
+        self.terminalSizeX = terminalSizeX
+        self.terminalSizeY = terminalSizeY
+        self.terminalSpacing = terminalSpacing
 
 
 class D2DParams:
 
     def __init__(self, json_path):
-        self.tt_format = time.strftime("%Y-%m-%d_%H-%M-%S", time.localtime())
+        self.json_path = json_path
+        self.repo_root = Path(__file__).resolve().parents[1]
+        if self.repo_root.name == "install":
+            self.project_root = self.repo_root.parent
+        else:
+            self.project_root = self.repo_root
+        self.install_root = self.project_root / "install"
+
+        with open(json_path, "r", encoding="utf-8") as f:
+            self.input_config = json.load(f)
+
+        self.tt_format = time.strftime("%Y-%m-%d_%H-%M-%S",
+                                       time.localtime())
         self.case_name = os.path.splitext(os.path.basename(json_path))[0]
         self.run_tmp_dir_root = f"{compile_configurations['PLACER_RUNTMP_DIR']}/{self.case_name}"
         self.result_dir_root = f"{compile_configurations['PLACER_RESULT_DIR']}/{self.case_name}/{self.tt_format}"
+        self.input_format = self._detect_input_format(self.input_config)
+        self.is_lefdef_input = self.input_format == "lefdef"
+        self.is_txt_input = self.input_format == "txt"
 
         self.flatten_2d = Params.Params()
         self.terminal = Params.Params()
@@ -28,7 +66,6 @@ class D2DParams:
         self.num_tiers = self.flatten_2d.num_tiers
         self.partitioner = getattr(self.flatten_2d, "partitioner", "hmetis")
 
-        self.flatten_2d.aux_input = f"{self.run_tmp_dir_root}/flattened-2d/flattened-2d.aux"
         self.terminal.aux_input = f"{self.run_tmp_dir_root}/terminal/terminal.aux"
 
         self.flatten_2d.result_dir = self.result_dir_root
@@ -42,11 +79,21 @@ class D2DParams:
             self.partition_tier[i].load(json_path)
             self.flattened_tier[i].result_dir = self.result_dir_root
             self.partition_tier[i].result_dir = self.result_dir_root
-
-            self.flattened_tier[
-                i].aux_input = f"{self.run_tmp_dir_root}/flattened-2d/tier{i}.aux"
             self.partition_tier[
                 i].aux_input = f"{self.run_tmp_dir_root}/partition/tier{i}.aux"
+
+        if self.is_lefdef_input:
+            self._setup_lefdef_inputs()
+        else:
+            self.flatten_2d.aux_input = f"{self.run_tmp_dir_root}/flattened-2d/flattened-2d.aux"
+            for i in range(self.num_tiers):
+                self.flattened_tier[
+                    i].aux_input = f"{self.run_tmp_dir_root}/flattened-2d/tier{i}.aux"
+
+        self._use_bookshelf_input(self.terminal, self.terminal.aux_input)
+        for i in range(self.num_tiers):
+            self._use_bookshelf_input(self.partition_tier[i],
+                                      self.partition_tier[i].aux_input)
 
         # special params
         # Use intersection-center positions written by terminal_insert (.pl file)
@@ -88,6 +135,311 @@ class D2DParams:
         # plotting cadence for co-place; <=0 disables, otherwise plot every N iters
         self.co_place_plot_freq = int(
             getattr(self.flatten_2d, "co_place_plot_freq", 50))
+
+    def _detect_input_format(self, config):
+        input_format = str(config.get("input_format", "")).lower()
+        if input_format in ("lefdef", "lef/def", "lef-def"):
+            return "lefdef"
+        if input_format in ("txt", "iccad", "iccad_txt"):
+            return "txt"
+
+        lefdef_markers = (
+            "lefdef_input",
+            "top_die_tech",
+            "bottom_die_tech",
+            "top_tech",
+            "bottom_tech",
+            "top_die_lef_input",
+            "bottom_die_lef_input",
+            "top_die_def_input",
+            "bottom_die_def_input",
+        )
+        if any(config.get(key) for key in lefdef_markers):
+            return "lefdef"
+        if config.get("def_input") and config.get("lef_input"):
+            return "lefdef"
+        return "txt"
+
+    def _unique_roots(self):
+        roots = [Path.cwd(), self.repo_root, self.project_root, self.install_root]
+        unique = []
+        for root in roots:
+            if root not in unique:
+                unique.append(root)
+        return unique
+
+    def _resolve_path(self, path_value):
+        if not path_value:
+            return ""
+        path = Path(str(path_value)).expanduser()
+        if path.is_absolute():
+            return str(path)
+        for root in self._unique_roots():
+            candidate = root / path
+            if candidate.exists():
+                return str(candidate.resolve())
+        return str((self.repo_root / path).resolve())
+
+    def _resolve_paths(self, path_value):
+        if not path_value:
+            return []
+        if isinstance(path_value, (str, os.PathLike)):
+            values = [path_value]
+        else:
+            values = path_value
+        return [self._resolve_path(value) for value in values]
+
+    def _get_first(self, *values, default=None):
+        for value in values:
+            if value not in (None, "", []):
+                return value
+        return default
+
+    def _get_layer_config(self, *names):
+        lefdef_config = self.input_config.get("lefdef_input", {})
+        if not isinstance(lefdef_config, dict):
+            lefdef_config = {}
+        for name in names:
+            value = lefdef_config.get(name)
+            if isinstance(value, dict):
+                return value
+            value = self.input_config.get(name)
+            if isinstance(value, dict):
+                return value
+        return {}
+
+    def _tech_lef_input(self, tech):
+        if not tech:
+            return []
+        tech_path = Path(str(tech)).expanduser()
+        candidates = []
+        if tech_path.is_absolute():
+            candidates.append(tech_path)
+        else:
+            candidates.extend([root / tech_path for root in self._unique_roots()])
+            candidates.extend([
+                self.repo_root / "benchmarks" / "lef" / str(tech),
+                self.install_root / "benchmarks" / "lef" / str(tech),
+                self.project_root / "install" / "benchmarks" / "lef" /
+                str(tech),
+            ])
+
+        tech_dir = None
+        for candidate in candidates:
+            if candidate.is_dir():
+                tech_dir = candidate
+                break
+        if tech_dir is None:
+            raise FileNotFoundError(
+                "Cannot find LEF tech directory for %s. Provide explicit "
+                "lef_input or place LEFs under install/benchmarks/lef/<tech>."
+                % tech)
+
+        def lef_sort_key(path):
+            name = path.name.lower()
+            return (0 if "tech" in name else 1, name)
+
+        lefs = sorted(tech_dir.glob("*.lef"), key=lef_sort_key)
+        if not lefs:
+            raise FileNotFoundError("No .lef files found under %s" % tech_dir)
+        return [str(path.resolve()) for path in lefs]
+
+    def _layer_lefs(self, layer_config, role, fallback=None):
+        explicit = self._get_first(
+            layer_config.get("lef_input"),
+            self.input_config.get("%s_die_lef_input" % role),
+            self.input_config.get("%s_lef_input" % role),
+            default=None)
+        if explicit:
+            return self._resolve_paths(explicit)
+
+        tech = self._get_first(
+            layer_config.get("tech"),
+            self.input_config.get("%s_die_tech" % role),
+            self.input_config.get("%s_tech" % role),
+            default=None)
+        if tech:
+            return self._tech_lef_input(tech)
+        return list(fallback or [])
+
+    def _layer_def(self, layer_config, role, fallback=None):
+        value = self._get_first(
+            layer_config.get("def_input"),
+            self.input_config.get("%s_die_def_input" % role),
+            self.input_config.get("%s_def_input" % role),
+            default=fallback)
+        return self._resolve_path(value) if value else ""
+
+    def _layer_verilog(self, layer_config, role, fallback=None):
+        value = self._get_first(
+            layer_config.get("verilog_input"),
+            self.input_config.get("%s_die_verilog_input" % role),
+            self.input_config.get("%s_verilog_input" % role),
+            default=fallback)
+        return self._resolve_path(value) if value else ""
+
+    def _use_lefdef_input(self, params, lef_input, def_input, verilog_input=""):
+        params.aux_input = ""
+        params.lef_input = list(lef_input)
+        params.def_input = def_input
+        params.verilog_input = verilog_input
+        params.sol_file_format = "DEF"
+
+    def _use_bookshelf_input(self, params, aux_input):
+        params.aux_input = aux_input
+        params.lef_input = ""
+        params.def_input = ""
+        params.verilog_input = ""
+
+    def _setup_lefdef_inputs(self):
+        flat_config = self._get_layer_config("flattened", "flatten_2d",
+                                             "flat")
+        top_config = self._get_layer_config("top", "top_die")
+        bottom_config = self._get_layer_config("bottom", "bottom_die", "bot")
+
+        common_def = self._resolve_path(self.input_config.get("def_input"))
+        common_verilog = self._resolve_path(
+            self.input_config.get("verilog_input"))
+        common_lefs = self._resolve_paths(self.input_config.get("lef_input"))
+
+        flat_def = self._layer_def(flat_config, "flattened", common_def)
+        if not flat_def:
+            raise ValueError(
+                "LEF/DEF input requires def_input or "
+                "lefdef_input.flattened.def_input for flattened 2D placement.")
+
+        flat_lefs = self._layer_lefs(flat_config, "flattened", common_lefs)
+        if not flat_lefs:
+            flat_lefs = self._layer_lefs(top_config, "top", [])
+        if not flat_lefs:
+            raise ValueError(
+                "LEF/DEF input requires lef_input, flattened tech, or top tech."
+            )
+
+        flat_verilog = self._layer_verilog(flat_config, "flattened",
+                                           common_verilog)
+        top_def = self._layer_def(top_config, "top", flat_def)
+        bottom_def = self._layer_def(bottom_config, "bottom", flat_def)
+        top_lefs = self._layer_lefs(top_config, "top", flat_lefs)
+        bottom_lefs = self._layer_lefs(bottom_config, "bottom", flat_lefs)
+        top_verilog = self._layer_verilog(top_config, "top", flat_verilog)
+        bottom_verilog = self._layer_verilog(bottom_config, "bottom",
+                                             flat_verilog)
+
+        if self.num_tiers != 2:
+            raise ValueError("LEF/DEF input currently expects num_tiers == 2")
+
+        self._use_lefdef_input(self.flatten_2d, flat_lefs, flat_def,
+                               flat_verilog)
+        self._use_lefdef_input(self.flattened_tier[0], top_lefs, top_def,
+                               top_verilog)
+        self._use_lefdef_input(self.flattened_tier[1], bottom_lefs, bottom_def,
+                               bottom_verilog)
+
+        self.lefdef_inputs = {
+            "flattened": {
+                "lef_input": flat_lefs,
+                "def_input": flat_def,
+                "verilog_input": flat_verilog,
+            },
+            "top": {
+                "lef_input": top_lefs,
+                "def_input": top_def,
+                "verilog_input": top_verilog,
+            },
+            "bottom": {
+                "lef_input": bottom_lefs,
+                "def_input": bottom_def,
+                "verilog_input": bottom_verilog,
+            },
+        }
+
+    def _config_number(self, *keys, default=0):
+        for key in keys:
+            value = self.input_config.get(key)
+            if value not in (None, ""):
+                return value
+        return default
+
+    def build_lefdef_die_spec(self):
+        terminal_size = self.input_config.get("terminal_size",
+                                              self.input_config.get(
+                                                  "terminalSize", None))
+        if terminal_size:
+            terminal_size_x = terminal_size[0]
+            terminal_size_y = terminal_size[1]
+        else:
+            terminal_size_x = self._config_number("terminal_size_x",
+                                                  "terminalSizeX",
+                                                  default=0)
+            terminal_size_y = self._config_number("terminal_size_y",
+                                                  "terminalSizeY",
+                                                  default=0)
+
+        die_size = self.input_config.get("die_size",
+                                         self.input_config.get("dieSize",
+                                                               None))
+        if die_size:
+            die_size_x = die_size[0]
+            die_size_y = die_size[1]
+        else:
+            die_size_x = self._config_number("die_size_x",
+                                             "dieSizeX",
+                                             default=0)
+            die_size_y = self._config_number("die_size_y",
+                                             "dieSizeY",
+                                             default=0)
+
+        return D2DDieSpec(
+            numTechnologies=int(
+                self._config_number("num_technologies",
+                                    "numTechnologies",
+                                    default=self.num_tiers)),
+            dieSizeX=int(float(die_size_x)),
+            dieSizeY=int(float(die_size_y)),
+            topDieMaxUtil=int(
+                float(
+                    self._config_number("top_die_max_util",
+                                        "topDieMaxUtil",
+                                        "TopDieMaxUtil",
+                                        default=100))),
+            bottomDieMaxUtil=int(
+                float(
+                    self._config_number("bottom_die_max_util",
+                                        "bottomDieMaxUtil",
+                                        "BottomDieMaxUtil",
+                                        default=100))),
+            terminalSizeX=int(float(terminal_size_x)),
+            terminalSizeY=int(float(terminal_size_y)),
+            terminalSpacing=int(
+                float(
+                    self._config_number("terminal_spacing",
+                                        "terminalSpacing",
+                                        "TerminalSpacing",
+                                        default=0))))
+
+    def finalize_lefdef_die_spec(self, die_spec, dreamplace):
+        widths = []
+        heights = []
+        row_heights = []
+        for dp in [dreamplace.dp_2d] + list(dreamplace.dp_tier):
+            placedb = dp.placedb
+            widths.append(float(placedb.xh) - float(placedb.xl))
+            heights.append(float(placedb.yh) - float(placedb.yl))
+            if getattr(placedb, "row_height", 0):
+                row_heights.append(float(placedb.row_height))
+
+        if die_spec.dieSizeX <= 0 and widths:
+            die_spec.dieSizeX = int(round(max(widths)))
+        if die_spec.dieSizeY <= 0 and heights:
+            die_spec.dieSizeY = int(round(max(heights)))
+
+        default_terminal = int(round(min(row_heights))) if row_heights else 1
+        default_terminal = max(default_terminal, 1)
+        if die_spec.terminalSizeX <= 0:
+            die_spec.terminalSizeX = default_terminal
+        if die_spec.terminalSizeY <= 0:
+            die_spec.terminalSizeY = default_terminal
 
     def set_die_place_flags(self,
                             random_center_init_flag=False,
