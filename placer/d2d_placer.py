@@ -650,12 +650,18 @@ if __name__ == "__main__":
         # Legalization + detailed placement from co-place positions.
         # global_place_flag=False skips the GP re-run;
         # random_center_init_flag=False preserves what is in partition pl files.
-        d2d_placer.die_by_die_place(global_place_flag=False,
-                                    legalize_flag=False,
-                                    detailed_place_flag=False,
-                                    random_center_init_flag=False,
-                                    ntuplace_flag=True,
-                                    logger=d2d_logger)
+        d2d_placer.die_terminal_co_place(global_place_flag=True,
+                                         legalize_flag=False,
+                                         detailed_place_flag=False,
+                                         random_center_init_flag=True,
+                                         ntuplace_flag=True,
+                                         logger=d2d_logger)
+        # d2d_placer.die_by_die_place(global_place_flag=True,
+        #                             legalize_flag=False,
+        #                             detailed_place_flag=False,
+        #                             random_center_init_flag=False,
+        #                             ntuplace_flag=True,
+        #                             logger=d2d_logger)
     else:
         d2d_placer.die_by_die_place(global_place_flag=True,
                                     legalize_flag=False,

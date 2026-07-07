@@ -3,6 +3,12 @@ cmake_minimum_required(VERSION 3.14)
 project(placer LANGUAGES CXX)
 set(CMAKE_VERBOSE_MAKEFILE ON)
 
+if(CMAKE_VERSION VERSION_GREATER_EQUAL "4.0")
+    message(FATAL_ERROR
+        "D2D-Placer bundles thirdparty CMake code that is not compatible with CMake 4.x. "
+        "Use CMake 3.x, for example pass CMAKE=/path/to/cmake3 or ENV_PREFIX=/path/to/env to make.")
+endif()
+
 if (CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
     set (CMAKE_INSTALL_PREFIX "${CMAKE_CURRENT_SOURCE_DIR}/install" CACHE PATH "Prefix prepended to install directories" FORCE )
 endif()
@@ -80,6 +86,10 @@ include_directories(
   ${Boost_INCLUDE_DIRS}
   ${Boost_INCLUDE_DIR})
 message(STATUS "Boost_INCLUDE_DIRS = ${Boost_INCLUDE_DIRS}")
+
+# COIN is an optional Lemon backend. Avoid accidentally picking up an unrelated
+# OpenROAD/COIN install from the user's environment when building bundled Lemon.
+set(LEMON_ENABLE_COIN NO CACHE STRING "Enable COIN solver backend." FORCE)
 
 # thirdparty libraries 
 set(DREAMPLACE_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/DREAMPlace)
@@ -176,6 +186,36 @@ message(STATUS "OPENTIMER_BINARY_DIR ${OPENTIMER_BINARY_DIR}")
 include_directories(${OPENTIMER_SOURCE_DIR})
 
 add_subdirectory(thirdparty)
+if(TARGET differentiable_3d_partitioner_dreamplace)
+  include(ExternalProject)
+  ExternalProject_Get_Property(
+    differentiable_3d_partitioner_dreamplace
+    SOURCE_DIR
+    BINARY_DIR
+    STAMP_DIR)
+  set(D3D_DREAMPLACE_CONFIGURE_STAMP
+      ${STAMP_DIR}/differentiable_3d_partitioner_dreamplace-configure)
+  set(D3D_DREAMPLACE_DISABLE_COIN_STAMP
+      ${STAMP_DIR}/differentiable_3d_partitioner_dreamplace-d2d-disable-coin)
+  add_custom_command(
+    OUTPUT ${D3D_DREAMPLACE_DISABLE_COIN_STAMP}
+    COMMAND ${CMAKE_COMMAND}
+      -S ${SOURCE_DIR}
+      -B ${BINARY_DIR}
+      -UCOIN_*
+      -ULEMON_DEFAULT_*
+      -DLEMON_ENABLE_COIN=NO
+    COMMAND ${CMAKE_COMMAND} -E touch ${D3D_DREAMPLACE_DISABLE_COIN_STAMP}
+    DEPENDS ${D3D_DREAMPLACE_CONFIGURE_STAMP}
+    COMMENT "Disabling optional COIN backend for nested DREAMPlace Lemon"
+    VERBATIM)
+  add_custom_target(
+    d2d_disable_d3d_dreamplace_coin
+    DEPENDS ${D3D_DREAMPLACE_DISABLE_COIN_STAMP})
+  add_dependencies(
+    differentiable_3d_partitioner_dreamplace
+    d2d_disable_d3d_dreamplace_coin)
+endif()
 add_subdirectory(placer)
 add_subdirectory(unittest)
 add_subdirectory(benchmarks)

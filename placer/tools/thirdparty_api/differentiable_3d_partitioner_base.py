@@ -129,7 +129,7 @@ class Differentiable3DPartitionerBase:
         stage["iteration"] = 0
         config["global_place_stages"] = [stage]
         config["global_place_flag"] = 1
-        config["random_center_init_flag"] = 0
+        config["random_center_init_flag"] = 1
         config["gp_noise_ratio"] = 0.0
 
         self.dreamplace_config_path.parent.mkdir(parents=True, exist_ok=True)
