@@ -20,6 +20,14 @@ DEFAULT_C_COMPILER := $(shell if [ -n "$(ENV_PREFIX)" ] && [ -x "$(ENV_PREFIX)/b
 DEFAULT_CXX_COMPILER := $(shell if [ -n "$(ENV_PREFIX)" ] && [ -x "$(ENV_PREFIX)/bin/c++" ]; then printf '%s\n' "$(ENV_PREFIX)/bin/c++"; fi)
 DEFAULT_CUDA_TOOLKIT_ROOT := $(shell for d in "$$CUDA_HOME" "$$CUDA_PATH" "$(ENV_PREFIX)" "$$CONDA_PREFIX" "$$MAMBA_ROOT_PREFIX/envs/$$CONDA_DEFAULT_ENV" /usr/local/cuda; do [ -n "$$d" ] && [ -x "$$d/bin/nvcc" ] && { printf '%s\n' "$$d"; break; }; done)
 DEFAULT_CUDA_NVCC_EXECUTABLE := $(shell for d in "$$CUDA_HOME" "$$CUDA_PATH" "$(ENV_PREFIX)" "$$CONDA_PREFIX" "$$MAMBA_ROOT_PREFIX/envs/$$CONDA_DEFAULT_ENV" /usr/local/cuda; do [ -n "$$d" ] && [ -x "$$d/bin/nvcc" ] && { printf '%s/bin/nvcc\n' "$$d"; break; }; done)
+DEFAULT_CUDA_CUDA_LIBRARY := $(shell for f in \
+	"$(ENV_PREFIX)/lib/stubs/libcuda.so" \
+	"$$CONDA_PREFIX/lib/stubs/libcuda.so" \
+	"$$MAMBA_ROOT_PREFIX/envs/$$CONDA_DEFAULT_ENV/lib/stubs/libcuda.so" \
+	/usr/local/cuda/lib64/stubs/libcuda.so \
+	/usr/lib64/libcuda.so; do \
+	[ -e "$$f" ] && { printf "%s\n" "$$f"; break; }; \
+done)
 DEFAULT_BOOST_INCLUDE_DIR := $(shell if [ -n "$(ENV_PREFIX)" ] && [ -f "$(ENV_PREFIX)/include/boost/version.hpp" ]; then printf '%s\n' "$(ENV_PREFIX)/include"; fi)
 DEFAULT_BOOST_LIBRARY_DIR := $(shell if [ -n "$(ENV_PREFIX)" ] && { [ -e "$(ENV_PREFIX)/lib/libboost_graph.so" ] || [ -e "$(ENV_PREFIX)/lib/libboost_graph.a" ]; }; then printf '%s\n' "$(ENV_PREFIX)/lib"; fi)
 DEFAULT_BISON_EXECUTABLE := $(shell if [ -n "$(ENV_PREFIX)" ] && [ -x "$(ENV_PREFIX)/bin/bison" ]; then printf '%s\n' "$(ENV_PREFIX)/bin/bison"; fi)
@@ -36,6 +44,7 @@ C_COMPILER ?= $(DEFAULT_C_COMPILER)
 CXX_COMPILER ?= $(DEFAULT_CXX_COMPILER)
 CUDA_TOOLKIT_ROOT_DIR ?= $(DEFAULT_CUDA_TOOLKIT_ROOT)
 CUDA_NVCC_EXECUTABLE ?= $(DEFAULT_CUDA_NVCC_EXECUTABLE)
+CUDA_CUDA_LIBRARY ?= $(DEFAULT_CUDA_CUDA_LIBRARY)
 BOOST_INCLUDE_DIR ?= $(DEFAULT_BOOST_INCLUDE_DIR)
 BOOST_LIBRARY_DIR ?= $(DEFAULT_BOOST_LIBRARY_DIR)
 BOOST_GRAPH_LIBRARY ?= $(if $(BOOST_LIBRARY_DIR),$(BOOST_LIBRARY_DIR)/libboost_graph.so)
@@ -67,6 +76,9 @@ CMAKE_CONFIGURE_ARGS += -DCUDA_TOOLKIT_ROOT_DIR=$(CUDA_TOOLKIT_ROOT_DIR)
 endif
 ifneq ($(strip $(CUDA_NVCC_EXECUTABLE)),)
 CMAKE_CONFIGURE_ARGS += -DCUDA_NVCC_EXECUTABLE=$(CUDA_NVCC_EXECUTABLE)
+endif
+ifneq ($(strip $(CUDA_CUDA_LIBRARY)),)
+CMAKE_CONFIGURE_ARGS += -DCUDA_CUDA_LIBRARY=$(CUDA_CUDA_LIBRARY)
 endif
 ifneq ($(strip $(BOOST_INCLUDE_DIR)),)
 CMAKE_CONFIGURE_ARGS += -DBoost_INCLUDE_DIR=$(BOOST_INCLUDE_DIR)

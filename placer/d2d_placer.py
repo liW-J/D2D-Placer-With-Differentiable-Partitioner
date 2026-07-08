@@ -28,8 +28,6 @@ from placer.ops.draw_block.draw_block import DrawBlock
 from placer.op_wrapper import OpWrapper
 from placer.d2d_params import D2DParams
 from placer.tools.thirdparty_api.dreamplace_base import DreamplaceBaseCollection
-from placer.tools.thirdparty_api.specpart_base import SpecPartBase
-from placer.tools.thirdparty_api.tritonpart_base import TritonPartBase
 
 from placer.constants import Format, Orient
 import torch
@@ -70,6 +68,8 @@ def init_log(result_root_dir):
 
     d2d_logger = logging.getLogger('d2d-logger')
     d2d_logger.setLevel(logging.INFO)
+    d2d_logger.propagate = False
+    d2d_logger.handlers.clear()
 
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(logging.INFO)
@@ -121,16 +121,20 @@ class D2Dplacer:
         else:
             hpwl_d2d = self.op_wrapper.d2d_op_collections.hpwl_d2d_op(
                 self.dreamplace.dp_2d.pos, self.cut_net_mask, self.tier)
+        hpwl_d2d_value = float(hpwl_d2d)
+        if torch.is_tensor(hpwl_d2d) and hpwl_d2d.is_cuda:
+            torch.cuda.synchronize(hpwl_d2d.device)
+
         if all(dp.pos is not None for dp in self.dreamplace.dp_tier):
             tier_hpwl = sum(
                 float(dp.basic_place.op_collections.hpwl_op(dp.pos))
                 for dp in self.dreamplace.dp_tier)
-            ratio = float(hpwl_d2d) / tier_hpwl if tier_hpwl > 0 else 0.0
+            ratio = hpwl_d2d_value / tier_hpwl if tier_hpwl > 0 else 0.0
             logger.info("HPWL_D2D_CHECK: tier_hpwl_sum=%.6f ratio=%.6f",
                         tier_hpwl, ratio)
-        logger.info("HPWL_D2D:%.6f " % (hpwl_d2d))
+        logger.info("HPWL_D2D:%.6f " % hpwl_d2d_value)
 
-        return hpwl_d2d
+        return hpwl_d2d_value
 
     def init_spec(self):
         if self.params.is_txt_input:
@@ -236,7 +240,9 @@ class D2Dplacer:
             self.tier, self.dreamplace.dp_2d.pos,
             [self.dreamplace.dp_tier[i].pos for i in range(self.num_tiers)])
 
-        return self.hpwl_d2d(logger)
+        hpwl_d2d_value = self.hpwl_d2d(logger)
+        logger.info("die-by-die: final HPWL_D2D evaluation completed")
+        return hpwl_d2d_value
 
     def die_terminal_co_place(self,
                               global_place_flag=True,
@@ -438,7 +444,40 @@ class D2Dplacer:
             self.tier, self.dreamplace.dp_2d.pos,
             [self.dreamplace.dp_tier[i].pos for i in range(self.num_tiers)])
 
-        return self.hpwl_d2d(logger)
+        hpwl_d2d_value = self.hpwl_d2d(logger)
+        logger.info("co-place: final HPWL_D2D evaluation completed")
+
+        # Drop local CUDA-heavy references before returning.  In particular,
+        # obj_and_grad_fn closes over the D2DCoPlace instance, and the Nesterov
+        # optimizer keeps bound methods from it; letting all of those die during
+        # Python frame teardown has caused segfaults after co-place completes.
+        obj_and_grad_fn = None
+        optimizer = None
+        mov_node_pos_all = None
+        best_pos = None
+        prev_metrics = None
+        cur_metrics = None
+        cur_top = None
+        cur_bot = None
+        cur_term = None
+        obj0 = None
+        g0 = None
+        x_minus = None
+        obj1 = None
+        g1 = None
+        num = None
+        den = None
+        pos_t = None
+        pos_term = None
+        node_x_out = None
+        node_y_out = None
+        term_x_out = None
+        term_y_out = None
+        co = None
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        logger.info("co-place: local CUDA references released")
+        return hpwl_d2d_value
 
     def flatten_2d_place(self):
         self.dreamplace.dp_2d.place(self.params.flatten_2d, self.timer)
@@ -515,7 +554,14 @@ class D2Dplacer:
             self.dreamplace.dp_terminal.pos, self.num_terminal_NIs,
             self.dreamplace.dp_terminal.placedb.node_names, self.node_orient)
 
-    def refinement(self):
+    def refinement(self, logger=logging):
+        if self.params.is_lefdef_input:
+            logger.info(
+                "LEF/DEF input: skip bin-based FM refinement; using hmetis/co-place partition directly")
+            torch.save(self.tier,
+                       self.params.result_dir_root + "/tier-refinement.pt")
+            return
+
         terminal_names = self.dreamplace.dp_terminal.placedb.node_names[
             :self.num_terminal_NIs]
         self.tier = self.op_wrapper.d2d_op_collections.bin_based_fm_op(
@@ -545,9 +591,10 @@ class D2Dplacer:
                    self.params.result_dir_root + "/tier-refinement.pt")
 
     def output(self):
+        terminal_pos = self.dreamplace.dp_terminal.basic_place.data_collections.pos[0]
         self.op_wrapper.d2d_op_collections.out_fmt_iccad_op(
             self.dreamplace.dp_terminal.placedb, self.params.case_name,
-            self.format, self.node_orient)
+            self.format, self.node_orient, terminal_pos)
 
     def draw_d2d_layout(self):
         top_layout_filename = self.params.result_dir_root + "/top-layout.png"
@@ -634,17 +681,12 @@ if __name__ == "__main__":
                                          random_center_init_flag=False,
                                          ntuplace_flag=False,
                                          logger=d2d_logger)
-        # Release co-place model GPU cache before refinement to avoid OOM:
-        # die_terminal_co_place runs 3 simultaneous PlaceObj models which
-        # exhaust nearly all VRAM; PyTorch retains the cache after the function
-        # returns, so we must explicitly free it here.
-        import gc; gc.collect()
-        torch.cuda.empty_cache()
+        d2d_logger.info("co-place returned to main flow")
         # FM refinement: updates tier assignment and re-inserts terminals.
         # terminal_insert_op inside refinement() re-writes partition pl files
         # from dp_2d.pos (synced from co-place result), so NTUplace3 below
         # will start from the co-place positions rather than a fresh GP.
-        d2d_placer.refinement()
+        d2d_placer.refinement(d2d_logger)
         # Legalization + detailed placement from co-place positions.
         # global_place_flag=False skips the GP re-run;
         # random_center_init_flag=False preserves what is in partition pl files.

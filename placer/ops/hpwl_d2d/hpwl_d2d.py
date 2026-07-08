@@ -30,6 +30,17 @@ class HPWLD2DFunction(Function):
                 terminal_size_y, terminal_spacing, num_terminals, net_names,
                 terminal_names, netpin_start_host)
 
+        has_non_movable_pins = (pin2node_map.numel() > 0 and
+                                (int(pin2node_map.min().item()) < 0 or
+                                 int(pin2node_map.max().item()) >=
+                                 int(tier.numel())))
+        if has_non_movable_pins:
+            return HPWLD2DFunction._forward_cuda(
+                pin_pos, flat_netpin, netpin_start, pin2node_map, net_weights,
+                tier, num_tiers, pos_terminal_legalized, terminal_size_x,
+                terminal_size_y, terminal_spacing, num_terminals, net_names,
+                terminal_names, netpin_start_host)
+
         func = hpwl_d2d_cpp.hpwl_d2d
         output = func(pin_pos.view(pin_pos.numel()),
                       flat_netpin, netpin_start,
@@ -72,7 +83,20 @@ class HPWLD2DFunction(Function):
 
             pins = flat_netpin[start:end].long()
             nodes = pin2node_map[pins].long()
+            movable_mask = (nodes >= 0) & (nodes < tier_long.numel())
+            if not bool(movable_mask.any().item()):
+                continue
+            pins = pins[movable_mask]
+            nodes = nodes[movable_mask]
+
             node_tiers = tier_long[nodes]
+            valid_tier_mask = (node_tiers >= 0) & (node_tiers < num_tiers)
+            if not bool(valid_tier_mask.all().item()):
+                bad_tiers = node_tiers[~valid_tier_mask].detach().cpu().tolist()
+                raise RuntimeError(
+                    "HPWL_D2D received tier ids outside [0, %d): %s" %
+                    (num_tiers, bad_tiers[:8]))
+
             pin_index = node_tiers * num_pins + pins
             px = pin_x[pin_index]
             py = pin_y[pin_index]

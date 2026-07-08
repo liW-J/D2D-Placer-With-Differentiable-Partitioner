@@ -7,6 +7,7 @@
  * @Description: partition
  */
 #include <pybind11/pybind11.h>
+#include <cctype>
 // dreamplace
 #include "utility/src/torch.h"
 #include "utility/src/utils.h"
@@ -18,6 +19,61 @@
 PLACER_BEGIN_NAMESPACE
 
 enum NodeType { MOVABLE, TERMINAL, TERMINAL_NI };
+
+static bool isBookshelfStringChar(char c) {
+  const unsigned char uc = static_cast<unsigned char>(c);
+  return std::isalnum(uc) || c == '_' || c == ',' || c == '.' || c == '$' ||
+         c == '-' || c == '[' || c == ']' || c == '/';
+}
+
+static bool isBookshelfReservedToken(const std::string &name) {
+  std::string lower;
+  lower.reserve(name.size());
+  for (char c : name) {
+    lower.push_back(static_cast<char>(std::tolower(
+        static_cast<unsigned char>(c))));
+  }
+  static const std::vector<std::string> reserved = {
+      "terminal", "ucla", "netdegree", "scl", "nodes", "nets", "pl",
+      "wts", "shapes", "route", "aux", "fixed", "fixed_ni", "placed",
+      "unplaced", "o", "i", "b", "n", "s", "w", "e", "fn", "fs",
+      "fw", "fe"};
+  return std::find(reserved.begin(), reserved.end(), lower) != reserved.end();
+}
+
+static std::string bookshelfName(const std::string &raw,
+                                 const std::string &prefix, int index,
+                                 bool force_prefix = false) {
+  bool changed = force_prefix || raw.empty() ||
+                 !std::isalpha(static_cast<unsigned char>(raw.front())) ||
+                 isBookshelfReservedToken(raw);
+  std::string body;
+  body.reserve(raw.empty() ? 4 : raw.size());
+  for (char c : raw) {
+    if (isBookshelfStringChar(c)) {
+      body.push_back(c);
+    } else {
+      body.push_back('_');
+      changed = true;
+    }
+  }
+  if (body.empty()) {
+    body = "anon";
+  }
+  if (!changed) {
+    return raw;
+  }
+  return prefix + std::to_string(index) + "_" + body;
+}
+
+static std::string bookshelfNodeName(const std::string &raw, int node_id) {
+  return bookshelfName(raw, "X", node_id);
+}
+
+static std::string bookshelfNetName(const std::string &raw, int net_id) {
+  return bookshelfName(raw, "NET", net_id, true);
+}
+
 
 template <typename T>
 void terminal_insert(
@@ -38,11 +94,15 @@ void terminal_insert(
     vector<T> max_y(num_tiers, -std::numeric_limits<T>::max());
     vector<T> min_y(num_tiers, std::numeric_limits<T>::max());
     if (cut_net_mask[net_id]) {
+      const std::string net_name = bookshelfNetName(net_names[net_id], net_id);
       for (int tier_id = 0; tier_id < num_tiers; ++tier_id) {
         for (int pin_id = netpin_start[net_id];
              pin_id < netpin_start[net_id + 1]; pin_id++) {
           int index_pin = num_pins * tier_id + flat_netpin[pin_id];
           int node_id = pin2node_map[flat_netpin[pin_id]];
+          if (node_id < 0 || node_id >= num_movable_nodes) {
+            continue;
+          }
           if (tier[node_id] == tier_id) {
             max_x[tier_id] = std::max(max_x[tier_id], pin_x[index_pin]);
             min_x[tier_id] = std::min(min_x[tier_id], pin_x[index_pin]);
@@ -79,7 +139,7 @@ void terminal_insert(
         int x, y;
         // LOG(INFO, "net_names[net_id]: %s", net_names[net_id]);
         for (int terminal_id = 0; terminal_id < num_terminals; ++terminal_id) {
-          if (net_names[net_id] == terminal_names[terminal_id]) {
+          if (net_name == terminal_names[terminal_id]) {
             // dreamplace pos is left-bottom corner (includes spacing box)
             x = terminal_x[terminal_id];
             y = terminal_y[terminal_id];
@@ -89,22 +149,21 @@ void terminal_insert(
           }
         }
         terminalAuxRef.add_node(
-            net_names[net_id], terminal_size_x + terminal_spacing,
+            net_name, terminal_size_x + terminal_spacing,
             terminal_size_y + terminal_spacing, x, y, MOVABLE);
       } else {
         const T x = center_x - term_w / 2;
         const T y = center_y - term_h / 2;
         terminalAuxRef.add_node(
-            net_names[net_id], terminal_size_x + terminal_spacing,
+            net_name, terminal_size_x + terminal_spacing,
             terminal_size_y + terminal_spacing, x, y, MOVABLE);
       }
       for (int tier_id = 0; tier_id < num_tiers; ++tier_id) {
-        string tier_net_name = net_names[net_id] + "_" + to_string(tier_id);
+        string tier_net_name = net_name + "_T" + to_string(tier_id);
 
         // LOG(DEBUG, "Intersection Center: (%f, %f)", center_x, center_y);
 
-        terminalAuxRef.add_pin(tier_net_name, net_names[net_id], 'O', pin_ox,
-                               pin_oy);
+        terminalAuxRef.add_pin(tier_net_name, net_name, 'O', pin_ox, pin_oy);
       }
     }
   }
@@ -120,15 +179,18 @@ void terminalAuxLauncher(
     int terminal_size_y, int terminal_spacing, int *cut_net_mask,
     const T *pin_x, const T *pin_y, const std::vector<std::string> &node_names,
     const std::vector<std::string> &net_names, const T *pos_2d_x,
-    const T *pos_2d_y, std::string case_name, bool terminal_legalize_flag,
+    const T *pos_2d_y, std::string aux_dir, bool terminal_legalize_flag,
     const T *terminal_x, const T *terminal_y, int num_terminals,
     const std::vector<std::string> &terminal_names) {
-  string aux_dir = "./run_tmp/" + case_name + "/terminal/";
+  if (!aux_dir.empty() && aux_dir.back() != '/') {
+    aux_dir += "/";
+  }
   char IO_type;
 
   AUX terminal_aux = AUX(aux_dir, "terminal");
 
   for (int net_id = 0; net_id < num_nets; ++net_id) {
+    const std::string net_name = bookshelfNetName(net_names[net_id], net_id);
     int num_nodes_in_net = 0;
     vector<int> node_count(num_tiers, 0);
 
@@ -137,6 +199,9 @@ void terminalAuxLauncher(
       for (int pin_id = netpin_start[net_id]; pin_id < netpin_start[net_id + 1];
            ++pin_id) {
         int node_id = pin2node_map[flat_netpin[pin_id]];
+        if (node_id < 0 || node_id >= num_movable_nodes) {
+          continue;
+        }
         if (tier[node_id] == tier_id) {
           int index_node = num_movable_nodes * tier_id + node_id;
           node_count[tier_id]++;
@@ -151,30 +216,33 @@ void terminalAuxLauncher(
       cut_net_mask[net_id] = 1;
 
       for (int tier_id = 0; tier_id < num_tiers; ++tier_id) {
-        string tier_net_name = net_names[net_id] + "_" + to_string(tier_id);
+        string tier_net_name = net_name + "_T" + to_string(tier_id);
 
         if (!terminal_aux.check_net_exist(tier_net_name)) {
           terminal_aux.add_net(tier_net_name);
           for (int pin_id = netpin_start[net_id];
                pin_id < netpin_start[net_id + 1]; ++pin_id) {
             int node_id = pin2node_map[flat_netpin[pin_id]];
+            if (node_id < 0 || node_id >= num_movable_nodes) {
+              continue;
+            }
             if (tier[node_id] == tier_id) {
               int index_node = num_movable_nodes * tier_id + node_id;
 
-              if (!terminal_aux.check_node_exist(node_names[node_id])) {
+              const std::string node_name = bookshelfNodeName(node_names[node_id], node_id);
+              if (!terminal_aux.check_node_exist(node_name)) {
                 int node_pos_x = pos_2d_x[node_id];
                 int node_pos_y = pos_2d_y[node_id];
-                terminal_aux.add_node(node_names[node_id], 0, 0, node_pos_x,
+                terminal_aux.add_node(node_name, 0, 0, node_pos_x,
                                       node_pos_y, TERMINAL_NI);
               }
-              if (!terminal_aux.check_pin_exist(tier_net_name,
-                                                node_names[node_id])) {
+              if (!terminal_aux.check_pin_exist(tier_net_name, node_name)) {
                 int index_pin = num_pins * tier_id + pin_id;
                 (pin_id == netpin_start[net_id]) ? IO_type = 'I'
                                                  : IO_type = 'O';
                 // when add pin to aux file
                 terminal_aux.add_pin(
-                    tier_net_name, node_names[node_id], IO_type,
+                    tier_net_name, node_name, IO_type,
                     static_cast<float>(pin_offset_x[index_pin] -
                                        ceil(node_size_x[index_node] / 2)),
                     static_cast<float>(pin_offset_y[index_pin] -
@@ -212,7 +280,7 @@ at::Tensor terminal_aux_forward(
     int terminal_spacing, at::Tensor pin_pos,
     const std::vector<std::string> &node_names,
     const std::vector<std::string> &net_names, at::Tensor pos_2d,
-    std::string case_name, bool terminal_legalize_flag,
+    std::string aux_dir, bool terminal_legalize_flag,
     at::Tensor pos_terminal_legalized, int num_terminals,
     const std::vector<std::string> &terminal_names) {
   CHECK_FLAT_CPU(flat_netpin);
@@ -266,7 +334,7 @@ at::Tensor terminal_aux_forward(
         DREAMPLACE_TENSOR_DATA_PTR(pin_pos, scalar_t) + pin_pos.numel() / 2,
         node_names, net_names, DREAMPLACE_TENSOR_DATA_PTR(pos_2d, scalar_t),
         DREAMPLACE_TENSOR_DATA_PTR(pos_2d, scalar_t) + pos_2d.numel() / 2,
-        case_name, terminal_legalize_flag,
+        aux_dir, terminal_legalize_flag,
         DREAMPLACE_TENSOR_DATA_PTR(pos_terminal_legalized, scalar_t),
         DREAMPLACE_TENSOR_DATA_PTR(pos_terminal_legalized, scalar_t) +
             pos_terminal_legalized.numel() / 2,

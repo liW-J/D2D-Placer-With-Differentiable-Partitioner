@@ -69,7 +69,29 @@ set(CUDA_PROPAGATE_HOST_FLAGS ON)
 set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# pybind11 enables LTO by default for extension modules when IPO is undefined.
+# GCC 9.5 from conda can ICE while linking timing_heterosta with LTO, so keep
+# IPO explicitly disabled for the top-level one-command build.
+set(CMAKE_INTERPROCEDURAL_OPTIMIZATION OFF CACHE BOOL "Disable IPO/LTO for D2D build." FORCE)
+
+set(D2D_TORCH_EXTENSION_DEFER_TARGETS ON)
 include(config/cmake/TorchExtension.cmake)
+
+# Some DREAMPlace utility targets propagate a plain -ltorch. RPATH is not a
+# link-time search path, so expose PyTorch's library directory to every module
+# and shared link command from the top level.
+set(_D2D_TORCH_LINK_DIR_FLAG "-L${TORCH_INSTALL_PREFIX}/lib")
+foreach(_D2D_LINKER_FLAGS_VAR
+    CMAKE_EXE_LINKER_FLAGS
+    CMAKE_SHARED_LINKER_FLAGS
+    CMAKE_MODULE_LINKER_FLAGS)
+  if(NOT "${${_D2D_LINKER_FLAGS_VAR}}" MATCHES "(^| )-L${TORCH_INSTALL_PREFIX}/lib( |$)")
+    set(${_D2D_LINKER_FLAGS_VAR}
+      "${${_D2D_LINKER_FLAGS_VAR}} ${_D2D_TORCH_LINK_DIR_FLAG}"
+      CACHE STRING "D2D linker flags with PyTorch library search path." FORCE)
+  endif()
+endforeach()
 
 # without this, clang will complain about linking 
 #set(CMAKE_CXX_VISIBILITY_PRESET hidden)
@@ -186,36 +208,6 @@ message(STATUS "OPENTIMER_BINARY_DIR ${OPENTIMER_BINARY_DIR}")
 include_directories(${OPENTIMER_SOURCE_DIR})
 
 add_subdirectory(thirdparty)
-if(TARGET differentiable_3d_partitioner_dreamplace)
-  include(ExternalProject)
-  ExternalProject_Get_Property(
-    differentiable_3d_partitioner_dreamplace
-    SOURCE_DIR
-    BINARY_DIR
-    STAMP_DIR)
-  set(D3D_DREAMPLACE_CONFIGURE_STAMP
-      ${STAMP_DIR}/differentiable_3d_partitioner_dreamplace-configure)
-  set(D3D_DREAMPLACE_DISABLE_COIN_STAMP
-      ${STAMP_DIR}/differentiable_3d_partitioner_dreamplace-d2d-disable-coin)
-  add_custom_command(
-    OUTPUT ${D3D_DREAMPLACE_DISABLE_COIN_STAMP}
-    COMMAND ${CMAKE_COMMAND}
-      -S ${SOURCE_DIR}
-      -B ${BINARY_DIR}
-      -UCOIN_*
-      -ULEMON_DEFAULT_*
-      -DLEMON_ENABLE_COIN=NO
-    COMMAND ${CMAKE_COMMAND} -E touch ${D3D_DREAMPLACE_DISABLE_COIN_STAMP}
-    DEPENDS ${D3D_DREAMPLACE_CONFIGURE_STAMP}
-    COMMENT "Disabling optional COIN backend for nested DREAMPlace Lemon"
-    VERBATIM)
-  add_custom_target(
-    d2d_disable_d3d_dreamplace_coin
-    DEPENDS ${D3D_DREAMPLACE_DISABLE_COIN_STAMP})
-  add_dependencies(
-    differentiable_3d_partitioner_dreamplace
-    d2d_disable_d3d_dreamplace_coin)
-endif()
 add_subdirectory(placer)
 add_subdirectory(unittest)
 add_subdirectory(benchmarks)

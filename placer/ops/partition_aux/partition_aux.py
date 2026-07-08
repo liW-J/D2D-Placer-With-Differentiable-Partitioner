@@ -53,7 +53,7 @@ class PartitionAux(object):
                  node_size_y, pin_offset_x, pin_offset_y, die_size_x,
                  die_size_y, row_height, terminal_size_x, terminal_size_y,
                  terminal_spacing, terminal_instert_flag,
-                 terminal_legalize_flag, case_name):
+                 terminal_legalize_flag, case_name, output_dir=None):
         super(PartitionAux, self).__init__()
 
         self.flat_netpin = flat_netpin
@@ -79,6 +79,7 @@ class PartitionAux(object):
         self.terminal_spacing = terminal_spacing
 
         self.case_name = case_name
+        self.output_dir = output_dir or f"./run_tmp/{self.case_name}/partition"
         self.flat_netpin_cpu = flat_netpin.detach().cpu().contiguous()
         self.netpin_start_cpu = netpin_start.detach().cpu().contiguous()
         self.pin2node_map_cpu = pin2node_map.detach().cpu().contiguous()
@@ -96,7 +97,7 @@ class PartitionAux(object):
                  num_terminals=0,
                  pos_2d=torch.empty(0),
                  terminal_names=[]):
-        os.makedirs(f"./run_tmp/{self.case_name}/partition", exist_ok=True)
+        os.makedirs(self.output_dir, exist_ok=True)
         output = PartitionAuxFunction.forward(
             tier.cpu().contiguous(),
             self.flat_netpin_cpu,
@@ -113,7 +114,7 @@ class PartitionAux(object):
             pin_pos.cpu().contiguous(), self.terminal_instert_flag,
             self.terminal_legalize_flag, pos_terminal_legalized.cpu().contiguous(),
             num_terminals, self.node_names, self.net_names, terminal_names,
-            pos_2d.cpu().contiguous(), self.case_name,
+            pos_2d.cpu().contiguous(), self.output_dir,
             node_orient)
         if torch.is_tensor(output) and tier.is_cuda:
             output = output.to(tier.device, non_blocking=True)

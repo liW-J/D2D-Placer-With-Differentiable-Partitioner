@@ -24,7 +24,7 @@ class TerminalAuxFunction(Function):
                 num_movable_nodes, node_size_x, node_size_y, pin_offset_x,
                 pin_offset_y, die_size_x, die_size_y, row_height,
                 terminal_size_x, terminal_size_y, terminal_spacing, pin_pos,
-                node_names, net_names, pos_2d, case_name,
+                node_names, net_names, pos_2d, output_dir,
                 terminal_legalize_flag, pos_terminal_legalized, num_terminals,
                 terminal_names):
         target_device = tier.device
@@ -37,7 +37,7 @@ class TerminalAuxFunction(Function):
                       die_size_x, die_size_y, row_height,
                       terminal_size_x, terminal_size_y, terminal_spacing,
                       pin_pos, node_names, net_names, pos_2d,
-                      case_name, terminal_legalize_flag,
+                      output_dir, terminal_legalize_flag,
                       pos_terminal_legalized, num_terminals, terminal_names)
         if torch.is_tensor(output) and target_device.type == "cuda":
             output = output.to(target_device, non_blocking=True)
@@ -51,7 +51,8 @@ class TerminalAux(object):
                  num_movable_nodes, node_names, net_names, node_size_x,
                  node_size_y, pin_offset_x, pin_offset_y, die_size_x,
                  die_size_y, row_height, terminal_size_x, terminal_size_y,
-                 terminal_spacing, case_name, terminal_legalize_flag):
+                 terminal_spacing, case_name, terminal_legalize_flag,
+                 output_dir=None):
         super(TerminalAux, self).__init__()
 
         self.flat_netpin = flat_netpin
@@ -75,6 +76,7 @@ class TerminalAux(object):
         self.terminal_spacing = terminal_spacing
 
         self.case_name = case_name
+        self.output_dir = output_dir or f"./run_tmp/{self.case_name}/terminal"
         self.terminal_legalize_flag = terminal_legalize_flag
         self.flat_netpin_cpu = flat_netpin.detach().cpu().contiguous()
         self.netpin_start_cpu = netpin_start.detach().cpu().contiguous()
@@ -92,7 +94,7 @@ class TerminalAux(object):
                  pos_terminal_legalized=torch.empty(0),
                  num_terminals=0,
                  terminal_names=[]):
-        os.makedirs(f"./run_tmp/{self.case_name}/terminal", exist_ok=True)
+        os.makedirs(self.output_dir, exist_ok=True)
         output = TerminalAuxFunction.forward(
             tier.cpu().contiguous(),
             self.flat_netpin_cpu,
@@ -114,7 +116,7 @@ class TerminalAux(object):
             self.node_names,
             self.net_names,
             pos_2d.cpu().contiguous(),
-            self.case_name,
+            self.output_dir,
             self.terminal_legalize_flag,
             pos_terminal_legalized.cpu().contiguous(),
             num_terminals,

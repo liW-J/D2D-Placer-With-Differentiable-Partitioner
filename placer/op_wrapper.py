@@ -25,7 +25,6 @@ from placer.tools.graph_cutsize import GraphCutsize
 from placer.tools.partitioner_manager import PartitionerManager
 from dreamplace.ops.pin_pos.pin_pos import PinPos
 
-from placer.tools.thirdparty_api.specpart_base import SpecPartBase
 from placer.tools.thirdparty_api.tritonpart_base import TritonPartBase
 from placer.tools.thirdparty_api.differentiable_3d_partitioner_base import \
     Differentiable3DPartitionerBase
@@ -129,6 +128,10 @@ class OpWrapper(object):
             ]) - np.mean([data.placedb.yl for data in self.data_tier])
 
         self.row_height = [data.placedb.row_height for data in self.data_tier]
+        self.partition_aux_dir = os.path.dirname(
+            self.d2d_params.partition_tier[0].aux_input)
+        self.terminal_aux_dir = os.path.dirname(
+            self.d2d_params.terminal.aux_input)
         self._logged_d2d_pin_pos_builder = False
 
         self.hmetis_op = self.build_hmetis()
@@ -228,7 +231,8 @@ class OpWrapper(object):
             self.die_spec.terminalSpacing,
             terminal_instert_flag=False,
             terminal_legalize_flag=False,
-            case_name=self.case_name)
+            case_name=self.case_name,
+            output_dir=self.partition_aux_dir)
 
         def build_init_partition_op(tier, pos_2d, node_orient):
             pin_pos = self.build_d2d_pin_pos(pos_2d)
@@ -273,7 +277,8 @@ class OpWrapper(object):
             self.die_spec.terminalSpacing,
             terminal_instert_flag=True,
             terminal_legalize_flag=False,
-            case_name=self.case_name)
+            case_name=self.case_name,
+            output_dir=self.partition_aux_dir)
 
         def build_terminal_insert_op(tier, pos_2d, node_orient):
             pin_pos = self.build_d2d_pin_pos(pos_2d)
@@ -385,7 +390,8 @@ class OpWrapper(object):
             self.die_spec.terminalSpacing,
             terminal_instert_flag=True,
             terminal_legalize_flag=True,
-            case_name=self.case_name)
+            case_name=self.case_name,
+            output_dir=self.partition_aux_dir)
 
         def build_terminal_legalize_op(tier, pos_2d, pos_terminal,
                                        num_terminal_NIs, terminal_names,
@@ -432,7 +438,8 @@ class OpWrapper(object):
             self.die_spec.terminalSizeY,
             self.die_spec.terminalSpacing,
             self.case_name,
-            terminal_legalize_flag=False)
+            terminal_legalize_flag=False,
+            output_dir=self.terminal_aux_dir)
 
         def build_terminal_insert_aux_op(tier, pos_2d):
             pin_pos = self.build_d2d_pin_pos(pos_2d)
@@ -461,7 +468,8 @@ class OpWrapper(object):
             self.die_spec.terminalSizeY,
             self.die_spec.terminalSpacing,
             self.case_name,
-            terminal_legalize_flag=True)
+            terminal_legalize_flag=True,
+            output_dir=self.terminal_aux_dir)
 
         def build_terminal_legalize_aux_op(tier, pos_2d, pos_terminal,
                                            num_terminal_NIs, terminal_names):
@@ -577,6 +585,8 @@ class OpWrapper(object):
         return partitioner_manager.parts_reader
 
     def build_draw_layout_result(self):
+        if not getattr(self.params, "txt_input", ""):
+            return lambda: None
         draw_layout_result_op = DrawLayoutResult(self.params.txt_input,
                                                  self.params.result_dir)
         return draw_layout_result_op
@@ -602,6 +612,9 @@ class OpWrapper(object):
                     num_movable_nodes=self.placedb_2d.num_movable_nodes)
 
             elif partitioner == "specpart":
+                # SpecPart imports juliacall; keep it out of non-specpart flows
+                # because juliacall and torch have fragile import-order behavior.
+                from placer.tools.thirdparty_api.specpart_base import SpecPartBase
                 specpart = SpecPartBase(self.d2d_params)
                 tier = specpart.flow(hgr_generator_op=self.hgr_generator_op,
                                      parts_reader_op=self.parts_reader_op)

@@ -38,7 +38,8 @@ class Differentiable3DPartitionerBase:
         self.run_tmp_dir = Path(params.run_tmp_dir_root)
         self.result_dir = Path(params.result_dir_root)
         self.part_file = self.run_tmp_dir / f"{self.case_name}.hgr.part.2"
-        self.aux_input = Path(params.flatten_2d.aux_input)
+        aux_input = getattr(params.flatten_2d, "aux_input", "")
+        self.aux_input = Path(aux_input) if aux_input else None
         self.project_root = self._resolve_project_root()
         self.work_dir = self.run_tmp_dir / "differentiable-3d-partitioner"
         self.config_path = self.work_dir / "d2d_partitioner_config.yaml"
@@ -62,7 +63,7 @@ class Differentiable3DPartitionerBase:
         return self._partition_from_bookshelf(config_path, result_path)
 
     def _partition_from_bookshelf(self, config_path, result_path):
-        if not self.aux_input.exists():
+        if self.aux_input is not None and not self.aux_input.exists():
             raise FileNotFoundError(
                 f"Bookshelf aux file not found: {self.aux_input}")
 
@@ -71,20 +72,26 @@ class Differentiable3DPartitionerBase:
             self._load_external_api(load_parser=True))
 
         parser = DreamplaceParser()
-        self.logger.info(
-            "Differentiable-3D-Partitioner: reading Bookshelf input %s",
-            self.aux_input)
+        if self.aux_input is not None:
+            self.logger.info(
+                "Differentiable-3D-Partitioner: reading Bookshelf input %s",
+                self.aux_input)
+        else:
+            self.logger.info(
+                "Differentiable-3D-Partitioner: reading LEF/DEF input %s",
+                getattr(self.params.flatten_2d, "def_input", ""))
         parser.parse_design(str(self.dreamplace_config_path))
+        design = self._build_movable_only_design(parser)
 
         flow = Differentiable3DPartitionerFlow(
-            num_nodes=parser.num_nodes,
-            num_nets=parser.num_nets,
-            num_pins=parser.num_pins,
+            num_nodes=design["num_nodes"],
+            num_nets=design["num_nets"],
+            num_pins=design["num_pins"],
             node_pos=parser.node_pos,
-            pin_pos=parser.pin_pos,
-            flat_net2pin_map=parser.flat_net2pin_map,
-            flat_net2pin_start_map=parser.flat_net2pin_start_map,
-            pin2node_map=parser.pin2node_map,
+            pin_pos=design["pin_pos"],
+            flat_net2pin_map=design["flat_net2pin_map"],
+            flat_net2pin_start_map=design["flat_net2pin_start_map"],
+            pin2node_map=design["pin2node_map"],
             node_size_x=parser.node_size_x,
             node_size_y=parser.node_size_y,
             dreamplace_basic=parser.dreamplace_basic,
@@ -106,9 +113,89 @@ class Differentiable3DPartitionerBase:
                 f"assignment: {result_path}")
         return torch.load(str(result_path), map_location="cpu")
 
+    def _build_movable_only_design(self, parser):
+        placedb = getattr(parser, "placedb", None)
+        num_movable_nodes = int(
+            getattr(placedb, "num_movable_nodes", parser.num_nodes))
+        if num_movable_nodes <= 0:
+            raise RuntimeError(
+                "Differentiable-3D-Partitioner received a design with no "
+                "movable nodes")
+
+        pin2node_cpu = parser.pin2node_map.detach().cpu().long()
+        flat_net2pin_cpu = parser.flat_net2pin_map.detach().cpu().long()
+        start_cpu = parser.flat_net2pin_start_map.detach().cpu().long()
+        original_num_pins = int(pin2node_cpu.numel())
+        pin_pos_x = parser.pin_pos[:original_num_pins]
+        pin_pos_y = parser.pin_pos[original_num_pins:]
+
+        selected_original_pins = []
+        new_pin2node = []
+        new_flat_net2pin = []
+        new_starts = [0]
+
+        for net_id in range(int(parser.num_nets)):
+            start = int(start_cpu[net_id].item())
+            end = int(start_cpu[net_id + 1].item())
+            net_pin_count = 0
+            for flat_idx in range(start, end):
+                original_pin = int(flat_net2pin_cpu[flat_idx].item())
+                node_id = int(pin2node_cpu[original_pin].item())
+                if 0 <= node_id < num_movable_nodes:
+                    selected_original_pins.append(original_pin)
+                    new_pin2node.append(node_id)
+                    new_flat_net2pin.append(len(new_pin2node) - 1)
+                    net_pin_count += 1
+
+            if net_pin_count:
+                new_starts.append(len(new_flat_net2pin))
+
+        if not new_pin2node:
+            raise RuntimeError(
+                "Differentiable-3D-Partitioner movable-only graph has no "
+                "pins; check LEF/DEF connectivity and movable node count")
+
+        device = parser.pin2node_map.device
+        selected_pin_tensor = torch.tensor(
+            selected_original_pins, dtype=torch.long, device=device)
+        pin_pos = torch.cat(
+            (pin_pos_x.index_select(0, selected_pin_tensor),
+             pin_pos_y.index_select(0, selected_pin_tensor)), dim=0)
+        pin2node_map = torch.tensor(
+            new_pin2node, dtype=parser.pin2node_map.dtype, device=device)
+        flat_net2pin_map = torch.tensor(
+            new_flat_net2pin,
+            dtype=parser.flat_net2pin_map.dtype,
+            device=device)
+        flat_net2pin_start_map = torch.tensor(
+            new_starts,
+            dtype=parser.flat_net2pin_start_map.dtype,
+            device=device)
+        num_nets = int(flat_net2pin_start_map.numel() - 1)
+        num_pins = int(pin2node_map.numel())
+
+        self.logger.info(
+            "Differentiable-3D-Partitioner movable graph: "
+            "nodes=%d/%d, nets=%d/%d, pins=%d/%d",
+            num_movable_nodes, parser.num_nodes, num_nets, parser.num_nets,
+            num_pins, parser.num_pins)
+
+        return {
+            "num_nodes": num_movable_nodes,
+            "num_nets": num_nets,
+            "num_pins": num_pins,
+            "pin_pos": pin_pos,
+            "flat_net2pin_map": flat_net2pin_map,
+            "flat_net2pin_start_map": flat_net2pin_start_map,
+            "pin2node_map": pin2node_map,
+        }
+
     def _prepare_dreamplace_config(self):
         config = self.params.flatten_2d.toJson()
-        config["aux_input"] = str(self.aux_input)
+        if self.aux_input is not None:
+            config["aux_input"] = str(self.aux_input)
+        else:
+            config["aux_input"] = ""
         config["result_dir"] = str(self.result_dir)
         config["plot_flag"] = 0
         config["legalize_flag"] = 0
@@ -222,20 +309,35 @@ class Differentiable3DPartitionerBase:
                             "partitioner."):
                         del sys.modules[name]
 
-        dreamplace_root = self.project_root / "thirdparty" / "DREAMPlace"
+        dreamplace_roots = [self.project_root / "thirdparty" / "DREAMPlace"]
+        source_root = None
+        placer_source_dir = compile_configurations.get("PLACER_SOURCE_DIR")
+        if placer_source_dir:
+            source_root = Path(placer_source_dir).resolve().parent
+            dreamplace_roots.append(source_root / "thirdparty" / "DREAMPlace")
+
         dreamplace_loaded = any(
             name == "dreamplace" or name.startswith("dreamplace.")
             for name in sys.modules)
         path_entries = [self.project_root]
         if not dreamplace_loaded:
-            optional_entries = [
-                dreamplace_root / "install",
-                dreamplace_root / "install" / "dreamplace",
-                dreamplace_root / "build",
-                dreamplace_root / "build" / "dreamplace",
-                dreamplace_root,
-                dreamplace_root / "dreamplace",
-            ]
+            optional_entries = []
+            for dreamplace_root in dreamplace_roots:
+                optional_entries.extend([
+                    dreamplace_root / "install",
+                    dreamplace_root / "install" / "dreamplace",
+                    dreamplace_root / "build",
+                    dreamplace_root / "build" / "dreamplace",
+                    dreamplace_root,
+                    dreamplace_root / "dreamplace",
+                ])
+            if source_root is not None:
+                top_build = source_root / "build" / "thirdparty" / "DREAMPlace"
+                optional_entries.extend([top_build, top_build / "dreamplace"])
+            install_prefix = compile_configurations.get("CMAKE_INSTALL_PREFIX")
+            if install_prefix:
+                install_root = Path(install_prefix).resolve()
+                optional_entries.extend([install_root, install_root / "dreamplace"])
             path_entries.extend(path for path in optional_entries if path.exists())
 
         for path in reversed(path_entries):
@@ -244,9 +346,9 @@ class Differentiable3DPartitionerBase:
                 sys.path.remove(path_str)
             sys.path.insert(0, path_str)
 
-        self._clear_conflicting_dreamplace_modules(dreamplace_root)
+        self._clear_conflicting_dreamplace_modules(dreamplace_roots)
 
-    def _clear_conflicting_dreamplace_modules(self, dreamplace_root):
+    def _clear_conflicting_dreamplace_modules(self, dreamplace_roots):
         for name, module in list(sys.modules.items()):
             if name == "thirdparty" or name.startswith("thirdparty.DREAMPlace"):
                 del sys.modules[name]
@@ -260,7 +362,8 @@ class Differentiable3DPartitionerBase:
 
             module_path = Path(module_file).resolve()
             if ("DREAMPlace" in module_path.parts and
-                    not self._is_path_under(module_path, dreamplace_root)):
+                    not any(self._is_path_under(module_path, root)
+                            for root in dreamplace_roots)):
                 del sys.modules[name]
 
     def _resolve_project_root(self):

@@ -67,6 +67,12 @@ bool file_exists(const std::string &file_name) {
 std::string placement_file_or_throw(const std::string &result_dir,
                                     const std::string &subdir,
                                     const std::string &prefix) {
+  std::string final_file =
+      join_path(result_dir, subdir + "/" + prefix + ".final.pl");
+  if (file_exists(final_file)) {
+    return final_file;
+  }
+
   std::string ntup_file =
       join_path(result_dir, subdir + "/" + prefix + ".ntup.pl");
   if (file_exists(ntup_file)) {
@@ -79,7 +85,8 @@ std::string placement_file_or_throw(const std::string &result_dir,
   }
 
   throw std::runtime_error("Cannot find placement result for " + prefix +
-                           ": tried " + ntup_file + " and " + gp_file);
+                           ": tried " + final_file + ", " + ntup_file +
+                           " and " + gp_file);
 }
 
 PlacementData build_placement_data(Parser_C &parser) {

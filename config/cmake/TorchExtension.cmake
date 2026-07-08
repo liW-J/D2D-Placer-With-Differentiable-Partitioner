@@ -10,7 +10,9 @@ if(NOT DEFINED DREAMPLACE_ROOT)
 endif()
 
 find_package(Python COMPONENTS Interpreter Development)
-add_subdirectory(${DREAMPLACE_ROOT}/thirdparty/pybind11)
+if(NOT D2D_TORCH_EXTENSION_DEFER_TARGETS)
+  add_subdirectory(${DREAMPLACE_ROOT}/thirdparty/pybind11)
+endif()
 
 execute_process(COMMAND ${Python_EXECUTABLE} -c 
   "import torch; print(torch.__path__[0]); print(int(getattr(torch.cuda, '_is_compiled', lambda: torch.version.cuda is not None)())); print(torch.__version__); print(torch.version.cuda or '');"
@@ -91,7 +93,6 @@ if (TORCH_ENABLE_CUDA)
 endif()
 message(STATUS TORCH_ENABLE_CUDA=${TORCH_ENABLE_CUDA})
 
-add_library(torch STATIC IMPORTED)
 find_library(TORCH_PYTHON_LIBRARY torch_python PATHS "${TORCH_INSTALL_PREFIX}/lib" REQUIRED)
 find_library(TORCH_LIBRARY torch PATHS "${TORCH_INSTALL_PREFIX}/lib" REQUIRED)
 find_library(C10_LIBRARY c10 PATHS "${TORCH_INSTALL_PREFIX}/lib" REQUIRED)
@@ -117,12 +118,15 @@ if (TORCH_ENABLE_CUDA)
     ${TORCH_CUDA_LIBRARY})
 endif()
 
-set_target_properties(torch PROPERTIES
-  IMPORTED_LOCATION "${TORCH_LIBRARY}"
-  INTERFACE_INCLUDE_DIRECTORIES "${TORCH_INCLUDE_DIRS}"
-  INTERFACE_LINK_LIBRARIES "${LINK_LIBS}"
-  INTERFACE_COMPILE_OPTIONS "-D_GLIBCXX_USE_CXX11_ABI=${CMAKE_CXX_ABI}"
-  )
+if(NOT D2D_TORCH_EXTENSION_DEFER_TARGETS)
+  add_library(torch STATIC IMPORTED)
+  set_target_properties(torch PROPERTIES
+    IMPORTED_LOCATION "${TORCH_LIBRARY}"
+    INTERFACE_INCLUDE_DIRECTORIES "${TORCH_INCLUDE_DIRS}"
+    INTERFACE_LINK_LIBRARIES "${LINK_LIBS}"
+    INTERFACE_COMPILE_OPTIONS "-D_GLIBCXX_USE_CXX11_ABI=${CMAKE_CXX_ABI}"
+    )
+endif()
 
 # CXX only 
 function(add_torch_extension target_name)
@@ -136,8 +140,13 @@ function(add_torch_extension target_name)
     list(FILTER ARG_UNPARSED_ARGUMENTS EXCLUDE REGEX ".*cuh$")
     add_library(${target_name} STATIC ${ARG_UNPARSED_ARGUMENTS})
   endif()
-  target_include_directories(${target_name} PRIVATE ${ARG_EXTRA_INCLUDE_DIRS})
-  target_link_libraries(${target_name} ${ARG_EXTRA_LINK_LIBRARIES} torch pybind11::module)
+  target_include_directories(${target_name} PRIVATE ${ARG_EXTRA_INCLUDE_DIRS} ${TORCH_INCLUDE_DIRS})
+  if(D2D_TORCH_EXTENSION_DEFER_TARGETS)
+    target_link_directories(${target_name} PRIVATE "${TORCH_INSTALL_PREFIX}/lib")
+    target_link_libraries(${target_name} "-L${TORCH_INSTALL_PREFIX}/lib" ${ARG_EXTRA_LINK_LIBRARIES} ${TORCH_LIBRARY} ${LINK_LIBS} pybind11::module)
+  else()
+    target_link_libraries(${target_name} ${ARG_EXTRA_LINK_LIBRARIES} torch pybind11::module)
+  endif()
   target_compile_definitions(${target_name} PRIVATE 
     TORCH_EXTENSION_NAME=${target_name}
     TORCH_VERSION_MAJOR=${TORCH_VERSION_MAJOR}
@@ -176,11 +185,22 @@ function(add_pytorch_extension target_name)
   endif()
   list(FILTER ARG_UNPARSED_ARGUMENTS EXCLUDE REGEX ".*cu$")
   pybind11_add_module(${target_name} MODULE ${ARG_UNPARSED_ARGUMENTS})
-  target_include_directories(${target_name} PRIVATE ${ARG_EXTRA_INCLUDE_DIRS})
+  target_include_directories(${target_name} PRIVATE ${ARG_EXTRA_INCLUDE_DIRS} ${TORCH_INCLUDE_DIRS})
+  if(D2D_TORCH_EXTENSION_DEFER_TARGETS)
+    target_link_directories(${target_name} PRIVATE "${TORCH_INSTALL_PREFIX}/lib")
+  endif()
   if (TORCH_ENABLE_CUDA AND CUDA_SRCS)
-    target_link_libraries(${target_name} PRIVATE ${target_name}_cuda_tmp ${ARG_EXTRA_LINK_LIBRARIES} torch ${TORCH_PYTHON_LIBRARY})
+    if(D2D_TORCH_EXTENSION_DEFER_TARGETS)
+      target_link_libraries(${target_name} PRIVATE ${target_name}_cuda_tmp "-L${TORCH_INSTALL_PREFIX}/lib" ${ARG_EXTRA_LINK_LIBRARIES} ${TORCH_LIBRARY} ${TORCH_PYTHON_LIBRARY} ${LINK_LIBS})
+    else()
+      target_link_libraries(${target_name} PRIVATE ${target_name}_cuda_tmp ${ARG_EXTRA_LINK_LIBRARIES} torch ${TORCH_PYTHON_LIBRARY})
+    endif()
   else()
-    target_link_libraries(${target_name} PRIVATE ${ARG_EXTRA_LINK_LIBRARIES} torch ${TORCH_PYTHON_LIBRARY})
+    if(D2D_TORCH_EXTENSION_DEFER_TARGETS)
+      target_link_libraries(${target_name} PRIVATE "-L${TORCH_INSTALL_PREFIX}/lib" ${ARG_EXTRA_LINK_LIBRARIES} ${TORCH_LIBRARY} ${TORCH_PYTHON_LIBRARY} ${LINK_LIBS})
+    else()
+      target_link_libraries(${target_name} PRIVATE ${ARG_EXTRA_LINK_LIBRARIES} torch ${TORCH_PYTHON_LIBRARY})
+    endif()
   endif()
   target_compile_definitions(${target_name} PRIVATE 
     TORCH_EXTENSION_NAME=${target_name}
