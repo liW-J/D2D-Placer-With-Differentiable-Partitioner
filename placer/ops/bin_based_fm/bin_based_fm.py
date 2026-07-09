@@ -100,6 +100,30 @@ class BinBasedFM(object):
 
     def __call__(self, tier, pin_pos, pos_2d, pos_terminal_legalized,
                  num_terminals, terminal_names):
+        if tier.numel() < self.num_movable_nodes:
+            raise ValueError(
+                "bin_based_fm tier length (%d) is smaller than num_movable_nodes (%d)"
+                % (tier.numel(), self.num_movable_nodes))
+        if self.num_movable_nodes > 0:
+            tier_head = tier[:self.num_movable_nodes].detach()
+            tier_min = int(tier_head.min().item())
+            tier_max = int(tier_head.max().item())
+            if tier_min < 0 or tier_max > 1:
+                raise ValueError(
+                    "bin_based_fm expects tier ids in [0, 1], got min=%d max=%d"
+                    % (tier_min, tier_max))
+        if pos_2d.numel() < 2 * self.num_nodes:
+            raise ValueError(
+                "bin_based_fm pos_2d length (%d) is smaller than 2*num_nodes (%d)"
+                % (pos_2d.numel(), 2 * self.num_nodes))
+        if pos_terminal_legalized.numel() < 2 * num_terminals:
+            raise ValueError(
+                "bin_based_fm terminal position length (%d) is smaller than 2*num_terminals (%d)"
+                % (pos_terminal_legalized.numel(), 2 * num_terminals))
+        if any(torch.is_tensor(t) and t.is_cuda for t in
+               (tier, pin_pos, pos_2d, pos_terminal_legalized)):
+            torch.cuda.synchronize()
+
         output = BinBasedFMFunction.forward(
             tier.cpu().contiguous(),
             self.flat_netpin_cpu,

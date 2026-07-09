@@ -16,6 +16,7 @@
 #include <map>
 #include <queue>
 #include <string>
+#include <stdexcept>
 // dreamplace
 #include "utility/src/torch.h"
 #include "utility/src/utils.h"
@@ -52,9 +53,40 @@ void binBasedFMLauncher(
     float top_die_max_util, float bottom_die_max_util, int num_threads, int num_nodes,
     const int num_bins_x, const int num_bins_y, const T xl, const T yl, const T xh, const T yh) {
 
-  int num_terminals_tmp =
-      Partitioner::getCutNetMask(cut_net_mask, num_nets, num_tiers, tier, flat_netpin, netpin_start,
-                                 pin2node_map, num_movable_nodes);
+  if (num_tiers <= 0 || num_bins_x <= 0 || num_bins_y <= 0 || die_size_x <= 0 ||
+      die_size_y <= 0) {
+    throw std::runtime_error("bin_based_fm received invalid dimensions");
+  }
+  for (int node_id = 0; node_id < num_movable_nodes; ++node_id) {
+    int t = tier[node_id];
+    if (t < 0 || t >= num_tiers) {
+      throw std::runtime_error("bin_based_fm received tier id outside valid range");
+    }
+  }
+
+  auto movable_node_for_pin = [&](int flat_pin_id) -> int {
+    if (flat_pin_id < 0 || flat_pin_id >= num_pins) {
+      return -1;
+    }
+    int node_id = pin2node_map[flat_pin_id];
+    if (node_id < 0 || node_id >= num_movable_nodes) {
+      return -1;
+    }
+    return node_id;
+  };
+
+  auto tier_of_node = [&](int node_id, const int* tier_ptr) -> int {
+    if (node_id < 0 || node_id >= num_movable_nodes) {
+      return -1;
+    }
+    int t = tier_ptr[node_id];
+    if (t < 0 || t >= num_tiers) {
+      return -1;
+    }
+    return t;
+  };
+
+  int num_terminals_tmp = 0;
 
   int num_bins = num_bins_x * num_bins_y;
   DREAMPLACE_NAMESPACE::AtomicAdd<double> atomic_add_op;
@@ -76,8 +108,8 @@ void binBasedFMLauncher(
   std::vector<std::vector<int>> node_to_nets(num_movable_nodes);
   for (int net_id = 0; net_id < num_nets; ++net_id) {
     for (int pin_id = netpin_start[net_id]; pin_id < netpin_start[net_id + 1]; ++pin_id) {
-      int node_id = pin2node_map[flat_netpin[pin_id]];
-      if (node_id >= 0 && node_id < num_movable_nodes) {
+      int node_id = movable_node_for_pin(flat_netpin[pin_id]);
+      if (node_id >= 0) {
         node_to_nets[node_id].push_back(net_id);
       }
     }
@@ -86,8 +118,8 @@ void binBasedFMLauncher(
   std::vector<std::vector<int>> net_to_nodes(num_nets);
   for (int net_id = 0; net_id < num_nets; ++net_id) {
     for (int pin_id = netpin_start[net_id]; pin_id < netpin_start[net_id + 1]; ++pin_id) {
-      int node_id = pin2node_map[flat_netpin[pin_id]];
-      if (node_id >= 0 && node_id < num_movable_nodes) {
+      int node_id = movable_node_for_pin(flat_netpin[pin_id]);
+      if (node_id >= 0) {
         net_to_nodes[net_id].push_back(node_id);
       }
     }
@@ -103,19 +135,23 @@ void binBasedFMLauncher(
 
   // Track per-net tier counts so cut status can be updated incrementally.
   std::vector<std::array<int, 2>> net_tier_count(num_nets);
-  int cut_count_from_tier_count = 0;
-  for (int net_id = 0; net_id < num_nets; ++net_id) {
-    net_tier_count[net_id] = {0, 0};
-    for (int node_id : net_to_nodes[net_id]) {
-      int t = tier[node_id];
-      assert(t >= 0 && t < num_tiers);
-      net_tier_count[net_id][t]++;
+  auto recompute_cut_state = [&]() -> int {
+    int cut_count = 0;
+    for (int net_id = 0; net_id < num_nets; ++net_id) {
+      net_tier_count[net_id] = {0, 0};
+      for (int node_id : net_to_nodes[net_id]) {
+        int t = tier_of_node(node_id, tier);
+        if (t >= 0) {
+          net_tier_count[net_id][t]++;
+        }
+      }
+      int is_cut = (net_tier_count[net_id][0] > 0 && net_tier_count[net_id][1] > 0) ? 1 : 0;
+      cut_net_mask[net_id] = is_cut;
+      cut_count += is_cut;
     }
-    int is_cut = (net_tier_count[net_id][0] > 0 && net_tier_count[net_id][1] > 0) ? 1 : 0;
-    cut_net_mask[net_id] = is_cut;
-    cut_count_from_tier_count += is_cut;
-  }
-  num_terminals_tmp = cut_count_from_tier_count;
+    return cut_count;
+  };
+  num_terminals_tmp = recompute_cut_state();
 
   auto is_cut_after_move = [&](int net_id, int from_t, int to_t) -> int {
     int from_count = net_tier_count[net_id][from_t] - 1;
@@ -155,9 +191,13 @@ void binBasedFMLauncher(
     T terminal_x_center, terminal_y_center;
 
     for (int pin_id = netpin_start[net_id]; pin_id < netpin_start[net_id + 1]; ++pin_id) {
-      int node_id = pin2node_map[flat_netpin[pin_id]];
-      int t = tier_ptr[node_id];
-      int index_pin = num_pins * t + flat_netpin[pin_id];
+      int flat_pin_id = flat_netpin[pin_id];
+      int node_id = movable_node_for_pin(flat_pin_id);
+      int t = tier_of_node(node_id, tier_ptr);
+      if (t < 0) {
+        continue;
+      }
+      int index_pin = num_pins * t + flat_pin_id;
       max_x[t] = std::max(max_x[t], pin_x[index_pin]);
       min_x[t] = std::min(min_x[t], pin_x[index_pin]);
       max_y[t] = std::max(max_y[t], pin_y[index_pin]);
@@ -185,9 +225,13 @@ void binBasedFMLauncher(
     T terminal_x_center, terminal_y_center;
 
     for (int pin_id = netpin_start[net_id]; pin_id < netpin_start[net_id + 1]; ++pin_id) {
-      int node_id = pin2node_map[flat_netpin[pin_id]];
-      int t = tier_ptr[node_id];
-      int index_pin = num_pins * t + flat_netpin[pin_id];
+      int flat_pin_id = flat_netpin[pin_id];
+      int node_id = movable_node_for_pin(flat_pin_id);
+      int t = tier_of_node(node_id, tier_ptr);
+      if (t < 0) {
+        continue;
+      }
+      int index_pin = num_pins * t + flat_pin_id;
       max_x[t] = std::max(max_x[t], pin_x[index_pin]);
       min_x[t] = std::min(min_x[t], pin_x[index_pin]);
       max_y[t] = std::max(max_y[t], pin_y[index_pin]);
@@ -224,15 +268,22 @@ void binBasedFMLauncher(
     std::vector<int> node_count(num_tiers, 0);
     int num_nodes_in_net = 0;
     for (int pin_id = netpin_start[net_id]; pin_id < netpin_start[net_id + 1]; ++pin_id) {
-      int node_id = pin2node_map[flat_netpin[pin_id]];
-      int t = tier_ptr[node_id];
-      int index_pin = num_pins * t + flat_netpin[pin_id];
+      int flat_pin_id = flat_netpin[pin_id];
+      int node_id = movable_node_for_pin(flat_pin_id);
+      int t = tier_of_node(node_id, tier_ptr);
+      if (t < 0) {
+        continue;
+      }
+      int index_pin = num_pins * t + flat_pin_id;
       max_x[t] = std::max(max_x[t], pin_x[index_pin]);
       min_x[t] = std::min(min_x[t], pin_x[index_pin]);
       max_y[t] = std::max(max_y[t], pin_y[index_pin]);
       min_y[t] = std::min(min_y[t], pin_y[index_pin]);
       node_count[t]++;
       num_nodes_in_net++;
+    }
+    if (num_nodes_in_net == 0) {
+      return 0;
     }
 
     // check if the net is bound to a terminal
@@ -257,6 +308,9 @@ void binBasedFMLauncher(
         terminal_y_center = terminal_y[cur_terminal_id] + (terminal_size_y + terminal_spacing) / 2;
       }
       for (int t = 0; t < num_tiers; ++t) {
+        if (node_count[t] == 0) {
+          continue;
+        }
         max_x[t] = std::max(max_x[t], terminal_x_center);
         min_x[t] = std::min(min_x[t], terminal_x_center);
         max_y[t] = std::max(max_y[t], terminal_y_center);
@@ -289,15 +343,22 @@ void binBasedFMLauncher(
     int num_nodes_in_net = 0;
 
     for (int pin_id = netpin_start[net_id]; pin_id < netpin_start[net_id + 1]; ++pin_id) {
-      int node_id = pin2node_map[flat_netpin[pin_id]];
-      int t = (node_id == moved_node_id) ? moved_to_t : tier[node_id];
-      int index_pin = num_pins * t + flat_netpin[pin_id];
+      int flat_pin_id = flat_netpin[pin_id];
+      int node_id = movable_node_for_pin(flat_pin_id);
+      int t = (node_id == moved_node_id) ? moved_to_t : tier_of_node(node_id, tier);
+      if (t < 0 || t >= num_tiers) {
+        continue;
+      }
+      int index_pin = num_pins * t + flat_pin_id;
       max_x[t] = std::max(max_x[t], pin_x[index_pin]);
       min_x[t] = std::min(min_x[t], pin_x[index_pin]);
       max_y[t] = std::max(max_y[t], pin_y[index_pin]);
       min_y[t] = std::min(min_y[t], pin_y[index_pin]);
       node_count[t]++;
       num_nodes_in_net++;
+    }
+    if (num_nodes_in_net == 0) {
+      return 0;
     }
 
     int cur_terminal_id = net_to_terminal_id[net_id];
@@ -315,6 +376,9 @@ void binBasedFMLauncher(
         terminal_y_center = terminal_y[cur_terminal_id] + (terminal_size_y + terminal_spacing) / 2;
       }
       for (int t = 0; t < num_tiers; ++t) {
+        if (node_count[t] == 0) {
+          continue;
+        }
         max_x[t] = std::max(max_x[t], terminal_x_center);
         min_x[t] = std::min(min_x[t], terminal_x_center);
         max_y[t] = std::max(max_y[t], terminal_y_center);
@@ -350,7 +414,10 @@ void binBasedFMLauncher(
   auto compute_node_gain = [&](int node_id) -> long long {
     long long hpwl_delta = 0;
     long long terminal_gain = 0;
-    int from_t = tier[node_id];
+    int from_t = tier_of_node(node_id, tier);
+    if (from_t < 0) {
+      return 0;
+    }
     int to_t = 1 - from_t;
 
     for (int net_id : node_to_nets[node_id]) {
@@ -421,9 +488,10 @@ void binBasedFMLauncher(
 
     std::fill(tier_area.begin(), tier_area.end(), 0.0);
     for (int n = 0; n < num_movable_nodes; ++n) {
-      int t = tier[n];
-      assert(t >= 0 && t < num_tiers);
-      tier_area[t] += node_area_cache[n];
+      int t = tier_of_node(n, tier);
+      if (t >= 0) {
+        tier_area[t] += node_area_cache[n];
+      }
     }
 
     std::vector<int> candidate_nodes;
@@ -511,7 +579,10 @@ void binBasedFMLauncher(
               continue;
 
             // die-level hard area check
-            int from_t_chk = tier[node_id];
+            int from_t_chk = tier_of_node(node_id, tier);
+            if (from_t_chk < 0) {
+              continue;
+            }
             int to_t_chk = 1 - from_t_chk;
             double area_u = node_area_cache[node_id];
             double to_after = tier_area[to_t_chk] + area_u;
@@ -527,7 +598,10 @@ void binBasedFMLauncher(
             break;
 
           int node_id = pick;
-          int from_t = tier[node_id];
+          int from_t = tier_of_node(node_id, tier);
+          if (from_t < 0) {
+            continue;
+          }
           int to_t = 1 - from_t;
 
           // apply move
@@ -650,16 +724,7 @@ void binBasedFMLauncher(
     }
 
     // Pass-level resync keeps incremental cut/HPWL state honest without paying the cost per bin.
-    num_terminals_tmp =
-        Partitioner::getCutNetMask(cut_net_mask, num_nets, num_tiers, tier, flat_netpin,
-                                   netpin_start, pin2node_map, num_movable_nodes);
-    for (int net_id = 0; net_id < num_nets; ++net_id) {
-      net_tier_count[net_id] = {0, 0};
-      for (int node_id : net_to_nodes[net_id]) {
-        int t = tier[node_id];
-        net_tier_count[net_id][t]++;
-      }
-    }
+    num_terminals_tmp = recompute_cut_state();
     hpwl_sum = 0;
     #pragma omp parallel for num_threads(num_threads) reduction(+ : hpwl_sum) schedule(static)
     for (int net_id = 0; net_id < num_nets; ++net_id) {
@@ -736,6 +801,22 @@ at::Tensor bin_based_fm_forward(
 
   // TODO: get num_tiers from param.json
   int num_tiers = 2;
+  TORCH_CHECK(num_movable_nodes >= 0, "bin_based_fm num_movable_nodes must be non-negative");
+  TORCH_CHECK(tier.numel() >= num_movable_nodes,
+              "bin_based_fm tier length is smaller than num_movable_nodes");
+  TORCH_CHECK(pos_2d.numel() >= 2 * num_nodes,
+              "bin_based_fm pos_2d length is smaller than 2*num_nodes");
+  TORCH_CHECK(pos_terminal_legalized.numel() >= 2 * num_terminals,
+              "bin_based_fm terminal position length is smaller than 2*num_terminals");
+  TORCH_CHECK(pin_pos.numel() >= 2 * num_tiers * num_pins,
+              "bin_based_fm pin_pos length is smaller than 2*num_tiers*num_pins");
+  TORCH_CHECK(node_size_x.numel() >= num_tiers * num_movable_nodes &&
+                  node_size_y.numel() >= num_tiers * num_movable_nodes,
+              "bin_based_fm node size tensors are smaller than num_tiers*num_movable_nodes");
+  TORCH_CHECK(pin_offset_x.numel() >= num_tiers * num_pins &&
+                  pin_offset_y.numel() >= num_tiers * num_pins,
+              "bin_based_fm pin offset tensors are smaller than num_tiers*num_pins");
+
   at::Tensor cut_net_mask = at::zeros(num_nets, tier.options());
 
   DREAMPLACE_DISPATCH_FLOATING_TYPES(pos_2d, "binBasedFMLauncher", [&] {

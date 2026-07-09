@@ -59,6 +59,9 @@ T distributeBox2Bin(const int num_bins_x, const int num_bins_y, const T xl, cons
       distributed_area += buf_map[k * num_bins_y + h];
     }
   }
+  if (distributed_num_bins == 0) {
+    return 0;
+  }
   return distributed_area / distributed_num_bins;
 }
 
@@ -95,6 +98,9 @@ int computeDensityMapLauncher(const T* x_tensor, const T* y_tensor, const T* nod
     T bxl = x_tensor[i];
     T byl = y_tensor[i];
     int tier_id = tier[i];
+    if (tier_id < 0 || tier_id >= num_tiers) {
+      continue;
+    }
     T bxh = bxl + node_size_x_tensor[tier_id * num_nodes + i];
     T byh = byl + node_size_y_tensor[tier_id * num_nodes + i];
     distributeBox2Bin(static_cast<int>(num_bins_x), static_cast<int>(num_bins_y), xl, yl, xh, yh,
@@ -123,6 +129,9 @@ double updateDensityMapLauncher(const T* x_tensor, const T* y_tensor, const T* n
   int num_bins = static_cast<int>(num_bins_x * num_bins_y);
 
   // Get node position and sizes for both tiers
+  if (node_id < 0 || node_id >= num_nodes || from_tier < 0 || to_tier < 0) {
+    return 0;
+  }
   T bxl = x_tensor[node_id];
   T byl = y_tensor[node_id];
 

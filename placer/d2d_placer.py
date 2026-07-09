@@ -555,13 +555,6 @@ class D2Dplacer:
             self.dreamplace.dp_terminal.placedb.node_names, self.node_orient)
 
     def refinement(self, logger=logging):
-        if self.params.is_lefdef_input:
-            logger.info(
-                "LEF/DEF input: skip bin-based FM refinement; using hmetis/co-place partition directly")
-            torch.save(self.tier,
-                       self.params.result_dir_root + "/tier-refinement.pt")
-            return
-
         terminal_names = self.dreamplace.dp_terminal.placedb.node_names[
             :self.num_terminal_NIs]
         self.tier = self.op_wrapper.d2d_op_collections.bin_based_fm_op(
@@ -691,10 +684,10 @@ if __name__ == "__main__":
         # global_place_flag=False skips the GP re-run;
         # random_center_init_flag=False preserves what is in partition pl files.
         d2d_placer.die_terminal_co_place(global_place_flag=True,
-                                         legalize_flag=False,
-                                         detailed_place_flag=False,
+                                         legalize_flag=True,
+                                         detailed_place_flag=True,
                                          random_center_init_flag=True,
-                                         ntuplace_flag=True,
+                                         ntuplace_flag=False,
                                          logger=d2d_logger)
         # d2d_placer.die_by_die_place(global_place_flag=True,
         #                             legalize_flag=False,
