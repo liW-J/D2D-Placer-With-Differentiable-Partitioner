@@ -12,7 +12,9 @@
 #include <array>
 #include <chrono>
 #include <climits>
+#include <cmath>
 #include <iostream>
+#include <limits>
 #include <map>
 #include <queue>
 #include <string>
@@ -176,12 +178,21 @@ void binBasedFMLauncher(
     }
   }
 
-  // Cache node area for repeated utilization checks/updates.
-  std::vector<double> node_area_cache(num_movable_nodes, 0.0);
-  for (int node_id = 0; node_id < num_movable_nodes; ++node_id) {
-    node_area_cache[node_id] =
-        static_cast<double>(node_size_x[node_id]) * static_cast<double>(node_size_y[node_id]);
+  // Cache tier-specific node areas for repeated utilization checks/updates.
+  std::vector<double> node_area_cache(num_tiers * num_movable_nodes, 0.0);
+  for (int t = 0; t < num_tiers; ++t) {
+    for (int node_id = 0; node_id < num_movable_nodes; ++node_id) {
+      int area_idx = t * num_movable_nodes + node_id;
+      node_area_cache[area_idx] =
+          static_cast<double>(node_size_x[area_idx]) * static_cast<double>(node_size_y[area_idx]);
+    }
   }
+  auto node_area_for_tier = [&](int tier_id, int node_id) -> double {
+    if (tier_id < 0 || tier_id >= num_tiers || node_id < 0 || node_id >= num_movable_nodes) {
+      return 0.0;
+    }
+    return node_area_cache[tier_id * num_movable_nodes + node_id];
+  };
 
   auto get_terminal_center = [&](int net_id, const int* tier_ptr) -> std::pair<T, T> {
     std::vector<T> max_x(num_tiers, -std::numeric_limits<T>::max());
@@ -437,6 +448,89 @@ void binBasedFMLauncher(
   const double die_area = static_cast<double>(die_size_x) * static_cast<double>(die_size_y);
   std::vector<double> tier_area(num_tiers, 0.0);
 
+  const double density_bin_w =
+      (static_cast<double>(xh) - static_cast<double>(xl)) / static_cast<double>(num_bins_x);
+  const double density_bin_h =
+      (static_cast<double>(yh) - static_cast<double>(yl)) / static_cast<double>(num_bins_y);
+  const double density_bin_area = density_bin_w * density_bin_h;
+  // Independent from die_max_util: caps one tier's share inside each physical bin.
+  const double local_bin_max_tier_share = 0.85;
+  auto overlap_1d = [](double box_l, double box_h, double bin_l, double bin_h) -> double {
+    return std::max(0.0, std::min(box_h, bin_h) - std::max(box_l, bin_l));
+  };
+  auto box_overlap_with_bin = [&](double bxl, double byl, double bxh, double byh,
+                                    int bx, int by) -> double {
+    double bin_xl = static_cast<double>(xl) + density_bin_w * bx;
+    double bin_xh = std::min(bin_xl + density_bin_w, static_cast<double>(xh));
+    double bin_yl = static_cast<double>(yl) + density_bin_h * by;
+    double bin_yh = std::min(bin_yl + density_bin_h, static_cast<double>(yh));
+    double px = overlap_1d(bxl, bxh, bin_xl, bin_xh);
+    double py = overlap_1d(byl, byh, bin_yl, bin_yh);
+    return px * py;
+  };
+  auto would_exceed_target_bin_balance = [&](int node_id, int from_tier, int to_tier) -> bool {
+    if (node_id < 0 || node_id >= num_movable_nodes || from_tier < 0 ||
+        from_tier >= num_tiers || to_tier < 0 || to_tier >= num_tiers) {
+      return true;
+    }
+    double max_local_share = std::max(0.5, std::min(1.0, local_bin_max_tier_share));
+    if (max_local_share <= 0.0 || density_bin_area <= 0.0) {
+      return true;
+    }
+
+    double bxl = static_cast<double>(pos_2d_x[node_id]);
+    double byl = static_cast<double>(pos_2d_y[node_id]);
+    int from_size_idx = from_tier * num_movable_nodes + node_id;
+    int to_size_idx = to_tier * num_movable_nodes + node_id;
+    double bxh_from = bxl + static_cast<double>(node_size_x[from_size_idx]);
+    double byh_from = byl + static_cast<double>(node_size_y[from_size_idx]);
+    double bxh_to = bxl + static_cast<double>(node_size_x[to_size_idx]);
+    double byh_to = byl + static_cast<double>(node_size_y[to_size_idx]);
+    if (bxh_to <= bxl || byh_to <= byl) {
+      return false;
+    }
+
+    int bin_index_xl = static_cast<int>((bxl - static_cast<double>(xl)) / density_bin_w);
+    int bin_index_xh =
+        static_cast<int>(std::ceil((bxh_to - static_cast<double>(xl)) / density_bin_w)) + 1;
+    int bin_index_yl = static_cast<int>((byl - static_cast<double>(yl)) / density_bin_h);
+    int bin_index_yh =
+        static_cast<int>(std::ceil((byh_to - static_cast<double>(yl)) / density_bin_h)) + 1;
+    bin_index_xl = std::max(bin_index_xl, 0);
+    bin_index_xh = std::min(bin_index_xh, num_bins_x);
+    bin_index_yl = std::max(bin_index_yl, 0);
+    bin_index_yh = std::min(bin_index_yh, num_bins_y);
+
+    double balance_eps = std::max(1.0, density_bin_area) * 1e-9;
+    for (int k = bin_index_xl; k < bin_index_xh; ++k) {
+      for (int h = bin_index_yl; h < bin_index_yh; ++h) {
+        double added_area = box_overlap_with_bin(bxl, byl, bxh_to, byh_to, k, h);
+        if (added_area <= 0.0) {
+          continue;
+        }
+        double removed_area = box_overlap_with_bin(bxl, byl, bxh_from, byh_from, k, h);
+        int from_bin_idx = from_tier * num_bins + k * num_bins_y + h;
+        int to_bin_idx = to_tier * num_bins + k * num_bins_y + h;
+        double from_before = buf_map_tier[from_bin_idx];
+        double to_before = buf_map_tier[to_bin_idx];
+        double from_after = std::max(0.0, from_before - removed_area);
+        double to_after = to_before + added_area;
+        double total_before = from_before + to_before;
+        double total_after = from_after + to_after;
+        if (total_after <= balance_eps) {
+          continue;
+        }
+        double target_share_before = total_before > balance_eps ? to_before / total_before : 0.0;
+        double target_share_after = to_after / total_after;
+        if (target_share_after > max_local_share + 1e-6 &&
+            target_share_after > target_share_before + 1e-6) {
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+
   // Bin state tracking for optimization
   int num_fm_bins_x = 0, num_fm_bins_y = 0;
   double bin_w = 0, bin_h = 0;
@@ -484,13 +578,13 @@ void binBasedFMLauncher(
     auto pass_start = std::chrono::high_resolution_clock::now();
     pass_count++;
     long long best_pass_gain = 0;
-    int total_moves = 0, total_bins_processed = 0, converged_bins = 0;
+    int total_moves = 0, total_bins_processed = 0, converged_bins = 0, balance_rejects = 0;
 
     std::fill(tier_area.begin(), tier_area.end(), 0.0);
     for (int n = 0; n < num_movable_nodes; ++n) {
       int t = tier_of_node(n, tier);
       if (t >= 0) {
-        tier_area[t] += node_area_cache[n];
+        tier_area[t] += node_area_for_tier(t, n);
       }
     }
 
@@ -584,10 +678,14 @@ void binBasedFMLauncher(
               continue;
             }
             int to_t_chk = 1 - from_t_chk;
-            double area_u = node_area_cache[node_id];
+            double area_u = node_area_for_tier(to_t_chk, node_id);
             double to_after = tier_area[to_t_chk] + area_u;
             float max_util = to_t_chk == 0 ? top_die_max_util : bottom_die_max_util;
             if (to_after > max_util * die_area) {
+              continue;
+            }
+            if (would_exceed_target_bin_balance(node_id, from_t_chk, to_t_chk)) {
+              balance_rejects++;
               continue;
             }
             pick = node_id;
@@ -614,9 +712,8 @@ void binBasedFMLauncher(
                                    num_bins_x, num_bins_y, xl, yl, xh, yh, num_threads,
                                    atomic_add_op, buf_map_tier.data(), from_t, to_t, node_id);
 
-          double area_u = node_area_cache[node_id];
-          tier_area[from_t] -= area_u;
-          tier_area[to_t] += area_u;
+          tier_area[from_t] -= node_area_for_tier(from_t, node_id);
+          tier_area[to_t] += node_area_for_tier(to_t, node_id);
 
           move_order.push_back(node_id);
           move_from.push_back(from_t);
@@ -691,9 +788,8 @@ void binBasedFMLauncher(
                                    num_bins_x, num_bins_y, xl, yl, xh, yh, num_threads,
                                    atomic_add_op, buf_map_tier.data(), to_t, from_t, rollback_id);
 
-          double area_u = node_area_cache[rollback_id];
-          tier_area[from_t] += area_u;
-          tier_area[to_t] -= area_u;
+          tier_area[from_t] += node_area_for_tier(from_t, rollback_id);
+          tier_area[to_t] -= node_area_for_tier(to_t, rollback_id);
 
           long long hpwl_delta_rollback = 0;
           for (int net_id : node_to_nets[rollback_id]) {
@@ -753,9 +849,10 @@ void binBasedFMLauncher(
         std::chrono::duration_cast<std::chrono::milliseconds>(pass_end - pass_start).count();
     LOG(INFO,
         "Pass %d Summary: candidates=%d (dedup_hits=%d), processed %d bins (%d converged), "
-        "%d total moves, best gain: %lld, elapsed: %lld ms",
+        "%d total moves, %d local-balance rejects, best gain: %lld, elapsed: %lld ms",
         pass_count, num_candidate_nodes, duplicate_candidate_hits, total_bins_processed,
-        converged_bins, total_moves, best_pass_gain, static_cast<long long>(pass_ms));
+        converged_bins, total_moves, balance_rejects, best_pass_gain,
+        static_cast<long long>(pass_ms));
     LOG(INFO, "num_terminals_tmp: %d", num_terminals_tmp);
     LOG(INFO, "hpwl: %lld", hpwl_sum);
     LOG(INFO, "Pass %d termination check: best_pass_gain=%lld, pass_flag=%s", pass_count,

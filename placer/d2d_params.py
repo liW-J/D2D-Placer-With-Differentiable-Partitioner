@@ -7,8 +7,10 @@ FilePath: /D2D-placer/placer/d2d_params.py
 Description: 
 '''
 import dreamplace.Params as Params
+import hashlib
 import json
 import os
+import re
 import time
 from pathlib import Path
 from configure import compile_configurations
@@ -36,6 +38,22 @@ class D2DDieSpec:
 
 
 class D2DParams:
+
+    _VERILOG_BUS_DECL_RE = re.compile(
+        r"^(\s*)(input|output|inout|wire)\s+((?:reg\s+)?)"
+        r"\[\s*(\d+)\s*:\s*(\d+)\s*\]\s+(.+?)\s*;(\s*(?://.*)?)$")
+    _VERILOG_ESCAPED_IDENT_RE = re.compile(r"\\(\S+)")
+    _VERILOG_BIT_NAME_RE = re.compile(
+        r"(?<![A-Za-z0-9_/.\\$])([A-Za-z_/][A-Za-z0-9_/$/.]*)"
+        r"\[(\d+)\]")
+    _VERILOG_DOLLAR_NAME_RE = re.compile(
+        r"(?<![A-Za-z0-9_/.\\])([A-Za-z_/][A-Za-z0-9_/$/.]*"
+        r"\$[A-Za-z0-9_/$/.]*)")
+    _DEF_BIT_NAME_RE = re.compile(
+        r"([A-Za-z_][A-Za-z0-9_/$/.]*)(?:\\?\[(\d+)\\?\])")
+    _DEF_DOLLAR_NAME_RE = re.compile(
+        r"(?<![A-Za-z0-9_/.\\])([A-Za-z_][A-Za-z0-9_/$/.]*"
+        r"\$[A-Za-z0-9_/$/.]*)")
 
     def __init__(self, json_path):
         self.json_path = json_path
@@ -83,6 +101,7 @@ class D2DParams:
                 i].aux_input = f"{self.run_tmp_dir_root}/partition/tier{i}.aux"
 
         if self.is_lefdef_input:
+            self._lefdef_preprocess_cache = {}
             self._setup_lefdef_inputs()
         else:
             self.flatten_2d.aux_input = f"{self.run_tmp_dir_root}/flattened-2d/flattened-2d.aux"
@@ -291,6 +310,185 @@ class D2DParams:
         params.def_input = ""
         params.verilog_input = ""
 
+    def _dreamplace_preprocess_enabled(self):
+        value = self._get_first(
+            self.input_config.get("dreamplace_preprocess_lefdef"),
+            self.input_config.get("preprocess_lefdef_for_dreamplace"),
+            default=True)
+        if isinstance(value, str):
+            return value.lower() not in ("0", "false", "no", "off")
+        return bool(value)
+
+    def _sanitize_dreamplace_identifier(self, name):
+        safe = str(name).strip()
+        if safe.startswith("\\"):
+            safe = safe[1:]
+        safe = safe.replace("\\", "")
+        safe = re.sub(r"\[(\d+)\]", r"_\1_", safe)
+        safe = safe.replace("$", "_")
+        safe = re.sub(r"[^A-Za-z0-9_]", "_", safe)
+        safe = re.sub(r"_+", "_", safe)
+        if not safe:
+            safe = "_"
+        if not re.match(r"[A-Za-z_]", safe):
+            safe = "_" + safe
+        return safe
+
+    def _sanitize_bus_bit(self, base_name, bit_index):
+        return self._sanitize_dreamplace_identifier("%s[%s]" %
+                                                    (base_name, bit_index))
+
+    def _bus_bit_range(self, msb, lsb):
+        step = -1 if msb >= lsb else 1
+        return range(msb, lsb + step, step)
+
+    def _preprocess_verilog_for_dreamplace(self, verilog_text):
+        bus_ports = {}
+        lines = []
+        changed = False
+
+        for line in verilog_text.splitlines():
+            match = self._VERILOG_BUS_DECL_RE.match(line)
+            if not match:
+                lines.append(line)
+                continue
+
+            indent, kind, qualifier, msb, lsb, names_text, comment = (
+                match.groups())
+            bits = self._bus_bit_range(int(msb), int(lsb))
+            scalars = []
+            for raw_name in [n.strip() for n in names_text.split(",")
+                             if n.strip()]:
+                base_name = raw_name.split("=", 1)[0].strip()
+                name_scalars = [
+                    self._sanitize_bus_bit(base_name, bit) for bit in bits
+                ]
+                scalars.extend(name_scalars)
+                if kind in ("input", "output", "inout"):
+                    bus_ports[base_name] = name_scalars
+            lines.append("%s%s %s%s;%s" %
+                         (indent, kind, qualifier, ", ".join(scalars),
+                          comment))
+            changed = True
+
+        text = "\n".join(lines)
+        if verilog_text.endswith("\n"):
+            text += "\n"
+
+        if bus_ports:
+            text, port_changed = self._scalarize_module_ports(text, bus_ports)
+            changed = changed or port_changed
+
+        def replace_escaped(match):
+            return self._sanitize_dreamplace_identifier(match.group(1))
+
+        def replace_bit(match):
+            return self._sanitize_bus_bit(match.group(1), match.group(2))
+
+        def replace_dollar(match):
+            return self._sanitize_dreamplace_identifier(match.group(1))
+
+        for pattern, repl in ((self._VERILOG_ESCAPED_IDENT_RE,
+                               replace_escaped),
+                              (self._VERILOG_BIT_NAME_RE, replace_bit),
+                              (self._VERILOG_DOLLAR_NAME_RE,
+                               replace_dollar)):
+            new_text = pattern.sub(repl, text)
+            if new_text != text:
+                changed = True
+                text = new_text
+
+        return text, changed
+
+    def _scalarize_module_ports(self, verilog_text, bus_ports):
+        module_re = re.compile(
+            r"\bmodule\s+([A-Za-z_][A-Za-z0-9_]*)\s*\((.*?)\)\s*;",
+            re.S)
+        changed_any = False
+
+        def replace_module(match):
+            nonlocal changed_any
+            module_name, port_text = match.groups()
+            ports = [port.strip() for port in port_text.split(",")
+                     if port.strip()]
+            scalar_ports = []
+            module_changed = False
+            for port in ports:
+                if port in bus_ports:
+                    scalar_ports.extend(bus_ports[port])
+                    module_changed = True
+                else:
+                    safe_port = (self._sanitize_dreamplace_identifier(port)
+                                 if "$" in port else port)
+                    scalar_ports.append(safe_port)
+                    module_changed = module_changed or safe_port != port
+            if not module_changed:
+                return match.group(0)
+            changed_any = True
+            return "module %s (\n\t%s);\n" % (module_name,
+                                                 ", \n\t".join(scalar_ports))
+
+        text = module_re.sub(replace_module, verilog_text)
+        return text, changed_any
+
+    def _preprocess_def_for_dreamplace(self, def_text):
+        changed = False
+
+        def replace_bit(match):
+            return self._sanitize_bus_bit(match.group(1), match.group(2))
+
+        def replace_dollar(match):
+            return self._sanitize_dreamplace_identifier(match.group(1))
+
+        text = self._DEF_BIT_NAME_RE.sub(replace_bit, def_text)
+        if text != def_text:
+            changed = True
+        new_text = self._DEF_DOLLAR_NAME_RE.sub(replace_dollar, text)
+        if new_text != text:
+            changed = True
+        return new_text, changed
+
+    def _preprocess_lefdef_for_dreamplace(self, def_input, verilog_input):
+        if (not self._dreamplace_preprocess_enabled() or not def_input
+                or not verilog_input):
+            return def_input, verilog_input
+
+        key = (str(Path(def_input).resolve()),
+               str(Path(verilog_input).resolve()))
+        cached = self._lefdef_preprocess_cache.get(key)
+        if cached:
+            return cached
+
+        with open(verilog_input, "r", encoding="utf-8") as f:
+            verilog_text = f.read()
+        with open(def_input, "r", encoding="utf-8") as f:
+            def_text = f.read()
+
+        preprocessed_verilog, verilog_changed = (
+            self._preprocess_verilog_for_dreamplace(verilog_text))
+        preprocessed_def, def_changed = self._preprocess_def_for_dreamplace(
+            def_text)
+
+        if not (verilog_changed or def_changed):
+            self._lefdef_preprocess_cache[key] = (def_input, verilog_input)
+            return def_input, verilog_input
+
+        out_dir = Path(self.run_tmp_dir_root) / "lefdef-dreamplace"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        digest = hashlib.sha1(("%s\0%s" % key).encode("utf-8")).hexdigest()[:10]
+        stem = "%s__%s__%s" % (Path(def_input).stem,
+                               Path(verilog_input).stem, digest)
+        out_def = out_dir / ("%s.def" % stem)
+        out_verilog = out_dir / ("%s.v" % stem)
+        with open(out_verilog, "w", encoding="utf-8") as f:
+            f.write(preprocessed_verilog)
+        with open(out_def, "w", encoding="utf-8") as f:
+            f.write(preprocessed_def)
+
+        result = (str(out_def), str(out_verilog))
+        self._lefdef_preprocess_cache[key] = result
+        return result
+
     def _setup_lefdef_inputs(self):
         flat_config = self._get_layer_config("flattened", "flatten_2d",
                                              "flat")
@@ -328,6 +526,13 @@ class D2DParams:
 
         if self.num_tiers != 2:
             raise ValueError("LEF/DEF input currently expects num_tiers == 2")
+
+        flat_def, flat_verilog = self._preprocess_lefdef_for_dreamplace(
+            flat_def, flat_verilog)
+        top_def, top_verilog = self._preprocess_lefdef_for_dreamplace(
+            top_def, top_verilog)
+        bottom_def, bottom_verilog = self._preprocess_lefdef_for_dreamplace(
+            bottom_def, bottom_verilog)
 
         self._use_lefdef_input(self.flatten_2d, flat_lefs, flat_def,
                                flat_verilog)
