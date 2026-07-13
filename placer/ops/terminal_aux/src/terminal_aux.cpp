@@ -71,7 +71,7 @@ static std::string bookshelfNodeName(const std::string &raw, int node_id) {
 }
 
 static std::string bookshelfNetName(const std::string &raw, int net_id) {
-  return bookshelfName(raw, "NET", net_id, true);
+  return bookshelfName(raw, "NET", net_id);
 }
 
 

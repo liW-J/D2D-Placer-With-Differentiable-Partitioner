@@ -30,6 +30,48 @@ def normalize_name(name):
     return str(name)
 
 
+def dreamplace_safe_name(name):
+    safe = normalize_name(name).strip()
+    if safe.startswith("\\"):
+        safe = safe[1:]
+    safe = safe.replace("\\", "")
+    safe = re.sub(r"\[(\d+)\]", r"_\1_", safe)
+    safe = safe.replace("$", "_")
+    safe = re.sub(r"[^A-Za-z0-9_]", "_", safe)
+    safe = re.sub(r"_+", "_", safe)
+    if not safe:
+        safe = "_"
+    if not re.match(r"[A-Za-z_]", safe):
+        safe = "_" + safe
+    return safe
+
+
+def dreamplace_def_aliases(name):
+    raw = normalize_name(name).strip()
+    aliases = [raw]
+
+    def replace_bit(match):
+        return dreamplace_safe_name("%s[%s]" %
+                                    (match.group(1), match.group(2)))
+
+    def replace_dollar(match):
+        return dreamplace_safe_name(match.group(1))
+
+    text = re.sub(r"([A-Za-z_][A-Za-z0-9_/$/.]*)(?:\\?\[(\d+)\\?\])",
+                  replace_bit, raw)
+    text = re.sub(r"(?<![A-Za-z0-9_/.\\])([A-Za-z_][A-Za-z0-9_/$/.]*"
+                  r"\$[A-Za-z0-9_/$/.]*)", replace_dollar, text)
+    aliases.append(text)
+    aliases.append(raw.replace("\\", ""))
+    aliases.append(dreamplace_safe_name(raw))
+
+    unique_aliases = []
+    for alias in aliases:
+        if alias and alias not in unique_aliases:
+            unique_aliases.append(alias)
+    return unique_aliases
+
+
 def resolve_path(path_value, repo_root):
     if not path_value:
         return None
@@ -86,6 +128,55 @@ def parse_def_diearea(def_path):
             if match:
                 return tuple(int(v) for v in match.groups())
     return None
+
+
+def parse_component_orient(text):
+    match = re.search(
+        r"\+\s+(?:PLACED|FIXED|COVER)\s+\(\s*-?\d+\s+-?\d+\s*\)\s+(\S+)",
+        text)
+    return match.group(1) if match else "N"
+
+
+def parse_def_components(def_path):
+    lines = def_path.read_text(encoding="utf-8").splitlines(keepends=True)
+    component_start = None
+    component_end = None
+
+    for idx, line in enumerate(lines):
+        if component_start is None and re.match(r"\s*COMPONENTS\s+\d+\s*;",
+                                                line):
+            component_start = idx
+        elif component_start is not None and re.match(r"\s*END COMPONENTS\b",
+                                                      line):
+            component_end = idx
+            break
+
+    if component_start is None:
+        return []
+    if component_end is None:
+        raise ValueError(f"Malformed DEF COMPONENTS section in {def_path}")
+
+    components = []
+    idx = component_start + 1
+    while idx < component_end:
+        line = lines[idx]
+        match = re.match(r"\s*-\s+(\S+)\s+(\S+)(.*)$", line)
+        if not match:
+            idx += 1
+            continue
+
+        block = [line]
+        while ";" not in lines[idx] and idx + 1 < component_end:
+            idx += 1
+            block.append(lines[idx])
+        block_text = "".join(block)
+        components.append({
+            "def_name": match.group(1),
+            "master": match.group(2),
+            "orient": parse_component_orient(block_text),
+        })
+        idx += 1
+    return components
 
 
 def def_escape_name(verilog_name):
@@ -366,7 +457,184 @@ def validate_exported_files(verilog_out, def_out, inst_data):
         raise ValueError(f"Exported DEF is missing updated components: {sample}")
 
 
+def validate_exported_def(def_out, inst_data):
+    expected_def = {d["def_name"]: d["master"] for d in inst_data}
+    found_def = set()
+    with open(def_out, "r", encoding="utf-8") as f:
+        for line in f:
+            match = re.match(r"\s*-\s+(\S+)\s+(\S+)\b", line)
+            if match and expected_def.get(match.group(1)) == match.group(2):
+                found_def.add(match.group(1))
+
+    missing_def = [
+        d["def_name"] for d in inst_data if d["def_name"] not in found_def
+    ]
+    if missing_def:
+        sample = ", ".join(missing_def[:5])
+        raise ValueError(f"Exported DEF is missing updated components: {sample}")
+
+
+def unscale_position_table(placedb, pos, params):
+    num_nodes = int(placedb.num_nodes)
+    if pos is None:
+        return placedb.unscale_pl(params.shift_factor, params.scale_factor)
+
+    if hasattr(pos, "detach"):
+        pos_values = pos.detach().cpu().numpy()
+    else:
+        pos_values = pos
+
+    node_x = pos_values[:num_nodes].copy()
+    node_y = pos_values[num_nodes:num_nodes + num_nodes].copy()
+    scale_factor = float(params.scale_factor)
+    shift_x = params.shift_factor[0]
+    shift_y = params.shift_factor[1]
+    if shift_x != 0 or shift_y != 0 or scale_factor != 1.0:
+        node_x = node_x / scale_factor + shift_x
+        node_y = node_y / scale_factor + shift_y
+    return node_x, node_y
+
+
+def lefdef_config_value(params, key):
+    input_config = getattr(params, "input_config", {}) or {}
+    value = input_config.get(key)
+    if value:
+        return value
+
+    lefdef_config = input_config.get("lefdef_input", {})
+    if isinstance(lefdef_config, dict):
+        for section_name in ("flattened", "flatten_2d", "flat"):
+            section = lefdef_config.get(section_name, {})
+            if isinstance(section, dict):
+                value = section.get(key)
+                if value:
+                    return value
+
+    return getattr(params.flatten_2d, key, None)
+
+
+def lefdef_source_path(params, key, repo_root):
+    return resolve_path(lefdef_config_value(params, key), repo_root)
+
+
+def extract_lefdef_position_table(placedb, pos, tier, params, components,
+                                  suffix_by_tier):
+    num_movable = int(placedb.num_movable_nodes)
+    node_names = [
+        normalize_name(node_name)
+        for node_name in placedb.node_names[:num_movable]
+    ]
+
+    if hasattr(tier, "detach"):
+        tier_values = tier.detach().cpu().numpy()
+    else:
+        tier_values = tier
+    if len(tier_values) != num_movable:
+        raise ValueError(
+            f"tier size {len(tier_values)} does not match movable nodes {num_movable}"
+        )
+
+    component_by_safe_name = {}
+    for component in components:
+        for safe_name in dreamplace_def_aliases(component["def_name"]):
+            existing = component_by_safe_name.get(safe_name)
+            if existing is not None and existing is not component:
+                raise ValueError(
+                    f"Duplicate DREAMPlace-safe DEF component name: {safe_name}")
+            component_by_safe_name[safe_name] = component
+
+    node_x, node_y = unscale_position_table(placedb, pos, params.flatten_2d)
+    inst_data = []
+    for idx, node_name in enumerate(node_names):
+        component = component_by_safe_name.get(node_name)
+        if component is None:
+            raise ValueError(
+                f"Missing DEF component for DREAMPlace node {node_name}")
+
+        tier_id = int(tier_values[idx])
+        if tier_id not in suffix_by_tier:
+            raise ValueError(f"Unsupported tier id {tier_id} for {node_name}")
+
+        x = int(round(float(node_x[idx])))
+        y = int(round(float(node_y[idx])))
+        if x <= INVALID_COORD or y <= INVALID_COORD:
+            raise ValueError(f"Invalid placement coordinate for {node_name}: {x}, {y}")
+
+        tier_suffix = suffix_by_tier[tier_id]
+        inst_data.append({
+            "bookshelf_name": node_name,
+            "def_name": component["def_name"],
+            "master": with_tier_suffix(component["master"], tier_suffix),
+            "tier": tier_id,
+            "tier_suffix": tier_suffix,
+            "x": x,
+            "y": y,
+            "orient": component.get("orient", "N"),
+        })
+
+    return inst_data
+
+
+def export_lefdef_3d_inputs(params, placedb, pos, tier, logger=logging):
+    repo_root = Path(__file__).resolve().parents[2]
+    def_path = lefdef_source_path(params, "def_input", repo_root)
+    if def_path is None or not def_path.exists():
+        logger.info("OpenROAD 3D LEF/DEF export skipped: def_input is not available")
+        return None
+
+    components = parse_def_components(def_path)
+    if not components:
+        logger.info(
+            "OpenROAD 3D LEF/DEF export skipped: %s has no COMPONENTS section",
+            def_path)
+        return None
+
+    suffix_by_tier = dict(TIER_SUFFIX)
+    inst_data = extract_lefdef_position_table(placedb, pos, tier, params,
+                                              components, suffix_by_tier)
+
+    output_dir = Path(params.result_dir_root) / "openroad_3d"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    def_out = output_dir / def_path.name
+    manifest_out = output_dir / "openroad_3d_manifest.json"
+
+    def_result = write_def(def_path, def_out, inst_data)
+    validate_exported_def(def_out, inst_data)
+
+    tier_counts = {}
+    for data in inst_data:
+        tier_counts[str(data["tier"])] = tier_counts.get(str(data["tier"]),
+                                                         0) + 1
+
+    def_diearea = parse_def_diearea(def_path)
+    verilog_path = lefdef_source_path(params, "verilog_input", repo_root)
+    manifest = {
+        "input_format": "lefdef",
+        "def_input": str(def_path),
+        "verilog_input": str(verilog_path) if verilog_path is not None else None,
+        "def_output": str(def_out),
+        "component_mode": def_result["mode"],
+        "num_instances": len(inst_data),
+        "tier_suffix": {str(k): v for k, v in suffix_by_tier.items()},
+        "tier_counts": tier_counts,
+        "diearea": list(def_diearea) if def_diearea is not None else None,
+        "coordinate_range": {
+            "x_min": min(data["x"] for data in inst_data),
+            "x_max": max(data["x"] for data in inst_data),
+            "y_min": min(data["y"] for data in inst_data),
+            "y_max": max(data["y"] for data in inst_data),
+        },
+    }
+    manifest_out.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
+    logger.info("OpenROAD 3D LEF/DEF export wrote %s", def_out)
+    return manifest
+
+
 def export_openroad_3d_inputs(params, placedb, pos, tier, logger=logging):
+    if getattr(params, "is_lefdef_input", False):
+        return export_lefdef_3d_inputs(params, placedb, pos, tier, logger)
+
     repo_root = Path(__file__).resolve().parents[2]
     txt_path = resolve_path(getattr(params.flatten_2d, "txt_input", None),
                             repo_root)
