@@ -6,6 +6,8 @@ LastEditTime: 2025-07-20 23:39:14
 FilePath: /D2D-placer/install/hpwl_d2d/hpwl_d2d.py
 Description:
 '''
+import re
+
 import torch
 from torch.autograd import Function
 from torch import nn
@@ -15,6 +17,23 @@ import placer.ops.hpwl_d2d.hpwl_d2d_cpp as hpwl_d2d_cpp
 
 
 class HPWLD2DFunction(Function):
+
+    @staticmethod
+    def _name_to_text(name):
+        if isinstance(name, bytes):
+            return name.decode("utf-8")
+        if isinstance(name, np.bytes_):
+            return name.tobytes().decode("utf-8")
+        return str(name)
+
+    @staticmethod
+    def _terminal_aliases(name):
+        text = HPWLD2DFunction._name_to_text(name)
+        aliases = [text]
+        match = re.match(r'^NET\d+_(.+)$', text)
+        if match:
+            aliases.append(match.group(1))
+        return aliases
 
     @staticmethod
     def forward(pin_pos, flat_netpin, netpin_start, pin2node_map, net_weights,
@@ -66,7 +85,10 @@ class HPWLD2DFunction(Function):
         hpwl = torch.zeros(num_nets, dtype=pin_pos.dtype, device=pin_pos.device)
         if netpin_start_host is None:
             netpin_start_host = netpin_start.detach().cpu().tolist()
-        terminal_id_by_net = {name: idx for idx, name in enumerate(terminal_names)}
+        terminal_id_by_net = {}
+        for idx, name in enumerate(terminal_names):
+            for alias in HPWLD2DFunction._terminal_aliases(name):
+                terminal_id_by_net.setdefault(alias, idx)
 
         if pos_terminal_legalized.numel() > 0:
             term_x = pos_terminal_legalized[:pos_terminal_legalized.numel() // 2]
@@ -129,7 +151,8 @@ class HPWLD2DFunction(Function):
                     break
 
             if is_cut:
-                term_id = terminal_id_by_net.get(net_names[net_id], -1)
+                net_name = HPWLD2DFunction._name_to_text(net_names[net_id])
+                term_id = terminal_id_by_net.get(net_name, -1)
                 if term_id >= 0 and term_id < num_terminals and term_x is not None:
                     tx = term_x[term_id] + (terminal_size_x + terminal_spacing) / 2
                     ty = term_y[term_id] + (terminal_size_y + terminal_spacing) / 2
@@ -183,8 +206,32 @@ class HPWLD2D(object):
         self.terminal_size_y = terminal_size_y
         self.terminal_spacing = terminal_spacing
         self.net_names = net_names
+        self.net_name_set = {
+            HPWLD2DFunction._name_to_text(name) for name in net_names
+        }
         self.num_tiers = num_tiers
         self._cuda_cache = {}
+
+    def _terminal_names_for_hpwl(self, terminal_names):
+        if len(terminal_names) == 0:
+            return terminal_names
+
+        names = []
+        changed = False
+        for name in terminal_names:
+            text = HPWLD2DFunction._name_to_text(name)
+            mapped = text
+            match = re.match(r'^NET\d+_(.+)$', text)
+            if text not in self.net_name_set and match:
+                candidate = match.group(1)
+                if candidate in self.net_name_set:
+                    mapped = candidate
+            changed = changed or mapped != text
+            names.append(mapped)
+
+        if not changed:
+            return terminal_names
+        return np.array(names, dtype=np.bytes_)
 
     def _get_cached_cuda(self, name, tensor_cpu, device):
         key = (name, device)
@@ -201,6 +248,8 @@ class HPWLD2D(object):
                  pos_terminal_legalized=torch.empty(0),
                  num_terminals=0,
                  terminal_names=np.array([], dtype=np.bytes_)):
+        terminal_names = self._terminal_names_for_hpwl(terminal_names)
+
         if pin_pos.is_cuda:
             return HPWLD2DFunction.forward(
                 pin_pos,

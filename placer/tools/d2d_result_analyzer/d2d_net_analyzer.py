@@ -46,7 +46,8 @@ class D2DNetAnalyzer:
         # store data
         self.nets = {}  # net name -> net information
         self.instances = {}  # instance name -> position and die information
-        self.terminals = {}  # terminal name -> position information
+        self.terminals = {}  # net name -> terminal position information
+        self.terminal_aliases = {}  # output terminal name -> benchmark net name
         self.net_instances = defaultdict(list)  # net name -> instance list
         self.lib_cells = {}  # Store LibCell information
         self.instance_types = {}  # instance name -> lib cell type
@@ -84,6 +85,22 @@ class D2DNetAnalyzer:
             from .flattened_2d_analyzer import Flattened2DAnalyzer
             self.flattened_analyzer = Flattened2DAnalyzer(
                 self.flattened_pl_file)
+
+    def _resolve_terminal_net_name(self, terminal_name: str) -> str:
+        """Map output terminal node names back to benchmark net names."""
+        if terminal_name in self.nets:
+            return terminal_name
+
+        match = re.match(r'^NET\d+_(.+)$', terminal_name)
+        if match:
+            candidate = match.group(1)
+            if candidate in self.nets:
+                return candidate
+
+        return terminal_name
+
+    def _terminal_for_net(self, net_name: str):
+        return self.terminals.get(net_name)
 
     def parse_benchmark_file(self):
         """Parse the benchmark file, extract net and instance information"""
@@ -214,8 +231,15 @@ class D2DNetAnalyzer:
                     parts = line.split()
                     if len(parts) >= 4:
                         terminal_name = parts[1]
+                        net_name = self._resolve_terminal_net_name(
+                            terminal_name)
                         x, y = int(parts[2]), int(parts[3])
-                        self.terminals[terminal_name] = {'x': x, 'y': y}
+                        self.terminals[net_name] = {
+                            'x': x,
+                            'y': y,
+                            'terminal_name': terminal_name
+                        }
+                        self.terminal_aliases[terminal_name] = net_name
 
         print(
             f"Parsing completed, found {len(self.instances)} instances, {len(self.terminals)} terminals"
@@ -290,8 +314,8 @@ class D2DNetAnalyzer:
                     y_coords.append(pin_y)
 
         # if the net is a crossing net and include_terminal is True, add the terminal coordinates
-        if net_name in self.terminals and net_name in self.crossing_nets and include_terminal:
-            terminal = self.terminals[net_name]
+        terminal = self._terminal_for_net(net_name)
+        if terminal and net_name in self.crossing_nets and include_terminal:
             x_coords.append(terminal['x'])
             y_coords.append(terminal['y'])
 

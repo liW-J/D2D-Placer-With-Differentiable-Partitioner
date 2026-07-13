@@ -73,8 +73,10 @@ class OutfmtICCAD:
             for tier_id in range(num_tiers):
 
                 placedb_tier = self.data_tier[tier_id].placedb
-                pos_tier = self.data_tier[
-                    tier_id].basic_place.data_collections.pos[0]
+                pos_tier = getattr(self.data_tier[tier_id], "pos", None)
+                if pos_tier is None:
+                    pos_tier = self.data_tier[
+                        tier_id].basic_place.data_collections.pos[0]
                 prefix = f"tier{tier_id}"
                 node_x, node_y = self._write_final_pl(placedb_tier, prefix,
                                                       prefix, pos_tier)

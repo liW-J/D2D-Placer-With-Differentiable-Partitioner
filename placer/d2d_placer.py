@@ -4,7 +4,7 @@ Date: 2025-07-19 17:57:28
 LastEditors: JeanneWillis hi@jeannewillis.cn
 LastEditTime: 2026-03-11 19:30:56
 FilePath: /D2D-placer/placer/d2d_placer.py
-Description: 
+Description:
 '''
 
 import configure
@@ -42,13 +42,13 @@ import dreamplace.NesterovAcceleratedGradientOptimizer as NesterovOpt
 def printWelcome():
     welcome_msg = f"""
 {Fore.BLUE}================================================================
-                     D2D-Placer v1.0.0 (2025)                     
+                     D2D-Placer v1.0.0 (2025)
 ----------------------------------------------------------------{Style.RESET_ALL}
 {Fore.GREEN}     A Die-to-Die Placement Research Framework      {Style.RESET_ALL}
 {Fore.YELLOW}----------------------------------------------------------------
-     Website  : https://github.com/liW-J/D2D-Placer                    
-     Contact  : hi@jeannewillis.cn                          
-     License  : Apache/MIT License                              
+     Website  : https://github.com/liW-J/D2D-Placer
+     Contact  : hi@jeannewillis.cn
+     License  : Apache/MIT License
 ================================================================{Style.RESET_ALL}
 """
     print(welcome_msg)
@@ -246,10 +246,7 @@ class D2Dplacer:
 
     def die_terminal_co_place(self,
                               global_place_flag=True,
-                              legalize_flag=False,
-                              detailed_place_flag=False,
                               random_center_init_flag=True,
-                              ntuplace_flag=False,
                               logger=logging):
         """
         Coplace-style 2.5D global placement:
@@ -269,14 +266,14 @@ class D2Dplacer:
         been called so that ``dp_tier[0/1]`` and ``dp_terminal`` are properly
         built and contain their per-tier net topology with D2D terminal_NIs
         in place.
+
+        Legalization, detailed placement, and NTUplace are not run by this
+        co-place path; those stages belong to ``die_by_die_place()``.
         """
-        
+
         self.params.set_die_place_flags(
             global_place_flag=global_place_flag,
-            legalize_flag=legalize_flag,
-            detailed_place_flag=detailed_place_flag,
-            random_center_init_flag=random_center_init_flag,
-            ntuplace_flag=ntuplace_flag)
+            random_center_init_flag=random_center_init_flag)
         self.dreamplace.reload_die_basic_place(self.params, self.timer)
 
         co = D2DCoPlace(self)
@@ -361,7 +358,7 @@ class D2Dplacer:
                     float(cur_top.hpwl.item()), float(cur_bot.hpwl.item()),
                     float(cur_term.hpwl.item()), d2d_hpwl)
 
-            if plot_freq > 0 and ((it + 1) % 500 == 0
+            if plot_freq > 0 and ((it + 1) % 50 == 0
                                   or it == max_iter - 1):
                 co.plot(mov_node_pos_all, it + 1)
 
@@ -489,6 +486,8 @@ class D2Dplacer:
         self.tier = self.op_wrapper.d2d_op_collections.partition_flow_op(
             partitioner=partitioner, logger=logger)
         torch.save(self.tier, self.params.result_dir_root + "/tier.pt")
+        # tier_path = "/export/home/lwjiang/Projects/research/D2D-placer/install/placer/partition_tensor/aes/coplace.pt"
+        # self.tier = torch.load(tier_path, map_location="cpu").view(-1).to(torch.int32).contiguous()
 
         # return partition result but not receive now
         if self.params.is_lefdef_input:
@@ -584,7 +583,9 @@ class D2Dplacer:
                    self.params.result_dir_root + "/tier-refinement.pt")
 
     def output(self):
-        terminal_pos = self.dreamplace.dp_terminal.basic_place.data_collections.pos[0]
+        terminal_pos = self.dreamplace.dp_terminal.pos
+        if terminal_pos is None:
+            terminal_pos = self.dreamplace.dp_terminal.basic_place.data_collections.pos[0]
         self.op_wrapper.d2d_op_collections.out_fmt_iccad_op(
             self.dreamplace.dp_terminal.placedb, self.params.case_name,
             self.format, self.node_orient, terminal_pos)
@@ -631,7 +632,6 @@ class D2Dplacer:
         if self.params.is_txt_input and self.params.flatten_2d.txt_input:
             analyze_placer_output(self.params.flatten_2d.txt_input,
                                   self.params.result_dir_root)
-            self.op_wrapper.d2d_op_collections.draw_layout_result_op()
         else:
             logging.info(
                 "LEF/DEF input: skip ICCAD txt analyzer and txt layout drawer")
@@ -653,7 +653,6 @@ if __name__ == "__main__":
     d2d_placer.flatten_2d_place()
 
     d2d_placer.partition(d2d_logger)
-    # breakpoint()
 
     if d2d_placer.params.co_place_flag:
         d2d_logger.info("=== Running coplace-style 2.5D global placement ===")
@@ -669,32 +668,21 @@ if __name__ == "__main__":
         # Writes the final positions back to dp_tier[i] (in memory) and to
         # the partition/tier{i}.pl files on disk.
         d2d_placer.die_terminal_co_place(global_place_flag=True,
-                                         legalize_flag=False,
-                                         detailed_place_flag=False,
                                          random_center_init_flag=False,
-                                         ntuplace_flag=False,
                                          logger=d2d_logger)
+
         d2d_logger.info("co-place returned to main flow")
         # FM refinement: updates tier assignment and re-inserts terminals.
-        # terminal_insert_op inside refinement() re-writes partition pl files
-        # from dp_2d.pos (synced from co-place result), so NTUplace3 below
-        # will start from the co-place positions rather than a fresh GP.
         d2d_placer.refinement(d2d_logger)
-        # Legalization + detailed placement from co-place positions.
-        # global_place_flag=False skips the GP re-run;
-        # random_center_init_flag=False preserves what is in partition pl files.
         d2d_placer.die_terminal_co_place(global_place_flag=True,
-                                         legalize_flag=True,
-                                         detailed_place_flag=True,
                                          random_center_init_flag=True,
-                                         ntuplace_flag=False,
                                          logger=d2d_logger)
-        # d2d_placer.die_by_die_place(global_place_flag=True,
-        #                             legalize_flag=False,
-        #                             detailed_place_flag=False,
-        #                             random_center_init_flag=False,
-        #                             ntuplace_flag=True,
-        #                             logger=d2d_logger)
+        d2d_placer.die_by_die_place(global_place_flag=False,
+                                    legalize_flag=True,
+                                    detailed_place_flag=True,
+                                    random_center_init_flag=False,
+                                    ntuplace_flag=True,
+                                    logger=d2d_logger)
     else:
         d2d_placer.die_by_die_place(global_place_flag=True,
                                     legalize_flag=False,
