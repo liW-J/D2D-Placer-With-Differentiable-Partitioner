@@ -123,7 +123,11 @@ class DreamplaceBase:
         placer = NonLinearPlace.NonLinearPlace(params, self.placedb, timer)
         logging.info("non-linear placement initialization takes %.2f seconds" %
                      (time.time() - tt))
-        metrics = placer(params, self.placedb)
+        global_place_stages = getattr(params, "global_place_stages", [])
+        learning_rate_value = 0.01
+        if global_place_stages:
+            learning_rate_value = global_place_stages[0].get("learning_rate", learning_rate_value)
+        metrics = placer(params, self.placedb, learning_rate_value)
         logging.info("non-linear placement takes %.2f seconds" %
                      (time.time() - tt))
 

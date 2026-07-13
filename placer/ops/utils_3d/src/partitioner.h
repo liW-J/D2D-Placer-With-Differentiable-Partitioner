@@ -45,6 +45,9 @@ struct Partitioner {
       for (int pin_id = netpin_start[net_id]; pin_id < netpin_start[net_id + 1];
            ++pin_id) {
         int node_id = pin2node_map[flat_netpin[pin_id]];
+        if (node_id < 0 || node_id >= num_movable_nodes) {
+          continue;
+        }
         if (tier[node_id] == tier_id) {
           int index_node = num_movable_nodes * tier_id + node_id;
           node_count[tier_id]++;
@@ -78,8 +81,14 @@ struct Partitioner {
         for (int pin_id = netpin_start[net_id];
              pin_id < netpin_start[net_id + 1]; ++pin_id) {
           int node_id = pin2node_map[flat_netpin[pin_id]];
+          if (node_id < 0 || node_id >= num_movable_nodes) {
+            continue;
+          }
 
           int node_tier = tier[node_id];
+          if (node_tier < 0 || node_tier >= num_tiers) {
+            continue;
+          }
           nodes_per_tier[node_tier]++;
         }
       }
@@ -105,6 +114,9 @@ struct Partitioner {
         for (int pin_id = netpin_start[net_id];
              pin_id < netpin_start[net_id + 1]; ++pin_id) {
           int node_id = pin2node_map[flat_netpin[pin_id]];
+          if (node_id < 0 || node_id >= num_movable_nodes) {
+            continue;
+          }
           if (tier[node_id] == tier_id) {
             int index_node = num_movable_nodes * tier_id + node_id;
             node_count[tier_id]++;
@@ -129,8 +141,9 @@ struct Partitioner {
   static inline int computeHPWLD2D(
       const T *pin_x, const T *pin_y, const int *flat_netpin,
       const int *netpin_start, const int *pin2node_map, const int *cut_net_mask,
-      int num_nets, int num_pins, const int *tier, int num_tiers,
-      const T *terminal_x, const T *terminal_y, int terminal_size_x,
+      int num_nets, int num_pins, int num_movable_nodes, const int *tier,
+      int num_tiers, const T *terminal_x, const T *terminal_y,
+      int terminal_size_x,
       int terminal_size_y, int terminal_spacing, int num_terminals,
       const std::vector<std::string> &net_names,
       const std::vector<std::string> &terminal_name, int num_threads) {
@@ -158,6 +171,9 @@ struct Partitioner {
           for (int pin_id = netpin_start[net_id];
                pin_id < netpin_start[net_id + 1]; pin_id++) {
             int node_id = pin2node_map[flat_netpin[pin_id]];
+            if (node_id < 0 || node_id >= num_movable_nodes) {
+              continue;
+            }
             int index_pin = num_pins * tier_id + flat_netpin[pin_id];
             if (tier[node_id] == tier_id) {
 

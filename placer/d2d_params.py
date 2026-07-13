@@ -81,7 +81,9 @@ class D2DParams:
 
         self.flatten_2d.load(json_path)
         self.terminal.load(json_path)
-        self.num_tiers = self.flatten_2d.num_tiers
+        self.num_tiers = int(getattr(self.flatten_2d, "num_tiers", 2))
+        self.flatten_2d.num_tiers = self.num_tiers
+        self.terminal.num_tiers = self.num_tiers
         self.partitioner = getattr(self.flatten_2d, "partitioner", "hmetis")
 
         self.terminal.aux_input = f"{self.run_tmp_dir_root}/terminal/terminal.aux"
@@ -95,6 +97,8 @@ class D2DParams:
         for i in range(self.num_tiers):
             self.flattened_tier[i].load(json_path)
             self.partition_tier[i].load(json_path)
+            self.flattened_tier[i].num_tiers = self.num_tiers
+            self.partition_tier[i].num_tiers = self.num_tiers
             self.flattened_tier[i].result_dir = self.result_dir_root
             self.partition_tier[i].result_dir = self.result_dir_root
             self.partition_tier[

@@ -39,8 +39,9 @@ void refinementLauncher(
 
   int hpwl = Partitioner::computeHPWLD2D(
       pin_x, pin_y, flat_netpin, netpin_start, pin2node_map, cut_net_mask,
-      num_nets, num_pins, tier, num_tiers, terminal_x, terminal_y,
-      terminal_size_x, terminal_size_y, terminal_spacing, num_terminals,
+      num_nets, num_pins, num_movable_nodes, tier, num_tiers, terminal_x,
+      terminal_y, terminal_size_x, terminal_size_y, terminal_spacing,
+      num_terminals,
       net_names, terminal_names, num_threads);
 
   LOG(INFO, "HPWL: %d", hpwl);
@@ -70,9 +71,10 @@ void refinementLauncher(
 
         int hpwl_tmp = Partitioner::computeHPWLD2D(
             pin_x, pin_y, flat_netpin, netpin_start, pin2node_map,
-            cut_net_mask_tmp.data(), num_nets, num_pins, tier_tmp.data(),
-            num_tiers, terminal_x, terminal_y, terminal_size_x, terminal_size_y,
-            terminal_spacing, init_num_terminals, net_names, terminal_names,
+            cut_net_mask_tmp.data(), num_nets, num_pins, num_movable_nodes,
+            tier_tmp.data(), num_tiers, terminal_x, terminal_y, terminal_size_x,
+            terminal_size_y, terminal_spacing, init_num_terminals, net_names,
+            terminal_names,
             num_threads);
         hpwl_gain = hpwl - hpwl_tmp;
         terminal_gain = num_terminals - num_terminals_tmp;

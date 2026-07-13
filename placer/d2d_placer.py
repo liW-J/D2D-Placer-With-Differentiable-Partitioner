@@ -110,6 +110,13 @@ class D2Dplacer:
         self.timer = None
         self.die_spec = None
 
+    def _to_input_length_unit(self, value):
+        scale_factor = float(getattr(self.params.flatten_2d, "scale_factor",
+                                     1.0))
+        if scale_factor == 0.0:
+            return value
+        return value / scale_factor
+
     def hpwl_d2d(self, logger=logging):
         if self.dreamplace.dp_terminal.pos is not None:
             terminal_names = self.dreamplace.dp_terminal.placedb.node_names[
@@ -124,17 +131,19 @@ class D2Dplacer:
         hpwl_d2d_value = float(hpwl_d2d)
         if torch.is_tensor(hpwl_d2d) and hpwl_d2d.is_cuda:
             torch.cuda.synchronize(hpwl_d2d.device)
+        hpwl_d2d_input_value = self._to_input_length_unit(hpwl_d2d_value)
 
         if all(dp.pos is not None for dp in self.dreamplace.dp_tier):
             tier_hpwl = sum(
                 float(dp.basic_place.op_collections.hpwl_op(dp.pos))
                 for dp in self.dreamplace.dp_tier)
             ratio = hpwl_d2d_value / tier_hpwl if tier_hpwl > 0 else 0.0
+            tier_hpwl_input = self._to_input_length_unit(tier_hpwl)
             logger.info("HPWL_D2D_CHECK: tier_hpwl_sum=%.6f ratio=%.6f",
-                        tier_hpwl, ratio)
-        logger.info("HPWL_D2D:%.6f " % hpwl_d2d_value)
+                        tier_hpwl_input, ratio)
+        logger.info("HPWL_D2D:%.6f " % hpwl_d2d_input_value)
 
-        return hpwl_d2d_value
+        return hpwl_d2d_input_value
 
     def init_spec(self):
         if self.params.is_txt_input:
