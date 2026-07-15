@@ -42,6 +42,8 @@ class D2DParams:
     _VERILOG_BUS_DECL_RE = re.compile(
         r"^(\s*)(input|output|inout|wire)\s+((?:reg\s+)?)"
         r"\[\s*(\d+)\s*:\s*(\d+)\s*\]\s+(.+?)\s*;(\s*(?://.*)?)$")
+    _VERILOG_ESCAPED_INDEXED_REF_RE = re.compile(
+        r"\\(\S+)((?:\s+\[\d+\])+)")
     _VERILOG_ESCAPED_IDENT_RE = re.compile(r"\\(\S+)")
     _VERILOG_BIT_NAME_RE = re.compile(
         r"(?<![A-Za-z0-9_/.\\$])([A-Za-z_/][A-Za-z0-9_/$/.]*)"
@@ -49,8 +51,22 @@ class D2DParams:
     _VERILOG_DOLLAR_NAME_RE = re.compile(
         r"(?<![A-Za-z0-9_/.\\])([A-Za-z_/][A-Za-z0-9_/$/.]*"
         r"\$[A-Za-z0-9_/$/.]*)")
-    _DEF_BIT_NAME_RE = re.compile(
-        r"([A-Za-z_][A-Za-z0-9_/$/.]*)(?:\\?\[(\d+)\\?\])")
+    _VERILOG_ASSIGN_RE = re.compile(
+        r"^\s*assign\b.*;\s*(?://.*)?$")
+    _VERILOG_CONSTANT_PIN_RE = re.compile(
+        r"(\.\s*[A-Za-z_][A-Za-z0-9_/$]*\s*\(\s*)"
+        r"[0-9]+\s*'[bBoOdDhH][0-9a-fA-FxXzZ?_]+(\s*\))")
+    _VERILOG_SIMPLE_PIN_RE = re.compile(
+        r"(\.\s*([A-Za-z_][A-Za-z0-9_/$]*)\s*\(\s*)"
+        r"(\\\S+|[A-Za-z_/][A-Za-z0-9_/$/.]*)(\s*\))")
+    _VERILOG_CONCAT_PIN_RE = re.compile(
+        r"(\.\s*([A-Za-z_][A-Za-z0-9_/$]*)\s*\(\s*)"
+        r"\{([^{}]*)\}(\s*\))", re.S)
+    _VERILOG_BASED_LITERAL_RE = re.compile(
+        r"^[0-9]+\s*'[bBoOdDhH][0-9a-fA-FxXzZ?_]+$")
+    _DEF_INDEXED_NAME_RE = re.compile(
+        r"([A-Za-z_][A-Za-z0-9_/$/.]*(?:\\?\[\d+\\?\])+)"
+    )
     _DEF_DOLLAR_NAME_RE = re.compile(
         r"(?<![A-Za-z0-9_/.\\])([A-Za-z_][A-Za-z0-9_/$/.]*"
         r"\$[A-Za-z0-9_/$/.]*)")
@@ -70,8 +86,17 @@ class D2DParams:
         self.tt_format = time.strftime("%Y-%m-%d_%H-%M-%S",
                                        time.localtime())
         self.case_name = os.path.splitext(os.path.basename(json_path))[0]
-        self.run_tmp_dir_root = f"{compile_configurations['PLACER_RUNTMP_DIR']}/{self.case_name}"
-        self.result_dir_root = f"{compile_configurations['PLACER_RESULT_DIR']}/{self.case_name}/{self.tt_format}"
+        runtime_root = os.environ.get("D2D_RUNTIME_ROOT")
+        if runtime_root:
+            runtime_root = os.path.abspath(os.path.expanduser(runtime_root))
+            run_tmp_base = os.path.join(runtime_root, "run_tmp")
+            result_base = os.path.join(runtime_root, "results")
+        else:
+            run_tmp_base = compile_configurations["PLACER_RUNTMP_DIR"]
+            result_base = compile_configurations["PLACER_RESULT_DIR"]
+        self.run_tmp_dir_root = os.path.join(run_tmp_base, self.case_name)
+        self.result_dir_root = os.path.join(result_base, self.case_name,
+                                            self.tt_format)
         self.input_format = self._detect_input_format(self.input_config)
         self.is_lefdef_input = self.input_format == "lefdef"
         self.is_txt_input = self.input_format == "txt"
@@ -106,6 +131,7 @@ class D2DParams:
 
         if self.is_lefdef_input:
             self._lefdef_preprocess_cache = {}
+            self._lef_preprocess_cache = {}
             self._setup_lefdef_inputs()
         else:
             self.flatten_2d.aux_input = f"{self.run_tmp_dir_root}/flattened-2d/flattened-2d.aux"
@@ -330,11 +356,13 @@ class D2DParams:
         safe = safe.replace("\\", "")
         safe = re.sub(r"\[(\d+)\]", r"_\1_", safe)
         safe = safe.replace("$", "_")
-        safe = re.sub(r"[^A-Za-z0-9_]", "_", safe)
-        safe = re.sub(r"_+", "_", safe)
+        # Limbo's Verilog NAME token accepts hierarchy separators ``.`` and
+        # ``/``.  Preserve them so escaped hierarchical Verilog instance names
+        # continue to match the corresponding DEF COMPONENT names.
+        safe = re.sub(r"[^A-Za-z0-9_/.]", "_", safe)
         if not safe:
             safe = "_"
-        if not re.match(r"[A-Za-z_]", safe):
+        if not re.match(r"[A-Za-z_/]", safe):
             safe = "_" + safe
         return safe
 
@@ -348,10 +376,22 @@ class D2DParams:
 
     def _preprocess_verilog_for_dreamplace(self, verilog_text):
         bus_ports = {}
+        bus_signals = {}
         lines = []
         changed = False
 
         for line in verilog_text.splitlines():
+            # DREAMPlace's Limbo database does not implement the assignment
+            # callback: even a grammar-supported ``assign NAME = NAME`` causes
+            # its default callback to call exit(0).  Assignments are not part
+            # of the DEF physical connectivity consumed by D2D placement, so
+            # omit single-line continuous assignments from this parser-only
+            # copy of the netlist.
+            if self._VERILOG_ASSIGN_RE.match(line):
+                lines.append("")
+                changed = True
+                continue
+
             match = self._VERILOG_BUS_DECL_RE.match(line)
             if not match:
                 lines.append(line)
@@ -368,6 +408,7 @@ class D2DParams:
                     self._sanitize_bus_bit(base_name, bit) for bit in bits
                 ]
                 scalars.extend(name_scalars)
+                bus_signals[base_name] = list(zip(bits, name_scalars))
                 if kind in ("input", "output", "inout"):
                     bus_ports[base_name] = name_scalars
             lines.append("%s%s %s%s;%s" %
@@ -383,8 +424,74 @@ class D2DParams:
             text, port_changed = self._scalarize_module_ports(text, bus_ports)
             changed = changed or port_changed
 
+        def replace_whole_bus_pin(match):
+            bit_scalars = bus_signals.get(match.group(3))
+            if not bit_scalars:
+                return match.group(0)
+            pin_name = match.group(2)
+            return ",\n\t".join(
+                ".%s(%s)" % (self._sanitize_bus_bit(pin_name, bit), scalar)
+                for bit, scalar in bit_scalars)
+
+        new_text = self._VERILOG_SIMPLE_PIN_RE.sub(replace_whole_bus_pin, text)
+        if new_text != text:
+            changed = True
+            text = new_text
+
+        # Limbo represents literal-connected cell pins with a synthetic
+        # CONSTANT_NET, but DREAMPlace's PlaceDB expects every parsed net to
+        # have a real declaration. Constant pins have no placement connectivity,
+        # so turn them into the floating-pin syntax that Limbo already supports.
+        new_text = self._VERILOG_CONSTANT_PIN_RE.sub(r"\1\2", text)
+        if new_text != text:
+            changed = True
+            text = new_text
+
+        def replace_concat_pin(match):
+            items = [item.strip() for item in match.group(3).split(",")]
+            expanded_items = []
+            for item in items:
+                if not item:
+                    continue
+                literal = self._VERILOG_BASED_LITERAL_RE.fullmatch(item)
+                if literal:
+                    width = int(item.split("'", 1)[0].strip())
+                    expanded_items.extend([None] * width)
+                    continue
+                name_scalars = bus_signals.get(item)
+                if name_scalars:
+                    expanded_items.extend(scalar for _, scalar in name_scalars)
+                else:
+                    if item.startswith("\\"):
+                        # Whitespace terminates an escaped Verilog identifier;
+                        # a following ``[n]`` is an index, not part of the base
+                        # name. Remove only that separator before sanitizing so
+                        # ``\\bus [6]`` maps to the declared ``bus_6_``.
+                        item = re.sub(r"\s+(?=\[\d+\])", "", item)
+                    expanded_items.append(
+                        self._sanitize_dreamplace_identifier(item)
+                        if item.startswith("\\") else item)
+            pin_name = match.group(2)
+            width = len(expanded_items)
+            connections = [
+                ".%s(%s)" % (self._sanitize_bus_bit(pin_name,
+                                                     width - index - 1), net)
+                for index, net in enumerate(expanded_items) if net
+            ]
+            return ",\n\t".join(connections) if connections else ".%s()" % pin_name
+
+        new_text = self._VERILOG_CONCAT_PIN_RE.sub(replace_concat_pin, text)
+        if new_text != text:
+            changed = True
+            text = new_text
+
         def replace_escaped(match):
             return self._sanitize_dreamplace_identifier(match.group(1))
+
+        def replace_escaped_indexed_ref(match):
+            trailing_indices = re.sub(r"\s+", "", match.group(2))
+            return self._sanitize_dreamplace_identifier(match.group(1) +
+                                                        trailing_indices)
 
         def replace_bit(match):
             return self._sanitize_bus_bit(match.group(1), match.group(2))
@@ -392,7 +499,9 @@ class D2DParams:
         def replace_dollar(match):
             return self._sanitize_dreamplace_identifier(match.group(1))
 
-        for pattern, repl in ((self._VERILOG_ESCAPED_IDENT_RE,
+        for pattern, repl in ((self._VERILOG_ESCAPED_INDEXED_REF_RE,
+                               replace_escaped_indexed_ref),
+                              (self._VERILOG_ESCAPED_IDENT_RE,
                                replace_escaped),
                               (self._VERILOG_BIT_NAME_RE, replace_bit),
                               (self._VERILOG_DOLLAR_NAME_RE,
@@ -438,19 +547,53 @@ class D2DParams:
     def _preprocess_def_for_dreamplace(self, def_text):
         changed = False
 
-        def replace_bit(match):
-            return self._sanitize_bus_bit(match.group(1), match.group(2))
+        def replace_indexed_name(match):
+            return self._sanitize_dreamplace_identifier(match.group(1))
 
         def replace_dollar(match):
             return self._sanitize_dreamplace_identifier(match.group(1))
 
-        text = self._DEF_BIT_NAME_RE.sub(replace_bit, def_text)
+        text = self._DEF_INDEXED_NAME_RE.sub(replace_indexed_name, def_text)
         if text != def_text:
             changed = True
         new_text = self._DEF_DOLLAR_NAME_RE.sub(replace_dollar, text)
         if new_text != text:
             changed = True
         return new_text, changed
+
+    def _preprocess_lefs_for_dreamplace(self, lef_inputs):
+        if not self._dreamplace_preprocess_enabled():
+            return list(lef_inputs)
+
+        out_dir = Path(self.run_tmp_dir_root) / "lefdef-dreamplace"
+        outputs = []
+        cache = getattr(self, "_lef_preprocess_cache", {})
+        self._lef_preprocess_cache = cache
+        for lef_input in lef_inputs:
+            key = str(Path(lef_input).resolve())
+            cached = cache.get(key)
+            if cached:
+                outputs.append(cached)
+                continue
+
+            with open(lef_input, "r", encoding="utf-8") as f:
+                lef_text = f.read()
+            preprocessed_lef = self._DEF_INDEXED_NAME_RE.sub(
+                lambda match: self._sanitize_dreamplace_identifier(
+                    match.group(1)), lef_text)
+            if preprocessed_lef == lef_text:
+                output = lef_input
+            else:
+                out_dir.mkdir(parents=True, exist_ok=True)
+                digest = hashlib.sha1(key.encode("utf-8")).hexdigest()[:10]
+                out_lef = out_dir / ("%s__%s.lef" %
+                                     (Path(lef_input).stem, digest))
+                with open(out_lef, "w", encoding="utf-8") as f:
+                    f.write(preprocessed_lef)
+                output = str(out_lef)
+            cache[key] = output
+            outputs.append(output)
+        return outputs
 
     def _preprocess_lefdef_for_dreamplace(self, def_input, verilog_input):
         if (not self._dreamplace_preprocess_enabled() or not def_input
@@ -537,6 +680,9 @@ class D2DParams:
             top_def, top_verilog)
         bottom_def, bottom_verilog = self._preprocess_lefdef_for_dreamplace(
             bottom_def, bottom_verilog)
+        flat_lefs = self._preprocess_lefs_for_dreamplace(flat_lefs)
+        top_lefs = self._preprocess_lefs_for_dreamplace(top_lefs)
+        bottom_lefs = self._preprocess_lefs_for_dreamplace(bottom_lefs)
 
         self._use_lefdef_input(self.flatten_2d, flat_lefs, flat_def,
                                flat_verilog)

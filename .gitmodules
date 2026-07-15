@@ -12,4 +12,4 @@
 
 [submodule "thirdparty/Differentiable-3D-Partitioner"]
 	path = thirdparty/Differentiable-3D-Partitioner
-	url = git@github.com:liW-J/Differentiable-3D-Partitioner.git
+	url = https://anonymous.4open.science/r/Differentiable-3D-Partitioner.git
