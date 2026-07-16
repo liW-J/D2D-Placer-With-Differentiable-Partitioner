@@ -254,6 +254,12 @@ class Differentiable3DPartitionerBase:
 
     def _normalize_balance_config(self, config):
         partitioner_config = config.setdefault("partitioner", {})
+        if partitioner_config.get("ignore_net_degree") is None:
+            # Propagate DREAMPlace's high-fanout threshold into the generated
+            # partitioner YAML. The partitioner also has its own safe default,
+            # but making the value explicit keeps D2D and DREAMPlace aligned.
+            partitioner_config["ignore_net_degree"] = int(
+                self._get_param("ignore_net_degree", default=100))
         balance_config = partitioner_config.setdefault("balance_loss", {})
         threshold = balance_config.get("threshold_factor", 0.7)
         balance_config.setdefault("top_threshold_factor", threshold)
