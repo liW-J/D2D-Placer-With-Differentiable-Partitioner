@@ -308,6 +308,9 @@ class D2Dplacer:
             init_lr = (num / den).item() if den.item() > 1e-12 else \
                 self.params.co_place_lr
         logger.info("co-place init learning rate %.3E", init_lr)
+        # These full-vector learning-rate probes otherwise stay live until the
+        # function returns and overlap the complete Nesterov optimizer state.
+        del obj0, g0, x_minus, obj1, g1, num, den
 
         # mov_node_pos_all has been written into via .data; reset its grad.
         if mov_node_pos_all.grad is not None:
@@ -319,6 +322,9 @@ class D2Dplacer:
             obj_and_grad_fn=obj_and_grad_fn,
             constraint_fn=co.constraint_fn,
             use_bb=True)
+        if mov_node_pos_all.is_cuda:
+            torch.cuda.reset_peak_memory_stats()
+        co.log_memory("optimizer initialized")
 
         # ----- Main loop: nesterov + adaptive density_weight + gamma -----
         # Track best solution by *normalized* overflow (sum of three layers).
@@ -349,7 +355,9 @@ class D2Dplacer:
             # Best-solution book-keeping (use sum to avoid one layer dominating).
             if ov_sum < best_overflow:
                 best_overflow = ov_sum
-                best_pos = mov_node_pos_all.detach().clone()
+                if best_pos is None:
+                    best_pos = torch.empty_like(mov_node_pos_all)
+                best_pos.copy_(mov_node_pos_all.detach())
 
             if it % log_freq == 0 or it == max_iter - 1:
                 d2d_hpwl = float(co.evaluate_d2d_hpwl(mov_node_pos_all))
@@ -366,8 +374,9 @@ class D2Dplacer:
                     co.model_term.gamma.item(),
                     float(cur_top.hpwl.item()), float(cur_bot.hpwl.item()),
                     float(cur_term.hpwl.item()), d2d_hpwl)
+                co.log_memory("iteration %d" % it)
 
-            if plot_freq > 0 and ((it + 1) % 50 == 0
+            if plot_freq > 0 and ((it + 1) % plot_freq == 0
                                   or it == max_iter - 1):
                 co.plot(mov_node_pos_all, it + 1)
 
@@ -466,13 +475,6 @@ class D2Dplacer:
         cur_top = None
         cur_bot = None
         cur_term = None
-        obj0 = None
-        g0 = None
-        x_minus = None
-        obj1 = None
-        g1 = None
-        num = None
-        den = None
         pos_t = None
         pos_term = None
         node_x_out = None

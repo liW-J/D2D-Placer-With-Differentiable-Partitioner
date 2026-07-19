@@ -115,17 +115,41 @@ class OpWrapper(object):
         self.top_die_max_util = self.die_spec.topDieMaxUtil / 100
         self.bottom_die_max_util = self.die_spec.bottomDieMaxUtil / 100
 
-        # 3d-placer set flattened_die size as die_size*2
-        if self.num_tiers == 2:
-            self.die_size_x = self.die_spec.dieSizeX
-            self.die_size_y = self.die_spec.dieSizeY
+        # TXT/3d-placer describes a two-tier die with die_spec.  LEF/DEF,
+        # however, enters DREAMPlace in DBU and is then shifted/scaled (usually
+        # by 1/site_width).  The node sizes below already come from the scaled
+        # PlaceDB, so pairing them with the raw die_spec dimensions produces a
+        # Bookshelf core that is larger by scale_factor**-2 and consequently
+        # trillions of bogus filler nodes.  Keep all LEF/DEF geometry in the
+        # same, scaled coordinate system as node_size_{x,y}.
+        if self.d2d_params.is_txt_input and self.num_tiers == 2:
+            self.die_size_x = float(self.die_spec.dieSizeX)
+            self.die_size_y = float(self.die_spec.dieSizeY)
+            die_size_source = "TXT die_spec"
         else:
-            self.die_size_x = np.mean([
-                data.placedb.xh for data in self.data_tier
-            ]) - np.mean([data.placedb.xl for data in self.data_tier])
-            self.die_size_y = np.mean([
-                data.placedb.yh for data in self.data_tier
-            ]) - np.mean([data.placedb.yl for data in self.data_tier])
+            tier_widths = np.asarray([
+                float(data.placedb.xh) - float(data.placedb.xl)
+                for data in self.data_tier
+            ])
+            tier_heights = np.asarray([
+                float(data.placedb.yh) - float(data.placedb.yl)
+                for data in self.data_tier
+            ])
+            if (tier_widths.size == 0 or tier_heights.size == 0
+                    or not np.all(np.isfinite(tier_widths))
+                    or not np.all(np.isfinite(tier_heights))
+                    or np.any(tier_widths <= 0) or np.any(tier_heights <= 0)):
+                raise ValueError(
+                    "invalid scaled tier core dimensions: widths=%s heights=%s"
+                    % (tier_widths.tolist(), tier_heights.tolist()))
+            self.die_size_x = float(np.mean(tier_widths))
+            self.die_size_y = float(np.mean(tier_heights))
+            die_size_source = "scaled DREAMPlace tier core"
+
+        logging.info(
+            "D2D geometry: die_size=(%.6g, %.6g), source=%s, input_format=%s",
+            self.die_size_x, self.die_size_y, die_size_source,
+            self.d2d_params.input_format)
 
         self.row_height = [data.placedb.row_height for data in self.data_tier]
         self.partition_aux_dir = os.path.dirname(
@@ -633,12 +657,11 @@ class OpWrapper(object):
                 )
                 tier = self.hmetis_op()
 
-            graph_cutsize = GraphCutsize(
-                self.d2d_params.run_tmp_dir_root + "/" + self.case_name +
-                ".hgr", self.d2d_params.run_tmp_dir_root + "/" +
-                self.case_name + ".hgr.part.2")
-
-            new_clique_cut, new_cutnet = graph_cutsize.calculate()
+            hgr_path = (self.d2d_params.run_tmp_dir_root + "/" +
+                        self.case_name + ".hgr")
+            part_path = hgr_path + ".part.2"
+            new_clique_cut, new_cutnet = GraphCutsize.calculate_from_files(
+                hgr_path, part_path)
             logger.info("clique graph cutsize: %d, hyperedge cutsize: %d" %
                         (new_clique_cut, new_cutnet))
 

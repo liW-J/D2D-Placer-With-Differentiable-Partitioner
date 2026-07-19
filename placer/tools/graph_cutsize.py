@@ -1,7 +1,5 @@
 from typing import List, Tuple, Dict
 from collections import defaultdict
-import os
-import torch
 
 
 class GraphCutsize:
@@ -174,16 +172,93 @@ class GraphCutsize:
         return clique_cut_current(), cutnet_current()
 
     def calculate(self):
-
-        # fast method
         cut_fast = self.clique_cutsize_fast(self.hyperedges, self.parts)
-
-        # explicitly build clique graph
-        G = self.build_clique_graph(self.hyperedges)
-        cut_graph = self.cutsize_from_clique_graph(G, self.parts)
         cutnet = self.hypergraph_cutsize_cutnet(self.hyperedges, self.parts)
-
         return cut_fast, cutnet
+
+    @classmethod
+    def calculate_from_files(cls, hgr_path: str,
+                             part_path: str) -> Tuple[int, int]:
+        """Calculate cut metrics without materializing the hypergraph.
+
+        The normal constructor retains every hyperedge as Python lists because
+        the greedy refinement methods need random access.  Placement only needs
+        the two final metrics, so stream the HGR once and keep the partition in
+        a compact bytearray instead.  This also avoids constructing the much
+        larger explicit clique graph.
+        """
+        with open(hgr_path, "r") as hgr_file:
+            header_line = None
+            for line in hgr_file:
+                stripped = line.strip()
+                if stripped and not stripped.startswith("%"):
+                    header_line = stripped
+                    break
+
+            if header_line is None:
+                raise ValueError(f"empty file: {hgr_path}")
+
+            header = header_line.split()
+            if len(header) < 2:
+                raise ValueError(f"invalid header: {header_line}")
+            num_hyperedges = int(header[0])
+            num_vertices = int(header[1])
+            parts = cls._read_partition_compact(part_path, num_vertices)
+
+            clique_cut = 0
+            cutnet = 0
+            actual_hyperedges = 0
+            for line in hgr_file:
+                stripped = line.strip()
+                if not stripped or stripped.startswith("%"):
+                    continue
+
+                num_part0 = 0
+                num_pins = 0
+                for token in stripped.split():
+                    vertex = int(token) - 1
+                    if vertex < 0 or vertex >= num_vertices:
+                        raise ValueError(
+                            f"vertex id {vertex + 1} is outside [1, "
+                            f"{num_vertices}] in {hgr_path}")
+                    num_part0 += parts[vertex] == 0
+                    num_pins += 1
+
+                if num_pins == 0:
+                    continue
+                actual_hyperedges += 1
+                num_part1 = num_pins - num_part0
+                if num_part0 and num_part1:
+                    clique_cut += num_part0 * num_part1
+                    cutnet += 1
+
+        if actual_hyperedges != num_hyperedges:
+            raise ValueError(
+                f"number of hyperedges in file ({actual_hyperedges}) does not "
+                "match the number of hyperedges declared in the header "
+                f"({num_hyperedges})")
+        return clique_cut, cutnet
+
+    @staticmethod
+    def _read_partition_compact(part_path: str,
+                                expect_n: int) -> bytearray:
+        parts = bytearray()
+        with open(part_path, "r") as part_file:
+            for line in part_file:
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                value = int(stripped)
+                if value not in (0, 1):
+                    raise ValueError(
+                        f"partition value must be 0/1, actual: {value}")
+                parts.append(value)
+
+        if len(parts) != expect_n:
+            raise ValueError(
+                f"partition file line number ({len(parts)}) does not match "
+                f"the number of nodes ({expect_n})")
+        return parts
 
     def read_hgr(self, hgr_path: str) -> Tuple[int, List[List[int]]]:
         """
@@ -193,26 +268,30 @@ class GraphCutsize:
         - hyperedges: List[List[int]], each hyperedge is a list of 0-based node indices
         """
         hyperedges: List[List[int]] = []
-        with open(hgr_path, "r") as f:
-            lines = [
-                ln.strip() for ln in f
-                if ln.strip() and not ln.strip().startswith("%")
-            ]
+        with open(hgr_path, "r") as hgr_file:
+            header_line = None
+            for line in hgr_file:
+                stripped = line.strip()
+                if stripped and not stripped.startswith("%"):
+                    header_line = stripped
+                    break
 
-        if not lines:
-            raise ValueError(f"empty file: {hgr_path}")
+            if header_line is None:
+                raise ValueError(f"empty file: {hgr_path}")
 
-        header = lines[0].split()
-        if len(header) < 2:
-            raise ValueError(f"invalid header: {lines[0]}")
-        num_hyperedges = int(header[0])
-        num_vertices = int(header[1])
+            header = header_line.split()
+            if len(header) < 2:
+                raise ValueError(f"invalid header: {header_line}")
+            num_hyperedges = int(header[0])
+            num_vertices = int(header[1])
 
-        # read subsequent lines of hyperedges (1-based -> 0-based)
-        for ln in lines[1:]:
-            he = [int(x) - 1 for x in ln.split()]
-            if he:
-                hyperedges.append(he)
+            # Read subsequent hyperedges without first duplicating the entire
+            # text file in a list of strings.
+            for line in hgr_file:
+                stripped = line.strip()
+                if not stripped or stripped.startswith("%"):
+                    continue
+                hyperedges.append([int(x) - 1 for x in stripped.split()])
 
         # tolerance: if the number of lines in the file does not match the number of hyperedges declared in the header, use the file content
         if len(hyperedges) != num_hyperedges:

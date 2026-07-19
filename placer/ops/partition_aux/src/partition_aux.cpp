@@ -7,7 +7,9 @@
  * @Description: partition
  */
 #include <pybind11/pybind11.h>
+#include <chrono>
 #include <cctype>
+#include <unordered_map>
 // dreamplace
 #include "utility/src/torch.h"
 #include "utility/src/utils.h"
@@ -93,77 +95,89 @@ void terminal_insert(const int *tier, const T *pin_x, const T *pin_y,
   LOG(WARN, "terminal_insert");
 
   int terminal_count = 0;
+  vector<T> max_x(num_tiers);
+  vector<T> min_x(num_tiers);
+  vector<T> max_y(num_tiers);
+  vector<T> min_y(num_tiers);
+  std::unordered_map<std::string, int> terminal_name_to_id;
+  if (terminal_legalize_flag) {
+    terminal_name_to_id.reserve(num_terminals);
+    for (int terminal_id = 0; terminal_id < num_terminals; ++terminal_id) {
+      terminal_name_to_id.emplace(terminal_names[terminal_id], terminal_id);
+    }
+  }
+
   for (int net_id = 0; net_id < num_nets; net_id++) {
-    vector<T> max_x(num_tiers, -std::numeric_limits<T>::max());
-    vector<T> min_x(num_tiers, std::numeric_limits<T>::max());
-    vector<T> max_y(num_tiers, -std::numeric_limits<T>::max());
-    vector<T> min_y(num_tiers, std::numeric_limits<T>::max());
-    if (cut_net_mask[net_id]) {
-      const std::string net_name = bookshelfNetName(net_names[net_id], net_id);
-      for (int tier_id = 0; tier_id < num_tiers; ++tier_id) {
-        for (int pin_id = netpin_start[net_id];
-             pin_id < netpin_start[net_id + 1]; pin_id++) {
-          int index_pin = num_pins * tier_id + flat_netpin[pin_id];
-          int node_id = pin2node_map[flat_netpin[pin_id]];
-          if (node_id < 0 || node_id >= num_movable_nodes) {
-            continue;
-          }
-          if (tier[node_id] == tier_id) {
-            max_x[tier_id] = std::max(max_x[tier_id], pin_x[index_pin]);
-            min_x[tier_id] = std::min(min_x[tier_id], pin_x[index_pin]);
-            max_y[tier_id] = std::max(max_y[tier_id], pin_y[index_pin]);
-            min_y[tier_id] = std::min(min_y[tier_id], pin_y[index_pin]);
-          }
-        }
+    if (!cut_net_mask[net_id]) {
+      continue;
+    }
+    std::fill(max_x.begin(), max_x.end(),
+              -std::numeric_limits<T>::max());
+    std::fill(min_x.begin(), min_x.end(),
+              std::numeric_limits<T>::max());
+    std::fill(max_y.begin(), max_y.end(),
+              -std::numeric_limits<T>::max());
+    std::fill(min_y.begin(), min_y.end(),
+              std::numeric_limits<T>::max());
+
+    const std::string net_name = bookshelfNetName(net_names[net_id], net_id);
+    // Each pin belongs to exactly one tier.  A single pass is sufficient;
+    // the previous implementation traversed every net once per tier.
+    for (int pin_id = netpin_start[net_id];
+         pin_id < netpin_start[net_id + 1]; pin_id++) {
+      const int original_pin_id = flat_netpin[pin_id];
+      const int node_id = pin2node_map[original_pin_id];
+      if (node_id < 0 || node_id >= num_movable_nodes) {
+        continue;
       }
-      // get inster bonding
-      auto inner_min_x_it = max_element(min_x.begin(), min_x.end());
-      auto inner_max_x_it = min_element(max_x.begin(), max_x.end());
-      auto inner_min_y_it = max_element(min_y.begin(), min_y.end());
-      auto inner_max_y_it = min_element(max_y.begin(), max_y.end());
-      T inner_min_x = *inner_min_x_it;
-      T inner_max_x = *inner_max_x_it;
-      T inner_min_y = *inner_min_y_it;
-      T inner_max_y = *inner_max_y_it;
-      // LOG(WARN,
-      //     "inner_min_x: %f, inner_max_x: %f, inner_min_y: %f, inner_max_y:
-      //     %f", inner_min_x, inner_max_x, inner_min_y, inner_max_y);
-      // Bonding center from cross-tier pin bbox; DreamPlace pos is left-bottom.
-      T center_x = (inner_min_x + inner_max_x) / 2;
-      T center_y = (inner_min_y + inner_max_y) / 2;
-      const float pin_ox = static_cast<float>(terminal_size_x) / 2.f;
-      const float pin_oy = static_cast<float>(terminal_size_y) / 2.f;
+      const int tier_id = tier[node_id];
+      if (tier_id < 0 || tier_id >= num_tiers) {
+        continue;
+      }
+      const int index_pin = num_pins * tier_id + original_pin_id;
+      max_x[tier_id] = std::max(max_x[tier_id], pin_x[index_pin]);
+      min_x[tier_id] = std::min(min_x[tier_id], pin_x[index_pin]);
+      max_y[tier_id] = std::max(max_y[tier_id], pin_y[index_pin]);
+      min_y[tier_id] = std::min(min_y[tier_id], pin_y[index_pin]);
+    }
 
-      terminal_count++;
-      for (int tier_id = 0; tier_id < num_tiers; ++tier_id) {
-        // LOG(INFO, "terminal_count: %d", terminal_count);
+    const T inner_min_x = *max_element(min_x.begin(), min_x.end());
+    const T inner_max_x = *min_element(max_x.begin(), max_x.end());
+    const T inner_min_y = *max_element(min_y.begin(), min_y.end());
+    const T inner_max_y = *min_element(max_y.begin(), max_y.end());
+    // Bonding center from cross-tier pin bbox; DREAMPlace pos is left-bottom.
+    const T center_x = (inner_min_x + inner_max_x) / 2;
+    const T center_y = (inner_min_y + inner_max_y) / 2;
+    const float pin_ox = static_cast<float>(terminal_size_x) / 2.f;
+    const float pin_oy = static_cast<float>(terminal_size_y) / 2.f;
 
-        if (terminal_legalize_flag) {
-          int x, y;
-          // LOG(INFO, "net_names[net_id]: %s", net_names[net_id]);
-          for (int terminal_id = 0; terminal_id < num_terminals;
-               ++terminal_id) {
-            if (net_name == terminal_names[terminal_id]) {
-              // dp_terminal pos is outer-box left-bottom; tier NI is terminalSize
-              // box with the same bonding center -> shift by spacing/2.
-              x = terminal_x[terminal_id] + terminal_spacing / 2;
-              y = terminal_y[terminal_id] + terminal_spacing / 2;
-              // LOG(INFO, "net_id: %d, terminal_count: %d, i: %d", net_id,
-              //     terminal_count, i);
-              break;
-            }
-          }
+    terminal_count++;
+    for (int tier_id = 0; tier_id < num_tiers; ++tier_id) {
+      if (terminal_legalize_flag) {
+        const auto found = terminal_name_to_id.find(net_name);
+        if (found != terminal_name_to_id.end()) {
+          const int terminal_id = found->second;
+          // dp_terminal pos is outer-box left-bottom; tier NI is terminalSize
+          // box with the same bonding center -> shift by spacing/2.
+          const int x = terminal_x[terminal_id] + terminal_spacing / 2;
+          const int y = terminal_y[terminal_id] + terminal_spacing / 2;
           auxListRef[tier_id].add_node(net_name, terminal_size_x,
                                        terminal_size_y, x, y, TERMINAL_NI);
         } else {
+          LOG(WARN, "terminal %s is missing from legalized terminal map; "
+                    "fall back to intersection center", net_name.c_str());
           const T x = center_x - static_cast<T>(terminal_size_x) / 2;
           const T y = center_y - static_cast<T>(terminal_size_y) / 2;
           auxListRef[tier_id].add_node(net_name, terminal_size_x,
                                        terminal_size_y, x, y, TERMINAL_NI);
-          // LOG(DEBUG, "Intersection Center: (%f, %f)", center_x, center_y);
         }
-        auxListRef[tier_id].add_pin(net_name, net_name, 'O', pin_ox, pin_oy);
+      } else {
+        const T x = center_x - static_cast<T>(terminal_size_x) / 2;
+        const T y = center_y - static_cast<T>(terminal_size_y) / 2;
+        auxListRef[tier_id].add_node(net_name, terminal_size_x,
+                                     terminal_size_y, x, y, TERMINAL_NI);
       }
+      auxListRef[tier_id].add_pin(net_name, net_name, 'O', pin_ox, pin_oy);
     }
   }
 }
@@ -195,58 +209,86 @@ void partitionAuxLauncher(
     aux_list[tier_id] = AUX(aux_dir, tier_name);
   }
 
+  // AUX::check_node_exist scans every previously inserted node.  Calling it
+  // for every pin makes tier Bookshelf construction quadratic on large
+  // designs.  Node ids are dense here, so two compact marker arrays provide
+  // O(1) node-existence and per-net duplicate-pin checks.
+  vector<unsigned char> node_added(num_movable_nodes, 0);
+  vector<int> node_seen_in_net(num_movable_nodes, -1);
+  vector<int> node_count(num_tiers, 0);
+  vector<unsigned char> net_added(num_tiers, 0);
+  const auto aux_build_begin = std::chrono::steady_clock::now();
+  LOG(INFO, "building tier AUX topology for %d nets, %d pins, %d nodes",
+      num_nets, num_pins, num_movable_nodes);
+
   for (int net_id = 0; net_id < num_nets; ++net_id) {
+    if (net_id > 0 && net_id % 500000 == 0) {
+      const double seconds = std::chrono::duration<double>(
+          std::chrono::steady_clock::now() - aux_build_begin).count();
+      LOG(INFO, "tier AUX topology progress: %d/%d nets (%.1f s)", net_id,
+          num_nets, seconds);
+    }
     const std::string net_name = bookshelfNetName(net_names[net_id], net_id);
     int num_nodes_in_net = 0;
-    vector<int> node_count(num_tiers, 0);
-    for (int tier_id = 0; tier_id < num_tiers; ++tier_id) {
-      for (int pin_id = netpin_start[net_id]; pin_id < netpin_start[net_id + 1];
-           ++pin_id) {
-        int node_id = pin2node_map[flat_netpin[pin_id]];
-        if (node_id < 0 || node_id >= num_movable_nodes) {
-          continue;
-        }
-        if (tier[node_id] == tier_id) {
-          int index_node = num_movable_nodes * tier_id + node_id;
-          node_count[tier_id]++;
-          num_nodes_in_net++;
-          if (!aux_list[tier_id].check_net_exist(net_name)) {
-            aux_list[tier_id].add_net(net_name);
-          }
-          const std::string node_name = bookshelfNodeName(node_names[node_id], node_id);
-          if (!aux_list[tier_id].check_node_exist(node_name)) {
-            // LOG(DEBUG, "node %d, tier %d, node_size_x %f, node_size_y %f",
-            // node_id, tier_id, node_size_x[index], node_size_y[index]);
-            int node_pos_x = (pos_2d_x == nullptr) ? 0 : pos_2d_x[node_id];
-            int node_pos_y = (pos_2d_y == nullptr) ? 0 : pos_2d_y[node_id];
-            aux_list[tier_id].add_node(
-                node_name, node_size_x[index_node],
-                node_size_y[index_node], node_pos_x, node_pos_y, MOVABLE);
-          }
-          if (!aux_list[tier_id].check_pin_exist(net_name, node_name)) {
-            int index_pin = num_pins * tier_id + flat_netpin[pin_id];
-            (pin_id == netpin_start[net_id]) ? IO_type = 'I' : IO_type = 'O';
-            // unable center func type, use explicit type
-            // because pin_offset_x and pin_offset_y are relative to the node
-            // center in dreamplace so we need to subtract the node_size / 2
-            // when add pin to aux file
-            aux_list[tier_id].add_pin(
-                net_name, node_name, IO_type,
-                static_cast<float>(pin_offset_x[index_pin] -
-                                   ceil(node_size_x[index_node] / 2)),
-                static_cast<float>(pin_offset_y[index_pin] -
-                                   ceil(node_size_y[index_node] / 2)));
-          }
-        }
+    std::fill(node_count.begin(), node_count.end(), 0);
+    std::fill(net_added.begin(), net_added.end(), 0);
+    for (int pin_id = netpin_start[net_id];
+         pin_id < netpin_start[net_id + 1]; ++pin_id) {
+      const int original_pin_id = flat_netpin[pin_id];
+      const int node_id = pin2node_map[original_pin_id];
+      if (node_id < 0 || node_id >= num_movable_nodes ||
+          node_seen_in_net[node_id] == net_id) {
+        continue;
       }
+      node_seen_in_net[node_id] = net_id;
+
+      const int tier_id = tier[node_id];
+      if (tier_id < 0 || tier_id >= num_tiers) {
+        continue;
+      }
+      const int index_node = num_movable_nodes * tier_id + node_id;
+      node_count[tier_id]++;
+      num_nodes_in_net++;
+
+      if (!net_added[tier_id]) {
+        aux_list[tier_id].add_net(net_name);
+        net_added[tier_id] = 1;
+      }
+      const std::string node_name = bookshelfNodeName(node_names[node_id],
+                                                       node_id);
+      if (!node_added[node_id]) {
+        const int node_pos_x =
+            (pos_2d_x == nullptr) ? 0 : pos_2d_x[node_id];
+        const int node_pos_y =
+            (pos_2d_y == nullptr) ? 0 : pos_2d_y[node_id];
+        aux_list[tier_id].add_node(node_name, node_size_x[index_node],
+                                   node_size_y[index_node], node_pos_x,
+                                   node_pos_y, MOVABLE);
+        node_added[node_id] = 1;
+      }
+
+      const int index_pin = num_pins * tier_id + original_pin_id;
+      IO_type = (pin_id == netpin_start[net_id]) ? 'I' : 'O';
+      // pin offsets are relative to the node center in DREAMPlace; AUX uses
+      // offsets relative to the lower-left corner.
+      aux_list[tier_id].add_pin(
+          net_name, node_name, IO_type,
+          static_cast<float>(pin_offset_x[index_pin] -
+                             ceil(node_size_x[index_node] / 2)),
+          static_cast<float>(pin_offset_y[index_pin] -
+                             ceil(node_size_y[index_node] / 2)));
     }
     // if all nodes are in the same tier, not cut
-    if (std::find(node_count.begin(), node_count.end(), num_nodes_in_net) ==
+    if (num_nodes_in_net > 0 &&
+        std::find(node_count.begin(), node_count.end(), num_nodes_in_net) ==
         node_count.end()) {
       cut_net_mask[net_id] = 1;
       // LOG(DEBUG, "cut.");
     }
   }
+  const double aux_build_seconds = std::chrono::duration<double>(
+      std::chrono::steady_clock::now() - aux_build_begin).count();
+  LOG(INFO, "tier AUX topology built in %.1f s", aux_build_seconds);
 
   if (terminal_instert_flag) {
     terminal_insert(tier, pin_x, pin_y, flat_netpin, netpin_start, pin2node_map,

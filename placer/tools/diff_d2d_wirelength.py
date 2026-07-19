@@ -20,9 +20,9 @@ penalty + diagonal preconditioner. The three per-placedb gradients are
 then scattered back to ``mov_node_pos_all`` so that a single Nesterov
 optimizer steps all movable cells / terminals / fillers at once.
 
-Note that fillers must be part of the joint optimizer state -- if they
-were left static, the per-placedb density landscape would be skewed by
-randomly initialized fillers and ePlace cannot converge.
+Fillers remain part of the joint optimizer state.  Leaving them static would
+skew the per-placedb density landscape; memory reduction is instead obtained
+by compacting net topology and shortening tensor lifetimes.
 
 The same ``mov_node_pos_all`` is shared by three placedbs:
   * dp_tier[0]: x/y_top_mov drives movable cells; x/y_term_mov drives
@@ -34,12 +34,118 @@ The same ``mov_node_pos_all`` is shared by three placedbs:
 
 import logging
 import os
+import numpy as np
 import torch
 
 import dreamplace.PlaceObj as PlaceObj
 import dreamplace.EvalMetrics as EvalMetrics
+import dreamplace.ops.hpwl.hpwl as hpwl
 
 logger = logging.getLogger(__name__)
+
+
+def _compact_net_arrays(placedb, ignore_net_degree):
+    """Build a dense pin topology containing only valid low-fanout nets.
+
+    DREAMPlace normally retains every pin and applies a net mask inside the
+    wirelength kernel.  That avoids the arithmetic for high-fanout nets, but
+    it does not avoid copying/storing their topology or constructing their pin
+    positions.  Co-placement owns short-lived placedbs, so it can safely use a
+    compact topology for the duration of the joint global-placement stage.
+
+    The returned pin ids are renumbered to ``[0, num_kept_pins)``.  Pin offsets
+    and pin-to-node maps are gathered in that same order.
+    """
+    starts64 = np.asarray(placedb.flat_net2pin_start_map, dtype=np.int64)
+    degrees64 = starts64[1:] - starts64[:-1]
+    keep_nets = np.logical_and(degrees64 >= 2,
+                               degrees64 < int(ignore_net_degree))
+    kept_net_ids = np.flatnonzero(keep_nets)
+    kept_degrees64 = degrees64[keep_nets]
+
+    # flat_net2pin_map is ordered by net.  Expanding only a boolean mask keeps
+    # the temporary construction on host memory and avoids a second full GPU
+    # topology while the compact maps are being assembled.
+    keep_pin_slots = np.repeat(keep_nets, degrees64)
+    original_flat_net2pin = np.asarray(placedb.flat_net2pin_map)
+    selected_pin_ids = original_flat_net2pin[keep_pin_slots].astype(
+        np.int64, copy=False)
+
+    num_kept_pins = int(selected_pin_ids.size)
+    num_kept_nets = int(kept_net_ids.size)
+    compact_starts = np.empty(num_kept_nets + 1, dtype=np.int32)
+    compact_starts[0] = 0
+    if num_kept_nets:
+        np.cumsum(kept_degrees64, dtype=np.int64,
+                  out=compact_starts[1:])
+
+    compact_flat_net2pin = np.arange(num_kept_pins, dtype=np.int32)
+    compact_pin2net = np.repeat(
+        np.arange(num_kept_nets, dtype=np.int32), kept_degrees64)
+    compact_pin2node = np.asarray(
+        placedb.pin2node_map)[selected_pin_ids].astype(np.int32, copy=False)
+    compact_net_weights = np.asarray(placedb.net_weights)[kept_net_ids]
+    compact_pin_offset_x = np.asarray(
+        placedb.pin_offset_x)[selected_pin_ids]
+    compact_pin_offset_y = np.asarray(
+        placedb.pin_offset_y)[selected_pin_ids]
+
+    num_nodes = int(placedb.num_nodes)
+    pin_counts = np.bincount(compact_pin2node,
+                             minlength=num_nodes).astype(np.float32,
+                                                        copy=False)
+    pin_net_weights = compact_net_weights[compact_pin2net]
+    node_pin_weights = np.bincount(
+        compact_pin2node,
+        weights=pin_net_weights,
+        minlength=num_nodes).astype(compact_net_weights.dtype, copy=False)
+
+    return {
+        "flat_net2pin_map": compact_flat_net2pin,
+        "flat_net2pin_start_map": compact_starts,
+        "pin2net_map": compact_pin2net,
+        "pin2node_map": compact_pin2node,
+        "pin_offset_x": compact_pin_offset_x,
+        "pin_offset_y": compact_pin_offset_y,
+        "net_weights": compact_net_weights,
+        "pin_counts": pin_counts,
+        "node_pin_weights": node_pin_weights,
+        "original_num_nets": int(degrees64.size),
+        "original_num_pins": int(original_flat_net2pin.size),
+        "kept_num_nets": num_kept_nets,
+        "kept_num_pins": num_kept_pins,
+    }
+
+
+class _CompactPinPos(object):
+    """Autograd-friendly pin-position gather for a compact pin topology."""
+
+    def __init__(self, pin2node_map, pin_offset_x, pin_offset_y):
+        # index_select requires int64 indices.  Keeping the converted map here
+        # avoids converting a multi-million-entry tensor on every objective.
+        self.pin2node_map = pin2node_map.long()
+        self.pin_offset_x = pin_offset_x
+        self.pin_offset_y = pin_offset_y
+
+    def __call__(self, pos):
+        num_nodes = pos.numel() // 2
+        pin_x = torch.index_select(pos[:num_nodes], 0,
+                                   self.pin2node_map).add(
+                                       self.pin_offset_x)
+        pin_y = torch.index_select(pos[num_nodes:], 0,
+                                   self.pin2node_map).add(
+                                       self.pin_offset_y)
+        return torch.cat((pin_x, pin_y))
+
+
+class _CachedPinWeightSum(object):
+    """Return the static low-fanout per-node net-weight sum."""
+
+    def __init__(self, node_pin_weights):
+        self.node_pin_weights = node_pin_weights
+
+    def __call__(self, _net_weights):
+        return self.node_pin_weights
 
 
 class D2DCoPlace(object):
@@ -137,6 +243,16 @@ class D2DCoPlace(object):
         self._off_bot_fil = nt + nb + ne + ft
         self._off_term_fil = nt + nb + ne + ft + fb
 
+        ignore_net_degree = int(
+            getattr(self.params, "co_place_ignore_net_degree",
+                    getattr(self.params_top, "ignore_net_degree", 100)))
+        self._install_compact_topology(self.dp_top, "top",
+                                       ignore_net_degree)
+        self._install_compact_topology(self.dp_bot, "bot",
+                                       ignore_net_degree)
+        self._install_compact_topology(self.dp_term, "term",
+                                       ignore_net_degree)
+
         self._build_placeobjs()
 
         # eval_ops dicts consumed by EvalMetrics.evaluate
@@ -155,6 +271,115 @@ class D2DCoPlace(object):
             "overflow":
             self.dp_term.basic_place.op_collections.density_overflow_op,
         }
+
+        logger.info(
+            "co-place variables: movable(top/bot/term)=%d/%d/%d, "
+            "fillers=%d/%d/%d, joint=%d coordinates", self.n_top_mov,
+            self.n_bot_mov, self.n_term_mov, self.n_top_fil, self.n_bot_fil,
+            self.n_term_fil, self._half * 2)
+        self.log_memory("constructed")
+
+    def _install_compact_topology(self, dp, name, ignore_net_degree):
+        """Replace a co-place layer's GPU net data with low-fanout topology."""
+        placedb = dp.placedb
+        data = dp.basic_place.data_collections
+        ops = dp.basic_place.op_collections
+        device = data.pos[0].device
+        compact = _compact_net_arrays(placedb, ignore_net_degree)
+
+        def tensor(array, dtype=None):
+            value = torch.from_numpy(np.ascontiguousarray(array)).to(device)
+            return value.to(dtype=dtype) if dtype is not None else value
+
+        data.flat_net2pin_map = tensor(compact["flat_net2pin_map"])
+        data.flat_net2pin_start_map = tensor(
+            compact["flat_net2pin_start_map"])
+        data.pin2net_map = tensor(compact["pin2net_map"])
+        data.pin2node_map = tensor(compact["pin2node_map"])
+        data.pin_offset_x = tensor(compact["pin_offset_x"],
+                                   data.pos[0].dtype)
+        data.pin_offset_y = tensor(compact["pin_offset_y"],
+                                   data.pos[0].dtype)
+        data.net_weights = tensor(compact["net_weights"], data.pos[0].dtype)
+        data.net_mask_all = torch.ones(compact["kept_num_nets"],
+                                       dtype=torch.uint8,
+                                       device=device)
+        data.net_mask_ignore_large_degrees = data.net_mask_all
+        data.pin_mask_ignore_fixed_macros = (
+            data.pin2node_map >= placedb.num_movable_nodes)
+        data.pin_weights = tensor(compact["pin_counts"], data.pos[0].dtype)
+        data.num_pins_in_nodes = data.pin_weights
+
+        compact_pin_pos = _CompactPinPos(data.pin2node_map,
+                                         data.pin_offset_x,
+                                         data.pin_offset_y)
+        compact_hpwl = hpwl.HPWL(
+            flat_netpin=data.flat_net2pin_map,
+            netpin_start=data.flat_net2pin_start_map,
+            pin2net_map=data.pin2net_map,
+            net_weights=data.net_weights,
+            net_mask=data.net_mask_all,
+            algorithm="net-by-net")
+
+        def compact_hpwl_op(pos):
+            return compact_hpwl(compact_pin_pos(pos))
+
+        ops.pin_pos_op = compact_pin_pos
+        ops.hpwl_op = compact_hpwl_op
+        ops.pws_op = _CachedPinWeightSum(
+            tensor(compact["node_pin_weights"], data.pos[0].dtype))
+
+        # These BasicPlace operators are not used during co-placement and keep
+        # references to the original full topology.  The next die-by-die stage
+        # rebuilds its BasicPlace instance, so releasing them here is safe.
+        for attr in ("legality_check_op", "legalize_op",
+                     "individual_legalize_op", "macro_legalize_op",
+                     "detailed_place_op", "timing_op", "gift_init_op",
+                     "route_utilization_map_op", "pin_utilization_map_op",
+                     "nctugr_congestion_map_op", "adjust_node_area_op"):
+            if hasattr(ops, attr):
+                setattr(ops, attr, None)
+
+        # pin_pos and preconditioning no longer need node-to-pin adjacency.
+        data.flat_node2pin_map = torch.empty(0,
+                                             dtype=torch.int32,
+                                             device=device)
+        data.flat_node2pin_start_map = torch.empty(0,
+                                                   dtype=torch.int32,
+                                                   device=device)
+
+        removed_nets = (compact["original_num_nets"]
+                        - compact["kept_num_nets"])
+        removed_pins = (compact["original_num_pins"]
+                        - compact["kept_num_pins"])
+        logger.info(
+            "co-place %s compact topology: nets %d -> %d (removed %d), "
+            "pins %d -> %d (removed %d), ignore_net_degree=%d", name,
+            compact["original_num_nets"], compact["kept_num_nets"],
+            removed_nets, compact["original_num_pins"],
+            compact["kept_num_pins"], removed_pins, ignore_net_degree)
+
+    @staticmethod
+    def log_memory(stage):
+        """Log current process RSS and CUDA allocator state."""
+        rss_gib = float("nan")
+        try:
+            with open("/proc/self/status", "r", encoding="utf-8") as stream:
+                for line in stream:
+                    if line.startswith("VmRSS:"):
+                        rss_gib = int(line.split()[1]) / (1024.0 * 1024.0)
+                        break
+        except OSError:
+            pass
+        if torch.cuda.is_available():
+            logger.info(
+                "co-place memory [%s]: RSS %.2f GiB, CUDA alloc/reserved/peak "
+                "%.2f/%.2f/%.2f GiB", stage, rss_gib,
+                torch.cuda.memory_allocated() / 2**30,
+                torch.cuda.memory_reserved() / 2**30,
+                torch.cuda.max_memory_allocated() / 2**30)
+        else:
+            logger.info("co-place memory [%s]: RSS %.2f GiB", stage, rss_gib)
 
     # ------------------------------------------------------------------
     # PlaceObj construction
@@ -206,33 +431,47 @@ class D2DCoPlace(object):
             top_pos = self.dp_top.basic_place.data_collections.pos[0]
             bot_pos = self.dp_bot.basic_place.data_collections.pos[0]
             term_pos = self.dp_term.basic_place.data_collections.pos[0]
+            mov = top_pos.new_empty(self._half * 2)
+            H = self._half
 
-            # x parts
-            x_top_mov = top_pos[:self.n_top_mov].clone()
-            x_bot_mov = bot_pos[:self.n_bot_mov].clone()
-            x_term_mov = term_pos[:self.n_term_mov].clone()
-            x_top_fil = top_pos[self.n_top_phys:self.n_top_total].clone()
-            x_bot_fil = bot_pos[self.n_bot_phys:self.n_bot_total].clone()
-            x_term_fil = term_pos[self.n_term_phys:self.n_term_total].clone()
+            mov[self._off_top_mov:self._off_top_mov + self.n_top_mov].copy_(
+                top_pos[:self.n_top_mov])
+            mov[self._off_bot_mov:self._off_bot_mov + self.n_bot_mov].copy_(
+                bot_pos[:self.n_bot_mov])
+            mov[self._off_term_mov:self._off_term_mov + self.n_term_mov].copy_(
+                term_pos[:self.n_term_mov])
+            mov[self._off_top_fil:self._off_top_fil + self.n_top_fil].copy_(
+                top_pos[self.n_top_phys:self.n_top_total])
+            mov[self._off_bot_fil:self._off_bot_fil + self.n_bot_fil].copy_(
+                bot_pos[self.n_bot_phys:self.n_bot_total])
+            mov[self._off_term_fil:self._off_term_fil + self.n_term_fil].copy_(
+                term_pos[self.n_term_phys:self.n_term_total])
 
-            # y parts
-            y_top_mov = top_pos[self.n_top_total:self.n_top_total
-                                + self.n_top_mov].clone()
-            y_bot_mov = bot_pos[self.n_bot_total:self.n_bot_total
-                                + self.n_bot_mov].clone()
-            y_term_mov = term_pos[self.n_term_total:self.n_term_total
-                                  + self.n_term_mov].clone()
-            y_top_fil = top_pos[self.n_top_total
-                                + self.n_top_phys:self.n_top_total * 2].clone()
-            y_bot_fil = bot_pos[self.n_bot_total
-                                + self.n_bot_phys:self.n_bot_total * 2].clone()
-            y_term_fil = term_pos[self.n_term_total + self.n_term_phys:
-                                  self.n_term_total * 2].clone()
+            mov[H + self._off_top_mov:H + self._off_top_mov
+                + self.n_top_mov].copy_(
+                    top_pos[self.n_top_total:self.n_top_total
+                            + self.n_top_mov])
+            mov[H + self._off_bot_mov:H + self._off_bot_mov
+                + self.n_bot_mov].copy_(
+                    bot_pos[self.n_bot_total:self.n_bot_total
+                            + self.n_bot_mov])
+            mov[H + self._off_term_mov:H + self._off_term_mov
+                + self.n_term_mov].copy_(
+                    term_pos[self.n_term_total:self.n_term_total
+                             + self.n_term_mov])
+            mov[H + self._off_top_fil:H + self._off_top_fil
+                + self.n_top_fil].copy_(
+                    top_pos[self.n_top_total
+                            + self.n_top_phys:self.n_top_total * 2])
+            mov[H + self._off_bot_fil:H + self._off_bot_fil
+                + self.n_bot_fil].copy_(
+                    bot_pos[self.n_bot_total
+                            + self.n_bot_phys:self.n_bot_total * 2])
+            mov[H + self._off_term_fil:H + self._off_term_fil
+                + self.n_term_fil].copy_(
+                    term_pos[self.n_term_total
+                             + self.n_term_phys:self.n_term_total * 2])
 
-        mov = torch.cat([
-            x_top_mov, x_bot_mov, x_term_mov, x_top_fil, x_bot_fil, x_term_fil,
-            y_top_mov, y_bot_mov, y_term_mov, y_top_fil, y_bot_fil, y_term_fil
-        ])
         mov.requires_grad_(True)
         return mov
 
@@ -286,21 +525,17 @@ class D2DCoPlace(object):
         ne_used = min(ne_in_tier, x_term.shape[0])
         shift = self.term_shift
 
-        def build_axis(x_mov_, x_term_, x_fil_, base_offset):
-            segs = [x_mov_]
-            if term_lo > n_mov:
-                segs.append(base[base_offset + n_mov:base_offset + term_lo])
-            if ne_used > 0:
-                segs.append(x_term_[:ne_used] + shift)
-            if term_lo + ne_used < n_phys:
-                segs.append(base[base_offset + term_lo + ne_used:base_offset
-                                 + n_phys])
-            segs.append(x_fil_)
-            return torch.cat(segs)
-
-        pos_x = build_axis(x_mov, x_term, x_fil, 0)
-        pos_y = build_axis(y_mov, y_term, y_fil, n_total)
-        return torch.cat([pos_x, pos_y])
+        pos = torch.empty_like(base)
+        pos.copy_(base)
+        pos[:n_mov].copy_(x_mov)
+        pos[n_total:n_total + n_mov].copy_(y_mov)
+        if ne_used > 0:
+            pos[term_lo:term_lo + ne_used].copy_(x_term[:ne_used] + shift)
+            pos[n_total + term_lo:n_total + term_lo + ne_used].copy_(
+                y_term[:ne_used] + shift)
+        pos[n_phys:n_total].copy_(x_fil)
+        pos[n_total + n_phys:2 * n_total].copy_(y_fil)
+        return pos
 
     def _build_term_pos(self, x_term_mov, y_term_mov, x_term_fil, y_term_fil):
         """Assemble dp_terminal's pos tensor with movable terminal_NIs +
@@ -311,15 +546,13 @@ class D2DCoPlace(object):
         n_phys = self.n_term_phys
         n_total = self.n_term_total
 
-        if n_phys > n_mov:
-            mid_x = base[n_mov:n_phys]
-            mid_y = base[n_total + n_mov:n_total + n_phys]
-            pos_x = torch.cat([x_term_mov, mid_x, x_term_fil])
-            pos_y = torch.cat([y_term_mov, mid_y, y_term_fil])
-        else:
-            pos_x = torch.cat([x_term_mov, x_term_fil])
-            pos_y = torch.cat([y_term_mov, y_term_fil])
-        return torch.cat([pos_x, pos_y])
+        pos = torch.empty_like(base)
+        pos.copy_(base)
+        pos[:n_mov].copy_(x_term_mov)
+        pos[n_total:n_total + n_mov].copy_(y_term_mov)
+        pos[n_phys:n_total].copy_(x_term_fil)
+        pos[n_total + n_phys:2 * n_total].copy_(y_term_fil)
+        return pos
 
     def _build_pos_top(self, x_top_mov, y_top_mov, x_term_mov, y_term_mov,
                        x_top_fil, y_top_fil):
@@ -360,9 +593,18 @@ class D2DCoPlace(object):
         the estimate consistent.
         """
         with torch.no_grad():
-            pos_top, pos_bot, pos_term = self._build_all_pos(mov_node_pos_all)
+            (x_tm, x_bm, x_em, x_tf, x_bf, x_ef,
+             y_tm, y_bm, y_em, y_tf, y_bf, y_ef) = self._split(
+                 mov_node_pos_all)
+            pos_top = self._build_pos_top(x_tm, y_tm, x_em, y_em, x_tf,
+                                          y_tf)
             self.dp_top.basic_place.data_collections.pos[0].data.copy_(pos_top)
+            del pos_top
+            pos_bot = self._build_pos_bot(x_bm, y_bm, x_em, y_em, x_bf,
+                                          y_bf)
             self.dp_bot.basic_place.data_collections.pos[0].data.copy_(pos_bot)
+            del pos_bot
+            pos_term = self._build_pos_term(x_em, y_em, x_ef, y_ef)
             self.dp_term.basic_place.data_collections.pos[0].data.copy_(
                 pos_term)
 
@@ -388,6 +630,7 @@ class D2DCoPlace(object):
                     "fall back to params.density_weight=%.3E", name, e,
                     params.density_weight)
                 model.density_weight.data.fill_(params.density_weight)
+        self.log_memory("density initialized")
 
     # ------------------------------------------------------------------
     # Objective + gradient
@@ -416,61 +659,54 @@ class D2DCoPlace(object):
         ne_phys = self.n_term_phys
         H = self._half
 
-        def scatter_grads(p, g_top, g_bot, g_term):
+        ne_top_used = min(self.top_term_hi - self.top_term_lo, ne)
+        ne_bot_used = min(self.bot_term_hi - self.bot_term_lo, ne)
+
+        def scatter_top_grad(p, g_top):
             grad = p.grad
-
-            # ----- movable cells in dp_top / dp_bot -----
             grad[self._off_top_mov:self._off_top_mov + nt].add_(g_top[:nt])
-            grad[self._off_bot_mov:self._off_bot_mov + nb].add_(g_bot[:nb])
-
-            # ----- D2D terminal_NIs receive grads from three sources -----
-            #  * model_top: terminal_NI region [top_term_lo:top_term_hi]
-            #    (typically zero because pin_mask_ignore_fixed_macros masks
-            #     out fixed pins, but we still accumulate for correctness)
-            #  * model_bot: same as above
-            #  * model_term: terminal_NIs are *movable* in dp_term, so this
-            #    is the dominant gradient source for x/y_term.
-            ne_top_used = min(self.top_term_hi - self.top_term_lo, ne)
-            ne_bot_used = min(self.bot_term_hi - self.bot_term_lo, ne)
             if ne_top_used > 0:
                 grad[self._off_term_mov:self._off_term_mov
                      + ne_top_used].add_(g_top[self.top_term_lo:
                                                self.top_term_lo + ne_top_used])
-            if ne_bot_used > 0:
-                grad[self._off_term_mov:self._off_term_mov
-                     + ne_bot_used].add_(g_bot[self.bot_term_lo:
-                                               self.bot_term_lo + ne_bot_used])
-            grad[self._off_term_mov:self._off_term_mov + ne].add_(g_term[:ne])
-
-            # ----- fillers per-placedb -----
             grad[self._off_top_fil:self._off_top_fil + ft].add_(
                 g_top[nt_phys:nt_total])
-            grad[self._off_bot_fil:self._off_bot_fil + fb].add_(
-                g_bot[nb_phys:nb_total])
-            grad[self._off_term_fil:self._off_term_fil + fe].add_(
-                g_term[ne_phys:ne_total])
-
-            # ===== y part =====
             grad[H + self._off_top_mov:H + self._off_top_mov + nt].add_(
                 g_top[nt_total:nt_total + nt])
-            grad[H + self._off_bot_mov:H + self._off_bot_mov + nb].add_(
-                g_bot[nb_total:nb_total + nb])
             if ne_top_used > 0:
                 grad[H + self._off_term_mov:H + self._off_term_mov
                      + ne_top_used].add_(
                          g_top[nt_total + self.top_term_lo:nt_total
                                + self.top_term_lo + ne_top_used])
+            grad[H + self._off_top_fil:H + self._off_top_fil + ft].add_(
+                g_top[nt_total + nt_phys:2 * nt_total])
+
+        def scatter_bot_grad(p, g_bot):
+            grad = p.grad
+            grad[self._off_bot_mov:self._off_bot_mov + nb].add_(g_bot[:nb])
+            if ne_bot_used > 0:
+                grad[self._off_term_mov:self._off_term_mov
+                     + ne_bot_used].add_(g_bot[self.bot_term_lo:
+                                               self.bot_term_lo + ne_bot_used])
+            grad[self._off_bot_fil:self._off_bot_fil + fb].add_(
+                g_bot[nb_phys:nb_total])
+            grad[H + self._off_bot_mov:H + self._off_bot_mov + nb].add_(
+                g_bot[nb_total:nb_total + nb])
             if ne_bot_used > 0:
                 grad[H + self._off_term_mov:H + self._off_term_mov
                      + ne_bot_used].add_(
                          g_bot[nb_total + self.bot_term_lo:nb_total
                                + self.bot_term_lo + ne_bot_used])
-            grad[H + self._off_term_mov:H + self._off_term_mov + ne].add_(
-                g_term[ne_total:ne_total + ne])
-            grad[H + self._off_top_fil:H + self._off_top_fil + ft].add_(
-                g_top[nt_total + nt_phys:2 * nt_total])
             grad[H + self._off_bot_fil:H + self._off_bot_fil + fb].add_(
                 g_bot[nb_total + nb_phys:2 * nb_total])
+
+        def scatter_term_grad(p, g_term):
+            grad = p.grad
+            grad[self._off_term_mov:self._off_term_mov + ne].add_(g_term[:ne])
+            grad[self._off_term_fil:self._off_term_fil + fe].add_(
+                g_term[ne_phys:ne_total])
+            grad[H + self._off_term_mov:H + self._off_term_mov + ne].add_(
+                g_term[ne_total:ne_total + ne])
             grad[H + self._off_term_fil:H + self._off_term_fil + fe].add_(
                 g_term[ne_total + ne_phys:2 * ne_total])
 
@@ -484,28 +720,35 @@ class D2DCoPlace(object):
             (x_tm, x_bm, x_em, x_tf, x_bf, x_ef,
              y_tm, y_bm, y_em, y_tf, y_bf, y_ef) = self._split(p)
 
-            # 2) build per-layer leaf tensors. Detach + clone so PlaceObj
-            #    can write its preconditioned grad directly. We then
-            #    accumulate grads back to p.grad below.
+            # Build/evaluate/scatter one layer at a time.  PlaceObj.backward
+            # frees that layer's graph before the next layer is constructed,
+            # preventing three full pin-position and density graphs from
+            # overlapping in memory.
             with torch.no_grad():
                 pos_top = self._build_pos_top(x_tm, y_tm, x_em, y_em, x_tf,
-                                              y_tf).clone()
-                pos_bot = self._build_pos_bot(x_bm, y_bm, x_em, y_em, x_bf,
-                                              y_bf).clone()
-                pos_term = self._build_pos_term(x_em, y_em, x_ef, y_ef).clone()
+                                              y_tf)
             pos_top.requires_grad_(True)
-            pos_bot.requires_grad_(True)
-            pos_term.requires_grad_(True)
-
-            # 3) per-layer dreamplace obj_and_grad (wl + dw*den + precondition)
             obj_top, _ = self.model_top.obj_and_grad_fn(pos_top)
+            scatter_top_grad(p, pos_top.grad)
+            obj = obj_top.detach()
+            del pos_top, obj_top
+
+            with torch.no_grad():
+                pos_bot = self._build_pos_bot(x_bm, y_bm, x_em, y_em, x_bf,
+                                              y_bf)
+            pos_bot.requires_grad_(True)
             obj_bot, _ = self.model_bot.obj_and_grad_fn(pos_bot)
+            scatter_bot_grad(p, pos_bot.grad)
+            obj = obj + obj_bot.detach()
+            del pos_bot, obj_bot
+
+            with torch.no_grad():
+                pos_term = self._build_pos_term(x_em, y_em, x_ef, y_ef)
+            pos_term.requires_grad_(True)
             obj_term, _ = self.model_term.obj_and_grad_fn(pos_term)
-
-            # 4) scatter preconditioned grads (incl. filler) back to p.grad
-            scatter_grads(p, pos_top.grad, pos_bot.grad, pos_term.grad)
-
-            obj = obj_top.detach() + obj_bot.detach() + obj_term.detach()
+            scatter_term_grad(p, pos_term.grad)
+            obj = obj + obj_term.detach()
+            del pos_term, obj_term
             return obj, p.grad
 
         return obj_and_grad_fn
@@ -522,16 +765,6 @@ class D2DCoPlace(object):
         with torch.no_grad():
             (x_tm, x_bm, x_em, x_tf, x_bf, x_ef,
              y_tm, y_bm, y_em, y_tf, y_bf, y_ef) = self._split(mov_node_pos_all)
-            pos_top = self._build_pos_top(x_tm, y_tm, x_em, y_em, x_tf,
-                                          y_tf).detach().clone()
-            pos_bot = self._build_pos_bot(x_bm, y_bm, x_em, y_em, x_bf,
-                                          y_bf).detach().clone()
-            pos_term = self._build_pos_term(x_em, y_em, x_ef,
-                                            y_ef).detach().clone()
-            self.dp_top.basic_place.op_collections.move_boundary_op(pos_top)
-            self.dp_bot.basic_place.op_collections.move_boundary_op(pos_bot)
-            self.dp_term.basic_place.op_collections.move_boundary_op(pos_term)
-
             data = mov_node_pos_all.data
             H = self._half
             nt = self.n_top_mov
@@ -547,61 +780,91 @@ class D2DCoPlace(object):
             nb_phys = self.n_bot_phys
             ne_phys = self.n_term_phys
 
-            # x parts
+            pos_top = self._build_pos_top(x_tm, y_tm, x_em, y_em, x_tf,
+                                          y_tf)
+            self.dp_top.basic_place.op_collections.move_boundary_op(pos_top)
             data[self._off_top_mov:self._off_top_mov + nt].copy_(pos_top[:nt])
-            data[self._off_bot_mov:self._off_bot_mov + nb].copy_(pos_bot[:nb])
-            data[self._off_term_mov:self._off_term_mov + ne].copy_(
-                pos_term[:ne])
             data[self._off_top_fil:self._off_top_fil + ft].copy_(
                 pos_top[nt_phys:nt_total])
-            data[self._off_bot_fil:self._off_bot_fil + fb].copy_(
-                pos_bot[nb_phys:nb_total])
-            data[self._off_term_fil:self._off_term_fil + fe].copy_(
-                pos_term[ne_phys:ne_total])
-            # y parts
             data[H + self._off_top_mov:H + self._off_top_mov + nt].copy_(
                 pos_top[nt_total:nt_total + nt])
-            data[H + self._off_bot_mov:H + self._off_bot_mov + nb].copy_(
-                pos_bot[nb_total:nb_total + nb])
-            data[H + self._off_term_mov:H + self._off_term_mov + ne].copy_(
-                pos_term[ne_total:ne_total + ne])
             data[H + self._off_top_fil:H + self._off_top_fil + ft].copy_(
                 pos_top[nt_total + nt_phys:2 * nt_total])
+            del pos_top
+
+            pos_bot = self._build_pos_bot(x_bm, y_bm, x_em, y_em, x_bf,
+                                          y_bf)
+            self.dp_bot.basic_place.op_collections.move_boundary_op(pos_bot)
+            data[self._off_bot_mov:self._off_bot_mov + nb].copy_(pos_bot[:nb])
+            data[self._off_bot_fil:self._off_bot_fil + fb].copy_(
+                pos_bot[nb_phys:nb_total])
+            data[H + self._off_bot_mov:H + self._off_bot_mov + nb].copy_(
+                pos_bot[nb_total:nb_total + nb])
             data[H + self._off_bot_fil:H + self._off_bot_fil + fb].copy_(
                 pos_bot[nb_total + nb_phys:2 * nb_total])
+            del pos_bot
+
+            pos_term = self._build_pos_term(x_em, y_em, x_ef, y_ef)
+            self.dp_term.basic_place.op_collections.move_boundary_op(pos_term)
+            data[self._off_term_mov:self._off_term_mov + ne].copy_(
+                pos_term[:ne])
+            data[self._off_term_fil:self._off_term_fil + fe].copy_(
+                pos_term[ne_phys:ne_total])
+            data[H + self._off_term_mov:H + self._off_term_mov + ne].copy_(
+                pos_term[ne_total:ne_total + ne])
             data[H + self._off_term_fil:H + self._off_term_fil + fe].copy_(
                 pos_term[ne_total + ne_phys:2 * ne_total])
 
     def overflow(self, mov_node_pos_all):
         """Per-layer absolute density overflow (top, bot, term) as floats."""
         with torch.no_grad():
-            pos_top, pos_bot, pos_term = self._build_all_pos(mov_node_pos_all)
+            (x_tm, x_bm, x_em, x_tf, x_bf, x_ef,
+             y_tm, y_bm, y_em, y_tf, y_bf, y_ef) = self._split(
+                 mov_node_pos_all)
+            pos_top = self._build_pos_top(x_tm, y_tm, x_em, y_em, x_tf,
+                                          y_tf)
             ov_top, _ = self.dp_top.basic_place.op_collections.density_overflow_op(
                 pos_top)
+            top_value = float(ov_top.sum().item())
+            del pos_top, ov_top
+            pos_bot = self._build_pos_bot(x_bm, y_bm, x_em, y_em, x_bf,
+                                          y_bf)
             ov_bot, _ = self.dp_bot.basic_place.op_collections.density_overflow_op(
                 pos_bot)
+            bot_value = float(ov_bot.sum().item())
+            del pos_bot, ov_bot
+            pos_term = self._build_pos_term(x_em, y_em, x_ef, y_ef)
             ov_term, _ = self.dp_term.basic_place.op_collections.density_overflow_op(
                 pos_term)
-        return (float(ov_top.sum().item()), float(ov_bot.sum().item()),
-                float(ov_term.sum().item()))
+            term_value = float(ov_term.sum().item())
+        return top_value, bot_value, term_value
 
     def evaluate_metrics(self, mov_node_pos_all, iteration):
         """Build EvalMetrics for each layer (.hpwl + normalized .overflow)."""
         with torch.no_grad():
-            pos_top, pos_bot, pos_term = self._build_all_pos(mov_node_pos_all)
+            (x_tm, x_bm, x_em, x_tf, x_bf, x_ef,
+             y_tm, y_bm, y_em, y_tf, y_bf, y_ef) = self._split(
+                 mov_node_pos_all)
 
+            pos_top = self._build_pos_top(x_tm, y_tm, x_em, y_em, x_tf,
+                                          y_tf)
             cur_top = EvalMetrics.EvalMetrics(iteration)
             cur_top.gamma = self.model_top.gamma.data
             cur_top.density_weight = self.model_top.density_weight.data
             cur_top.evaluate(self.dp_top.placedb, self._eval_ops_top, pos_top,
                              self.dp_top.basic_place.data_collections)
+            del pos_top
 
+            pos_bot = self._build_pos_bot(x_bm, y_bm, x_em, y_em, x_bf,
+                                          y_bf)
             cur_bot = EvalMetrics.EvalMetrics(iteration)
             cur_bot.gamma = self.model_bot.gamma.data
             cur_bot.density_weight = self.model_bot.density_weight.data
             cur_bot.evaluate(self.dp_bot.placedb, self._eval_ops_bot, pos_bot,
                              self.dp_bot.basic_place.data_collections)
+            del pos_bot
 
+            pos_term = self._build_pos_term(x_em, y_em, x_ef, y_ef)
             cur_term = EvalMetrics.EvalMetrics(iteration)
             cur_term.gamma = self.model_term.gamma.data
             cur_term.density_weight = self.model_term.density_weight.data
@@ -614,10 +877,18 @@ class D2DCoPlace(object):
     def evaluate_d2d_hpwl(self, mov_node_pos_all):
         """Evaluate current co-place state with the final D2D HPWL metric."""
         with torch.no_grad():
-            pos_top, pos_bot, pos_term = self._build_all_pos(mov_node_pos_all)
+            (x_tm, x_bm, x_em, x_tf, x_bf, x_ef,
+             y_tm, y_bm, y_em, y_tf, y_bf, y_ef) = self._split(
+                 mov_node_pos_all)
+            pos_top = self._build_pos_top(x_tm, y_tm, x_em, y_em, x_tf,
+                                          y_tf)
+            pos_bot = self._build_pos_bot(x_bm, y_bm, x_em, y_em, x_bf,
+                                          y_bf)
             flat_pos = self.dreamplace.dp_2d.pos.detach().clone()
             self.placer.op_wrapper.d2d_op_collections.pos_flattened_op(
                 self.placer.tier, flat_pos, [pos_top, pos_bot])
+            del pos_top, pos_bot
+            pos_term = self._build_pos_term(x_em, y_em, x_ef, y_ef)
             terminal_names = self.dp_term.placedb.node_names[
                 :self.num_terminal_NIs]
             return self.placer.op_wrapper.d2d_op_collections.hpwl_d2d_op(
@@ -677,23 +948,28 @@ class D2DCoPlace(object):
         where tag is "tier0" / "tier1" / "terminal".
         """
         with torch.no_grad():
-            pos_top, pos_bot, pos_term = self._build_all_pos(mov_node_pos_all)
-            pos_top = pos_top.detach().cpu()
-            pos_bot = pos_bot.detach().cpu()
-            pos_term = pos_term.detach().cpu()
-
             result_dir = self.params.result_dir_root
-            entries = [
-                ("tier0", self.dp_top, pos_top),
-                ("tier1", self.dp_bot, pos_bot),
-                ("terminal", self.dp_term, pos_term),
-            ]
-            for tag, dp, pos in entries:
+            (x_tm, x_bm, x_em, x_tf, x_bf, x_ef,
+             y_tm, y_bm, y_em, y_tf, y_bf, y_ef) = self._split(
+                 mov_node_pos_all)
+            entries = (
+                ("tier0", self.dp_top,
+                 lambda: self._build_pos_top(x_tm, y_tm, x_em, y_em, x_tf,
+                                             y_tf)),
+                ("tier1", self.dp_bot,
+                 lambda: self._build_pos_bot(x_bm, y_bm, x_em, y_em, x_bf,
+                                             y_bf)),
+                ("terminal", self.dp_term,
+                 lambda: self._build_pos_term(x_em, y_em, x_ef, y_ef)),
+            )
+            for tag, dp, build_pos in entries:
                 figdir = "%s/%s/%s/plot" % (result_dir, tag, subdir)
                 os.makedirs(figdir, exist_ok=True)
                 figname = "%s/iter%04d.png" % (figdir, iteration)
                 try:
+                    pos = build_pos().cpu()
                     dp.basic_place.op_collections.draw_place_op(pos, figname)
+                    del pos
                 except Exception as e:
                     logger.warning("co-place plot %s failed: %s", figname, e)
 
@@ -702,13 +978,9 @@ class D2DCoPlace(object):
 
         Updates movable cells + D2D terminal_NIs + fillers in each placedb.
         """
-        with torch.no_grad():
-            pos_top, pos_bot, pos_term = self._build_all_pos(mov_node_pos_all)
-            self.dp_top.basic_place.data_collections.pos[0].data.copy_(pos_top)
-            self.dp_bot.basic_place.data_collections.pos[0].data.copy_(pos_bot)
-            self.dp_term.basic_place.data_collections.pos[0].data.copy_(
-                pos_term)
+        self._sync_placedb_pos(mov_node_pos_all)
 
+        with torch.no_grad():
             # Keep DreamplaceBase.pos in sync (it points to placer.pos[0],
             # which is the same tensor as data_collections.pos[0])
             self.dp_top.pos = self.dp_top.basic_place.data_collections.pos[

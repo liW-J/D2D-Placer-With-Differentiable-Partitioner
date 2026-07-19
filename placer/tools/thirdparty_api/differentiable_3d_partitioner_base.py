@@ -72,15 +72,30 @@ class Differentiable3DPartitionerBase:
             self._load_external_api(load_parser=True))
 
         parser = DreamplaceParser()
-        if self.aux_input is not None:
-            self.logger.info(
-                "Differentiable-3D-Partitioner: reading Bookshelf input %s",
-                self.aux_input)
-        else:
-            self.logger.info(
-                "Differentiable-3D-Partitioner: reading LEF/DEF input %s",
-                getattr(self.params.flatten_2d, "def_input", ""))
-        parser.parse_design(str(self.dreamplace_config_path))
+        reused_existing_database = False
+        if self.data_2d is not None:
+            try:
+                parser.attach_existing_design(self.data_2d,
+                                              self.params.flatten_2d)
+                reused_existing_database = True
+                self.logger.info(
+                    "Differentiable-3D-Partitioner: reusing existing "
+                    "flattened DREAMPlace database")
+            except (AttributeError, TypeError, ValueError, RuntimeError) as exc:
+                self.logger.warning(
+                    "Differentiable-3D-Partitioner: cannot reuse existing "
+                    "DREAMPlace database (%s); falling back to parser", exc)
+
+        if not reused_existing_database:
+            if self.aux_input is not None:
+                self.logger.info(
+                    "Differentiable-3D-Partitioner: reading Bookshelf input %s",
+                    self.aux_input)
+            else:
+                self.logger.info(
+                    "Differentiable-3D-Partitioner: reading LEF/DEF input %s",
+                    getattr(self.params.flatten_2d, "def_input", ""))
+            parser.parse_design(str(self.dreamplace_config_path))
         design = self._build_movable_only_design(parser)
 
         flow = Differentiable3DPartitionerFlow(
@@ -100,6 +115,9 @@ class Differentiable3DPartitionerBase:
             die_yl=parser.die_yl,
             die_xh=parser.die_xh,
             die_yh=parser.die_yh)
+        parser.pin_pos = None
+        parser.node_pos = None
+        design["pin_pos"] = None
         return self._run_flow_and_load_assignment(flow, result_path)
 
     def _run_flow_and_load_assignment(self, flow, result_path):
@@ -122,55 +140,54 @@ class Differentiable3DPartitionerBase:
                 "Differentiable-3D-Partitioner received a design with no "
                 "movable nodes")
 
-        pin2node_cpu = parser.pin2node_map.detach().cpu().long()
-        flat_net2pin_cpu = parser.flat_net2pin_map.detach().cpu().long()
-        start_cpu = parser.flat_net2pin_start_map.detach().cpu().long()
-        original_num_pins = int(pin2node_cpu.numel())
+        pin2node = parser.pin2node_map.detach().long()
+        flat_net2pin = parser.flat_net2pin_map.detach().long()
+        starts = parser.flat_net2pin_start_map.detach().long()
+        original_num_pins = int(pin2node.numel())
         pin_pos_x = parser.pin_pos[:original_num_pins]
         pin_pos_y = parser.pin_pos[original_num_pins:]
 
-        selected_original_pins = []
-        new_pin2node = []
-        new_flat_net2pin = []
-        new_starts = [0]
+        # Work in the original flattened net order.  Prefix sums produce the
+        # per-net movable-pin counts without constructing three Python lists
+        # containing tens of millions of boxed integers.
+        original_pins_in_net_order = flat_net2pin
+        nodes_in_net_order = pin2node[original_pins_in_net_order]
+        movable_pin_mask = ((nodes_in_net_order >= 0) &
+                            (nodes_in_net_order < num_movable_nodes))
+        selected_original_pins = original_pins_in_net_order[movable_pin_mask]
+        new_pin2node = nodes_in_net_order[movable_pin_mask]
 
-        for net_id in range(int(parser.num_nets)):
-            start = int(start_cpu[net_id].item())
-            end = int(start_cpu[net_id + 1].item())
-            net_pin_count = 0
-            for flat_idx in range(start, end):
-                original_pin = int(flat_net2pin_cpu[flat_idx].item())
-                node_id = int(pin2node_cpu[original_pin].item())
-                if 0 <= node_id < num_movable_nodes:
-                    selected_original_pins.append(original_pin)
-                    new_pin2node.append(node_id)
-                    new_flat_net2pin.append(len(new_pin2node) - 1)
-                    net_pin_count += 1
+        movable_prefix = torch.empty(movable_pin_mask.numel() + 1,
+                                     dtype=torch.long,
+                                     device=starts.device)
+        movable_prefix[0] = 0
+        torch.cumsum(movable_pin_mask,
+                     dim=0,
+                     dtype=torch.long,
+                     out=movable_prefix[1:])
+        movable_counts = (movable_prefix[starts[1:]] -
+                          movable_prefix[starts[:-1]])
+        nonempty_net_mask = movable_counts > 0
+        nonempty_counts = movable_counts[nonempty_net_mask]
+        new_starts = torch.empty(nonempty_counts.numel() + 1,
+                                 dtype=torch.long,
+                                 device=starts.device)
+        new_starts[0] = 0
+        torch.cumsum(nonempty_counts, dim=0, out=new_starts[1:])
 
-            if net_pin_count:
-                new_starts.append(len(new_flat_net2pin))
-
-        if not new_pin2node:
+        if new_pin2node.numel() == 0:
             raise RuntimeError(
                 "Differentiable-3D-Partitioner movable-only graph has no "
                 "pins; check LEF/DEF connectivity and movable node count")
 
-        device = parser.pin2node_map.device
-        selected_pin_tensor = torch.tensor(
-            selected_original_pins, dtype=torch.long, device=device)
         pin_pos = torch.cat(
-            (pin_pos_x.index_select(0, selected_pin_tensor),
-             pin_pos_y.index_select(0, selected_pin_tensor)), dim=0)
-        pin2node_map = torch.tensor(
-            new_pin2node, dtype=parser.pin2node_map.dtype, device=device)
-        flat_net2pin_map = torch.tensor(
-            new_flat_net2pin,
-            dtype=parser.flat_net2pin_map.dtype,
-            device=device)
-        flat_net2pin_start_map = torch.tensor(
-            new_starts,
-            dtype=parser.flat_net2pin_start_map.dtype,
-            device=device)
+            (pin_pos_x.index_select(0, selected_original_pins),
+             pin_pos_y.index_select(0, selected_original_pins)), dim=0)
+        # Keep compact graph indices in the int64 dtype consumed by PyTorch
+        # gather/scatter operations; casting down and immediately back up in
+        # the flow creates another full-size allocation.
+        pin2node_map = new_pin2node
+        flat_net2pin_start_map = new_starts
         num_nets = int(flat_net2pin_start_map.numel() - 1)
         num_pins = int(pin2node_map.numel())
 
@@ -185,7 +202,10 @@ class Differentiable3DPartitionerBase:
             "num_nets": num_nets,
             "num_pins": num_pins,
             "pin_pos": pin_pos,
-            "flat_net2pin_map": flat_net2pin_map,
+            # Pins were compacted in flat-net order, so this map would be the
+            # identity [0, 1, ..., num_pins-1].  ``None`` communicates that
+            # fact and saves an 8-byte index per pin throughout the flow.
+            "flat_net2pin_map": None,
             "flat_net2pin_start_map": flat_net2pin_start_map,
             "pin2node_map": pin2node_map,
         }
@@ -260,6 +280,11 @@ class Differentiable3DPartitionerBase:
             # but making the value explicit keeps D2D and DREAMPlace aligned.
             partitioner_config["ignore_net_degree"] = int(
                 self._get_param("ignore_net_degree", default=100))
+        # Memory-safe defaults for million-cell designs.  Individual YAMLs
+        # may opt back into filler optimization or choose another chunk size.
+        partitioner_config.setdefault("net_chunk_size", 100000)
+        partitioner_config.setdefault("optimize_filler_positions", False)
+        partitioner_config.setdefault("cutsize_handle_terminal_overlap", False)
         balance_config = partitioner_config.setdefault("balance_loss", {})
         threshold = balance_config.get("threshold_factor", 0.7)
         balance_config.setdefault("top_threshold_factor", threshold)

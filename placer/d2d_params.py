@@ -181,6 +181,11 @@ class D2DParams:
         self.co_place_lr = float(getattr(self.flatten_2d, "co_place_lr", 0.01))
         self.co_place_target_density = float(
             getattr(self.flatten_2d, "co_place_target_density", 1.0))
+        # Unlike DREAMPlace's in-kernel mask, co-placement physically compacts
+        # these nets out of its temporary GPU topology.
+        self.co_place_ignore_net_degree = int(
+            getattr(self.flatten_2d, "co_place_ignore_net_degree",
+                    self.flatten_2d.ignore_net_degree))
         # plotting cadence for co-place; <=0 disables, otherwise plot every N iters
         self.co_place_plot_freq = int(
             getattr(self.flatten_2d, "co_place_plot_freq", 50))

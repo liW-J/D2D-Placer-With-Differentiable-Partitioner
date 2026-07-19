@@ -71,9 +71,12 @@ class PartitionerManager:
                                flat_net2pin_start_map, pin2node_map, num_nets):
         """original hgr generation method (no bin-based)"""
         # generate hgr file
-        with open(output_file, 'w') as f:
-            # first line: net number and node number
-            f.write(f"{num_nets} {self.num_movable_nodes}\n")
+        with open(output_file, 'w+') as f:
+            # Reserve a fixed-width header and rewrite it after empty nets have
+            # been filtered.  A fixed width avoids buffering millions of
+            # hyperedges or making a second pass just to count them.
+            f.write(f"{0:20d} {self.num_movable_nodes}\n")
+            written_nets = 0
 
             # write nodes for each net
             for net_id in range(num_nets):
@@ -94,11 +97,15 @@ class PartitionerManager:
                     node_str = " ".join(
                         [str(node_id + 1) for node_id in node_list])
                     f.write(f"{node_str}\n")
-                else:
-                    f.write("\n")  # empty net also write empty line
+                    written_nets += 1
+
+            f.seek(0)
+            f.write(f"{written_nets:20d} {self.num_movable_nodes}\n")
 
         print(f"HGR file generated: {output_file}")
-        print(f"Net number: {num_nets}, Node number: {self.num_movable_nodes}")
+        print(
+            f"Net number: {written_nets}/{num_nets}, "
+            f"Node number: {self.num_movable_nodes}")
 
     def hgr_generator_bin(self, output_file, flat_net2pin_map,
                           flat_net2pin_start_map, pin2node_map, num_nets,
