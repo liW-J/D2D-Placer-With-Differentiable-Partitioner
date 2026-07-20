@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "/export/home/lwjiang/Projects/scratch/dev/D2D-Placer-With-Differentiable-Partitioner/placer/d2d_placer.py", line 10, in <module>
+    import configure
+ModuleNotFoundError: No module named 'configure'
