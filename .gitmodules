@@ -4,12 +4,8 @@
 
 [submodule "thirdparty/DREAMPlace"]
 	path = thirdparty/DREAMPlace
-	url = https://github.com/liW-J/DREAMPlace.git
+	url = https://github.com/limbo018/DREAMPlace.git
 	
-[submodule "thirdparty/HypergraphPartitioning"]
-	path = thirdparty/HypergraphPartitioning
-	url = https://github.com/liW-J/HypergraphPartitioning.git
-
 [submodule "thirdparty/Differentiable-3D-Partitioner"]
 	path = thirdparty/Differentiable-3D-Partitioner
 	url = https://anonymous.4open.science/r/Differentiable-3D-Partitioner.git
