@@ -1,7 +1,5 @@
 '''
-Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-09-21 17:01:58
-LastEditors: JeanneWillis hi@jeannewillis.cn
 LastEditTime: 2025-10-14 23:42:41
 FilePath: /D2D-placer/placer/ops/bin_based_fm/bin_based_fm.py
 Description: fm refinement

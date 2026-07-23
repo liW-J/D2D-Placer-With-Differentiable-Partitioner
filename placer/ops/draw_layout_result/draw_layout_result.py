@@ -1,7 +1,5 @@
 '''
-Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-09-23 23:06:56
-LastEditors: JeanneWillis hi@jeannewillis.cn
 LastEditTime: 2025-09-25 14:13:58
 FilePath: /D2D-placer/placer/ops/draw_layout_result/draw_layout_result.py
 Description: 

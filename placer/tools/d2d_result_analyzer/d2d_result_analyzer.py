@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 '''
-Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-08-31 20:29:01
-LastEditors: JeanneWillis hi@jeannewillis.cn
 LastEditTime: 2025-10-18 17:03:09
 FilePath: /D2D-placer/placer/tools/d2d_result_analyzer/d2d_result_analyzer.py
 Description: 

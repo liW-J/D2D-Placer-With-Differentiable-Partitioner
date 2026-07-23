@@ -1,7 +1,5 @@
 '''
-Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-07-21 01:12:38
-LastEditors: JeanneWillis hi@jeannewillis.cn
 LastEditTime: 2025-07-27 22:51:12
 FilePath: /D2D-placer/placer/ops/macro_balance/macro_balance.py
 Description: 

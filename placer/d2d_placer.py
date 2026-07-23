@@ -1,7 +1,5 @@
 '''
-Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-07-19 17:57:28
-LastEditors: JeanneWillis hi@jeannewillis.cn
 LastEditTime: 2026-03-11 19:30:56
 FilePath: /D2D-placer/placer/d2d_placer.py
 Description:
@@ -47,7 +45,6 @@ def printWelcome():
 {Fore.GREEN}     A Die-to-Die Placement Research Framework      {Style.RESET_ALL}
 {Fore.YELLOW}----------------------------------------------------------------
      Website  : https://github.com/liW-J/D2D-Placer
-     Contact  : hi@jeannewillis.cn
      License  : Apache/MIT License
 ================================================================{Style.RESET_ALL}
 """

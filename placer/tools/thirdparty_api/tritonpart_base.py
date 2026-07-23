@@ -1,7 +1,5 @@
 '''
-Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-09-10 15:19:57
-LastEditors: JeanneWillis hi@jeannewillis.cn
 LastEditTime: 2026-03-04 22:07:03
 FilePath: /D2D-placer/placer/tools/thirdparty_api/tritonpart_base.py
 Description: 

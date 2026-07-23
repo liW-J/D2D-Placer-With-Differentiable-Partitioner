@@ -1,7 +1,5 @@
 /*
- * @Author: JeanneWillis hi@jeannewillis.cn
  * @Date: 2025-05-26 14:47:09
- * @LastEditors: JeanneWillis hi@jeannewillis.cn
  * @LastEditTime: 2025-11-01 04:01:36
  * @FilePath: /D2D-placer/placer/ops/utils_3d/src/partition.h
  * @Description:

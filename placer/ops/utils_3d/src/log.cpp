@@ -1,7 +1,5 @@
 /*
- * @Author: JeanneWillis hi@jeannewillis.cn
  * @Date: 2025-04-17 13:26:50
- * @LastEditors: JeanneWillis hi@jeannewillis.cn
  * @LastEditTime: 2025-06-14 02:58:20
  * @FilePath: /D2D-placer/placer/ops/utils_3d/src/log.cpp
  * @Description: 

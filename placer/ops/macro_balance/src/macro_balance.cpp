@@ -1,7 +1,5 @@
 /*
- * @Author: JeanneWillis hi@jeannewillis.cn
  * @Date: 2025-03-19 11:49:04
- * @LastEditors: JeanneWillis hi@jeannewillis.cn
  * @LastEditTime: 2025-07-28 00:44:33
  * @FilePath:
  * /D2D-placer/placer/ops/macro_balance/src/macro_balance.cpp

@@ -1,7 +1,5 @@
 /*
- * @Author: JeanneWillis hi@jeannewillis.cn
  * @Date: 2025-03-18 16:21:55
- * @LastEditors: JeanneWillis hi@jeannewillis.cn
  * @LastEditTime: 2025-03-24 23:31:47
  * @FilePath: /D2D-placer/src/ops/power_map/src/power_map.cpp
  * @Description: Compute power map on CPU

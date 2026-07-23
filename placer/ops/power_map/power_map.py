@@ -1,7 +1,5 @@
 '''
-Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-03-18 16:21:18
-LastEditors: JeanneWillis hi@jeannewillis.cn
 LastEditTime: 2025-04-08 12:23:18
 FilePath: /D2D-placer/placer/ops/power_map/power_map.py
 Description: Compute power map on CPU

@@ -1,7 +1,5 @@
 '''
-Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-09-15 19:31:41
-LastEditors: JeanneWillis hi@jeannewillis.cn
 LastEditTime: 2025-09-16 20:09:50
 FilePath: /D2D-placer/placer/tools/partitioner_manager.py
 Description: 

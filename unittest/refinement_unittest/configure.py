@@ -1,7 +1,5 @@
 '''
-Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-02-24 18:32:05
-LastEditors: JeanneWillis hi@jeannewillis.cn
 LastEditTime: 2025-10-19 02:53:56
 FilePath: /D2D-placer/config/configure.py.in
 Description: 

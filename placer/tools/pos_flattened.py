@@ -1,7 +1,5 @@
 '''
-Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-04-14 03:21:27
-LastEditors: JeanneWillis hi@jeannewillis.cn
 LastEditTime: 2025-09-14 21:37:03
 FilePath: /D2D-placer/placer/tools/pos_flattened.py
 Description: 

@@ -1,7 +1,5 @@
 '''
-Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-07-19 17:20:57
-LastEditors: JeanneWillis hi@jeannewillis.cn
 LastEditTime: 2025-07-23 15:42:09
 FilePath: /D2D-placer/placer/constants.py
 Description: 

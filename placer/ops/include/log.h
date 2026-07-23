@@ -1,7 +1,5 @@
 /*
- * @Author: JeanneWillis hi@jeannewillis.cn
  * @Date: 2025-03-15 21:37:46
- * @LastEditors: JeanneWillis hi@jeannewillis.cn
  * @LastEditTime: 2025-04-08 21:15:53
  * @FilePath: /D2D-placer/placer/ops/include/log.h
  * @Description:

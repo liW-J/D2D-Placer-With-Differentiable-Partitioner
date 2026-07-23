@@ -1,7 +1,5 @@
 '''
-Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-06-17 13:33:09
-LastEditors: JeanneWillis hi@jeannewillis.cn
 LastEditTime: 2025-07-20 23:39:14
 FilePath: /D2D-placer/install/hpwl_d2d/hpwl_d2d.py
 Description:

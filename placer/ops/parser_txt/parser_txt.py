@@ -1,7 +1,5 @@
 '''
-Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-03-15 14:13:35
-LastEditors: JeanneWillis hi@jeannewillis.cn
 LastEditTime: 2025-06-14 01:44:58
 FilePath: /D2D-placer/placer/ops/parser_txt/parser_txt.py
 Description: parser ICCAD 3D placement txt file

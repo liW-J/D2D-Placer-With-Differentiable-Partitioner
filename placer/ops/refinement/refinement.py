@@ -1,7 +1,5 @@
 '''
-Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-03-19 11:47:31
-LastEditors: JeanneWillis hi@jeannewillis.cn
 LastEditTime: 2025-06-16 21:21:05
 FilePath: /D2D-placer/placer/ops/partition/partition.py
 Description: partition flattened 2D placement to 2 Die

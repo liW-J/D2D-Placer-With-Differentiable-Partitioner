@@ -1,7 +1,5 @@
 '''
-Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-08-09 23:53:41
-LastEditors: JeanneWillis hi@jeannewillis.cn
 LastEditTime: 2025-10-29 23:32:40
 FilePath: /D2D-placer/placer/tools/specpart_base.py
 Description: 

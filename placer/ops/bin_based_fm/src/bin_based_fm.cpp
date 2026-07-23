@@ -1,7 +1,5 @@
 /*
- * @Author: JeanneWillis hi@jeannewillis.cn
  * @Date: 2025-09-21 17:01:58
- * @LastEditors: JeanneWillis hi@jeannewillis.cn
  * @LastEditTime: 2025-11-09 16:07:40
  * @FilePath: /D2D-placer/placer/ops/bin_based_fm/src/bin_based_fm.cpp
  * @Description: fm refinement

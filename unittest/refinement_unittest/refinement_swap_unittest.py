@@ -1,7 +1,5 @@
 '''
-Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-10-18 18:22:43
-LastEditors: JeanneWillis hi@jeannewillis.cn
 LastEditTime: 2025-10-29 23:26:44
 FilePath: /D2D-placer/unittest/refinement_swap_unittest.py
 Description: 

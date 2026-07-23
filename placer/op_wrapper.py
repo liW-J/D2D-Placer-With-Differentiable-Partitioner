@@ -1,7 +1,5 @@
 '''
-Author: JeanneWillis hi@jeannewillis.cn
 Date: 2025-06-13 15:35:55
-LastEditors: JeanneWillis hi@jeannewillis.cn
 LastEditTime: 2025-10-21 00:05:08
 FilePath: /D2D-placer/placer/op_wrapper.py
 Description:

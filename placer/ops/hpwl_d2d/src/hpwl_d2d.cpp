@@ -1,7 +1,5 @@
 /*
- * @Author: JeanneWillis hi@jeannewillis.cn
  * @Date: 2025-06-17 13:30:24
- * @LastEditors: JeanneWillis hi@jeannewillis.cn
  * @LastEditTime: 2025-10-15 13:03:26
  * @FilePath: /D2D-placer/placer/ops/hpwl_d2d/hpwl_d2d.cpp
  * @Description:

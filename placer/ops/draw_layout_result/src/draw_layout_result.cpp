@@ -1,7 +1,5 @@
 /*
- * @Author: JeanneWillis hi@jeannewillis.cn
  * @Date: 2025-09-23 22:54:22
- * @LastEditors: JeanneWillis hi@jeannewillis.cn
  * @LastEditTime: 2025-09-25 16:04:45
  * @FilePath:
  * /D2D-placer/placer/ops/draw_layout_result/src/draw_layout_result.cpp
