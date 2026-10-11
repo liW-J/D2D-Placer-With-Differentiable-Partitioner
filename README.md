@@ -183,66 +183,13 @@ make distclean
 
 `distclean` removes both `build/` and `install/`.
 
-## Troubleshooting
-
-### Missing nested DREAMPlace
-
-If configure reports that the Differentiable-3D-Partitioner DREAMPlace submodule
-is missing, run:
-
-```bash
-git submodule update --init --recursive
-```
-
-### CMake is not found
-
-If `make` reports `env: cmake: No such file or directory`, CMake is not in your
-`PATH`. Install CMake 3.x, load it with your site module system, or pass it
-explicitly:
-
-```bash
-make CMAKE=/path/to/cmake3 -j$(nproc)
-make CMAKE=/path/to/cmake3 install
-```
-
-If CMake is inside a non-standard dependency prefix, `ENV_PREFIX` is enough as
-long as `${ENV_PREFIX}/bin/cmake` or `${ENV_PREFIX}/bin/cmake3` exists:
-
-```bash
-make ENV_PREFIX=/path/to/env -j$(nproc)
-make ENV_PREFIX=/path/to/env install
-```
-
-### CMake 4.x fails in DREAMPlace/Limbo
-
-Some bundled DREAMPlace/Limbo revisions set `CMP0048` to `OLD`, which CMake 4.x
-rejects. Use CMake 3.x:
-
-```bash
-make CMAKE=/path/to/cmake3 -j$(nproc)
-```
-
-If CMake 3.x is not available, a local uncommitted workaround is to change
-`CMAKE_POLICY(SET CMP0048 OLD)` to `CMAKE_POLICY(SET CMP0048 NEW)` in both
-DREAMPlace checkouts. Do not commit that change unless you intentionally own the
-third-party submodule.
-
-### `GLIBCXX_*` import errors
-
-If runtime libraries are installed in a non-standard prefix, put that prefix first:
-
-```bash
-export LD_LIBRARY_PATH=/path/to/env/lib:$LD_LIBRARY_PATH
-```
-
-### External runtime tool is missing
+## External runtime tool is missing
 
 The build installs D2D, DREAMPlace, and Differentiable-3D-Partitioner. It does
 not automatically install every optional runtime binary. Depending on your JSON
 config, you may still need to provide:
 
 - `openroad` for TritonPart-based partitioning.
-- SpecPart/Julia dependencies for `partitioner: "specpart"`.
 - `thirdparty/ntuplace3`, which is installed to `install/thirdparty/ntuplace3`
   when present in the source tree.
 
