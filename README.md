@@ -84,29 +84,15 @@ PY
 ### 5. Run a placement case with the integrated D3D partitioner
 
 Run from the install directory so benchmark and result paths match the installed
-configuration. The example below copies `case2.json` to `/tmp`, keeps the file
-name as `case2.json` so it matches `configs/iccad2022/case2.yaml`, and enables
-the integrated Differentiable-3D-Partitioner:
+configuration. The ASAP7 configs select the integrated
+Differentiable-3D-Partitioner and load the matching YAML from
+`configs/openroad/asap7/`:
 
 ```bash
 cd install
 export LD_LIBRARY_PATH=/path/to/env/lib:$LD_LIBRARY_PATH
 
-mkdir -p /tmp/d2d-case2-d3d
-python - <<'PY'
-import json
-from pathlib import Path
-
-src = Path("test/iccad2022/case2.json")
-dst = Path("/tmp/d2d-case2-d3d/case2.json")
-cfg = json.loads(src.read_text())
-cfg["partitioner"] = "d3d"
-cfg["differentiable_partitioner_config_root"] = "iccad2022"
-dst.write_text(json.dumps(cfg, indent=2) + "\n")
-print(dst)
-PY
-
-python placer/d2d_placer.py /tmp/d2d-case2-d3d/case2.json
+python placer/d2d_placer.py test/openroad/asap7/aes.json
 ```
 
 Results are written to:
@@ -131,7 +117,9 @@ install/
   thirdparty/Differentiable-3D-Partitioner/ D3D partitioner source/package
     thirdparty/DREAMPlace/install/         Nested DREAMPlace built for D3D
   benchmarks/                              Installed benchmark inputs
+    openroad/asap7/<case>/                  TXT netlists and JSON mappings
   test/                                    Installed JSON configs
+    openroad/asap7/                         D3D configs; hmetis/ and tritonpart/ variants
   results/                                 Runtime output directory
   run_tmp/                                 Runtime scratch directory
 ```
@@ -142,9 +130,9 @@ Set the `partitioner` field in the placement JSON file.
 
 ```json
 {
-  "txt_input": "benchmarks/iccad2022/case2.txt",
+  "txt_input": "benchmarks/openroad/asap7/aes/aes.txt",
   "partitioner": "d3d",
-  "differentiable_partitioner_config_root": "iccad2022"
+  "differentiable_partitioner_config_root": "openroad/asap7"
 }
 ```
 
@@ -154,7 +142,6 @@ Supported values:
   `bin/hmetis` relative to the runtime working directory.
 - `tritonpart`: uses OpenROAD and `placer/scripts/tritonpart.tcl`.
 - `bin-based-tritonpart`: uses OpenROAD with placement-aware bin partitioning.
-- `specpart`: uses the SpecPart flow under `thirdparty/HypergraphPartitioning`.
 - `d3d`, `d3d_partitioner`, `differentiable-3d-partitioner`: uses the integrated
   Differentiable-3D-Partitioner.
 
@@ -170,9 +157,10 @@ If `differentiable_partitioner_config_root` is set, D2D loads:
 configs/<differentiable_partitioner_config_root>/<case_name>.yaml
 ```
 
-For example, `test/iccad2022/case2.json` with
-`"differentiable_partitioner_config_root": "iccad2022"` uses
-`configs/iccad2022/case2.yaml`.
+For example, `test/openroad/asap7/aes.json` with
+`"differentiable_partitioner_config_root": "openroad/asap7"` uses
+`configs/openroad/asap7/aes.yaml`. Keep the JSON basename aligned with the
+YAML basename when selecting the differentiable partitioner.
 
 ## Useful Build Variables
 
@@ -258,17 +246,38 @@ config, you may still need to provide:
 - `thirdparty/ntuplace3`, which is installed to `install/thirdparty/ntuplace3`
   when present in the source tree.
 
-## Development Notes
 
-- Avoid editing DREAMPlace, nested DREAMPlace, 3d-placer, or other third-party
-  submodule source unless the change is intentionally local. These repositories
-  are not owned by this wrapper project.
-- The integrated build support for Differentiable-3D-Partitioner lives in that
-  LiW-J-owned submodule. Commit changes there first, then commit the updated
-  submodule pointer in this top-level repository.
-- Before handing off a build change, run:
+## Experimental Results
 
-```bash
-make -j$(nproc)
-make install
+| Circuit | Nets | Cross-die nets (%) | Total D2D HPWL | Cross-die HPWL | HBT HPWL overhead | Overhead / total HPWL |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| aes | 11,430 | 2,893 (25.3%) | 27,215,653 | 14,239,650 | 3,254,578 | 11.96% |
+| ariane133 | 104,987 | 6,776 (6.5%) | 380,315,910 | 173,501,260 | 31,456,288 | 8.27% |
+| cva6 | 115,617 | 10,150 (8.8%) | 513,254,138 | 157,968,081 | 60,345,632 | 11.76% |
+| ethmac | 61,083 | 11,885 (19.5%) | 142,050,460 | 79,569,786 | 11,803,479 | 8.31% |
+| ibex | 11,190 | 1,184 (10.6%) | 33,113,103 | 14,412,018 | 2,404,017 | 7.26% |
+| jpeg | 36,070 | 4,829 (13.4%) | 60,007,577 | 22,138,001 | 7,814,889 | 13.02% |
+| mock-alu | 14,022 | 1,688 (12.0%) | 31,682,808 | 15,925,548 | 2,818,707 | 8.90% |
+| mock-cpu | 39,094 | 2,332 (6.0%) | 48,000,117 | 14,773,983 | 4,983,559 | 10.38% |
+| riscv32i | 9,305 | 172 (1.8%) | 27,255,209 | 5,132,677 | 2,864,201 | 10.51% |
+| uart | 812 | 126 (15.5%) | 1,308,968 | 424,156 | 123,247 | 9.42% |
+
+HBT HPWL overhead is the increase in cross-die HPWL caused by including hybrid
+bonding terminals: cross-die HPWL with terminals minus cross-die HPWL without
+terminals.
+
+## Citation
+
+If you use this code or the differentiable partitioning method in your research,
+please cite [our paper](https://arxiv.org/abs/2609.06408):
+
+```bibtex
+@misc{jiang2026differentiablepartitioning,
+  title         = {Differentiable Partitioning With Dual-Max 3D Wirelength Model and Hybrid Bonding Terminal Awareness for Optimized 3D Placement},
+  author        = {Liwen Jiang and Xu Shi and Rufeng Xiao and Changhao Yan and Rujun Jiang and Zhiang Wang and Keren Zhu},
+  year          = {2026},
+  eprint        = {2609.06408},
+  archivePrefix = {arXiv},
+  url           = {https://arxiv.org/abs/2609.06408}
+}
 ```

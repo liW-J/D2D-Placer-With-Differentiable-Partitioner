@@ -1,13 +1,2 @@
-file(GLOB INSTALL_2022_BENCHMARKS 
-    "${CMAKE_CURRENT_SOURCE_DIR}/iccad2022/*.txt"
-    )
-install(
-    FILES ${INSTALL_2022_BENCHMARKS} DESTINATION benchmarks/iccad2022
-    )
-
-file(GLOB INSTALL_2023_BENCHMARKS 
-    "${CMAKE_CURRENT_SOURCE_DIR}/iccad2023/*.txt"
-    )
-install(
-    FILES ${INSTALL_2023_BENCHMARKS} DESTINATION benchmarks/iccad2023
-    )
+# Preserve the case directories and their netlist/mapping files.
+install(DIRECTORY openroad DESTINATION benchmarks)

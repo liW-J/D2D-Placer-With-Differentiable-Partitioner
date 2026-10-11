@@ -1,13 +1,3 @@
-project(test)
-
-install(
-    DIRECTORY iccad2022 DESTINATION ${PROJECT_NAME}
-    )
-
-install(
-    DIRECTORY iccad2023 DESTINATION ${PROJECT_NAME}
-    )
-
-install(
-    DIRECTORY ppa-public-case DESTINATION ${PROJECT_NAME}
-    )
+# Include the D3D, hMETIS, and TritonPart configurations.
+install(DIRECTORY openroad DESTINATION test
+    FILES_MATCHING PATTERN "*.json")
