@@ -3,7 +3,11 @@
 Run in a built D2D installation (CPU operators are sufficient)::
 
     python /path/to/repo/unittest/co_place_unittest/pin_views_integration.py \
-        --runtime /path/to/install
+        --runtime /path/to/install --device cuda:0
+
+Use --device cpu for CPU-only validation. CUDA mode uses the same CPU AUX
+exporters as the production GPU flow, then assembles positions and invokes
+the compiled PinPos operator on CUDA.
 
 The runtime must contain the current partition_aux/terminal_aux extensions and
 diff_d2d_wirelength.py. No compiled operators or pin-coordinate conversions are
@@ -132,14 +136,14 @@ def _name(value):
 def _world_pins(dp, pos, torch, pin_pos):
     db = dp.placedb
     op = pin_pos.PinPos(
-        pin_offset_x=torch.tensor(db.pin_offset_x, dtype=pos.dtype),
-        pin_offset_y=torch.tensor(db.pin_offset_y, dtype=pos.dtype),
-        pin2node_map=torch.tensor(db.pin2node_map, dtype=torch.int32),
-        flat_node2pin_map=torch.tensor(db.flat_node2pin_map, dtype=torch.int32),
+        pin_offset_x=torch.tensor(db.pin_offset_x, dtype=pos.dtype, device=pos.device),
+        pin_offset_y=torch.tensor(db.pin_offset_y, dtype=pos.dtype, device=pos.device),
+        pin2node_map=torch.tensor(db.pin2node_map, dtype=torch.int32, device=pos.device),
+        flat_node2pin_map=torch.tensor(db.flat_node2pin_map, dtype=torch.int32, device=pos.device),
         flat_node2pin_start_map=torch.tensor(db.flat_node2pin_start_map,
-                                           dtype=torch.int32),
+                                           dtype=torch.int32, device=pos.device),
         num_physical_nodes=db.num_physical_nodes, algorithm="node-by-node")
-    result = op(pos).detach().reshape(2, -1).T.numpy()
+    result = op(pos).detach().reshape(2, -1).T.cpu().numpy()
     return {
         (_name(db.net_names[net]), _name(db.node_names[node])): result[pin]
         for pin, (net, node) in enumerate(zip(db.pin2net_map, db.pin2node_map))
@@ -180,7 +184,7 @@ def _check_views(case, views, positions, torch, np, pin_pos, deltas=None):
     return cell_pins, hbt_pins
 
 
-def run(runtime):
+def run(runtime, device="cpu"):
     _bootstrap(runtime)
     import numpy as np
     import torch
@@ -192,6 +196,8 @@ def run(runtime):
     from dreamplace.ops.place_io import place_io
     from dreamplace.ops.pin_pos import pin_pos
 
+    if device.startswith("cuda") and not torch.cuda.is_available():
+        raise RuntimeError("CUDA requested but unavailable")
     torch.set_num_threads(1)
     case = _fixture(torch)
     checked = []
@@ -201,6 +207,9 @@ def run(runtime):
             tiers, terminal = _export(case, path, dimensions, torch,
                                       partition_aux_cpp, terminal_aux_cpp)
             views = [_read(aux, place_io, torch) for aux in tiers + [terminal]]
+            for dp in views:
+                dp.pos = dp.pos.to(device)
+                dp.basic_place.data_collections.pos[0] = dp.pos
             if dimensions == (6, 8, 4):
                 _check_views(case, views, [dp.pos for dp in views], torch, np,
                              pin_pos)
@@ -229,11 +238,13 @@ def run(runtime):
             _check_views(case, views, [dp.pos for dp in views], torch, np,
                          pin_pos, deltas)
             checked.append((dimensions, counts))
-    print("PIN_VIEWS_INTEGRATION_PASS", checked, flush=True)
+    print("PIN_VIEWS_INTEGRATION_PASS", device, checked, flush=True)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--runtime", default=".",
                         help="D2D installation with current compiled AUX operators")
-    run(parser.parse_args().runtime)
+    parser.add_argument("--device", default="cpu", choices=("cpu", "cuda:0"))
+    args = parser.parse_args()
+    run(args.runtime, args.device)
