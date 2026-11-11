@@ -32,3 +32,21 @@ for even/odd dimensions, permuted pin indices and fractional translations.
 Requesting CUDA without an available GPU fails rather than silently falling
 back to CPU. The AUX extensions must be rebuilt after C++ changes; copying only
 Python files into an old installation is insufficient.
+
+## CUDA detailed-placement loading regression
+
+The full flow also requires the CUDA host stubs to have hidden visibility.
+FindCUDA's NVCC build does not apply `CUDA_VISIBILITY_PRESET` to host code;
+the top-level CMake explicitly passes `-fvisibility=hidden` to NVCC's host
+compiler. Without it, ISM can work when loaded alone but fail with the complete
+operator set loaded (`invalid device ordinal` in CUB); global swap can similarly
+report illegal memory access. Rebuild the CUDA operators after changing flags.
+
+```sh
+python unittest/co_place_unittest/cuda_detail_integration.py --runtime /path/to/install
+```
+
+This small native test loads BasicPlace's full operator set, then runs both ISM
+and global swap on a legal four-cell fixture. It requires CUDA and checks finite
+results after synchronization. It is separate from the anchor synchronization
+regressions because the failure occurs in detailed placement, after co-placement.
