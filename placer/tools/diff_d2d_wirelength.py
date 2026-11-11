@@ -29,7 +29,9 @@ The same ``mov_node_pos_all`` is shared by three placedbs:
     terminal_NIs (fixed in dp_tier[0] view); x/y_top_fil drives fillers.
   * dp_tier[1]: same with bot.
   * dp_terminal: x/y_term_mov drives movable cells (the terminal_NIs
-    themselves); x/y_term_fil drives fillers.
+    themselves); x/y_term_fil drives fillers. Its fixed cell anchors mirror
+    x/y_top_mov and x/y_bot_mov at every objective evaluation, including
+    Nesterov line-search candidates.
 '''
 
 import logging
@@ -216,10 +218,11 @@ class D2DCoPlace(object):
         self.params_bot = self.params.partition_tier[1]
         self.params_term = self.params.terminal
 
-        # x_term_mov / y_term_mov store dp_terminal outer-box left-bottom.
-        # tier terminal_NI uses terminalSize box; same bonding center requires
-        # tier pos = dp_terminal pos + terminalSpacing / 2 (per partition_aux).
-        self.term_shift = float(d2d_placer.die_spec.terminalSpacing) * 0.5
+        # Match the physical bonding pin in both views. Usually the difference
+        # is spacing/2, but Bookshelf rounds half-integer pin offsets when
+        # reading odd dimensions, so use the offsets actually loaded.
+        self._top_term_shift, self._bot_term_shift = self._build_terminal_shifts()
+        self._term_anchor_maps = self._build_term_anchor_maps()
 
         # ----- precompute mov_node_pos_all slice offsets -----
         # x part layout (then mirrored for y):
@@ -278,6 +281,81 @@ class D2DCoPlace(object):
             self.n_bot_mov, self.n_term_mov, self.n_top_fil, self.n_bot_fil,
             self.n_term_fil, self._half * 2)
         self.log_memory("constructed")
+
+    def _build_terminal_shifts(self):
+        """Return per-axis NI shifts that preserve the HBT pin's world position."""
+        def pin_offsets(db, lo, count):
+            offsets = np.empty((2, count), dtype=np.float64)
+            for i, node_id in enumerate(range(lo, lo + count)):
+                pins = np.asarray(db.node2pin_map[node_id], dtype=np.int64)
+                if not pins.size:
+                    raise ValueError("co-place HBT node has no pin: %s" %
+                                     db.node_names[node_id])
+                px = np.asarray(db.pin_offset_x)[pins]
+                py = np.asarray(db.pin_offset_y)[pins]
+                if np.any(px != px[0]) or np.any(py != py[0]):
+                    raise ValueError("co-place HBT pins must share one position: %s" %
+                                     db.node_names[node_id])
+                offsets[:, i] = (px[0], py[0])
+            return offsets
+
+        term_offsets = pin_offsets(self.dp_term.placedb, 0, self.n_term)
+        shifts = []
+        for dp, lo, hi in ((self.dp_top, self.top_term_lo, self.top_term_hi),
+                           (self.dp_bot, self.bot_term_lo, self.bot_term_hi)):
+            count = min(hi - lo, self.n_term)
+            shift = term_offsets[:, :count] - pin_offsets(dp.placedb, lo, count)
+            shifts.append(dp.basic_place.data_collections.pos[0].new_tensor(shift))
+        return tuple(shifts)
+
+    def _build_term_anchor_maps(self):
+        """Map terminal-layer cell anchors to their owning tier's movable cells.
+
+        Both AUX writers use the same Bookshelf cell names, but sort their
+        nodes independently. Only terminal_NIs are cell anchors; ordinary
+        fixed terminals keep their own positions. Build device indices once
+        so objective evaluations need no name lookups or host transfers.
+        """
+        def node_name(value):
+            return value.decode("utf-8") if isinstance(value, bytes) else str(value)
+
+        term_db = self.dp_term.placedb
+        anchor_lo = self.n_term_mov + term_db.num_terminals
+        anchor_hi = anchor_lo + term_db.num_terminal_NIs
+        anchors = {}
+        for anchor_id in range(anchor_lo, anchor_hi):
+            name = node_name(term_db.node_names[anchor_id])
+            if name in anchors:
+                raise ValueError("duplicate co-place terminal cell anchor: %s" % name)
+            anchors[name] = anchor_id
+
+        device = self.dp_term.basic_place.data_collections.pos[0].device
+        matched = set()
+        maps = []
+        for dp in (self.dp_top, self.dp_bot):
+            anchor_ids, cell_ids = [], []
+            for cell_id, value in enumerate(
+                    dp.placedb.node_names[:dp.placedb.num_movable_nodes]):
+                name = node_name(value)
+                anchor_id = anchors.get(name)
+                if anchor_id is None:
+                    continue
+                if anchor_id in matched:
+                    raise ValueError(
+                        "ambiguous co-place terminal cell anchor %s: "
+                        "multiple movable cells share its name" % name)
+                matched.add(anchor_id)
+                anchor_ids.append(anchor_id)
+                cell_ids.append(cell_id)
+            maps.append((torch.tensor(anchor_ids, dtype=torch.long, device=device),
+                         torch.tensor(cell_ids, dtype=torch.long, device=device)))
+
+        if len(matched) != len(anchors):
+            missing = [name for name, idx in anchors.items() if idx not in matched]
+            raise ValueError(
+                "co-place terminal cell anchors have no matching tier movable "
+                "cell (%d): %s" % (len(missing), ", ".join(missing[:5])))
+        return tuple(maps)
 
     def _install_compact_topology(self, dp, name, ignore_net_degree):
         """Replace a co-place layer's GPU net data with low-fanout topology."""
@@ -509,37 +587,43 @@ class D2DCoPlace(object):
                 y_bot_fil, y_term_fil)
 
     def _build_tier_pos(self, base, n_phys, n_total, n_mov, term_lo, term_hi,
-                        x_mov, y_mov, x_term, y_term, x_fil, y_fil):
+                        x_mov, y_mov, x_term, y_term, x_fil, y_fil, term_shift):
         """Assemble a tier placedb's pos tensor of length 2*n_total.
 
         Layout per coordinate axis:
             [movable cells]              len = n_mov
             [tier-internal fixed pieces] len = term_lo - n_mov   (e.g. fixed terminals; usually 0)
             [D2D terminal_NIs]           len = (term_hi - term_lo);
-                values = x_term + terminalSpacing/2 (tier NI left-bottom)
+                values = term left-bottom + difference in loaded pin offsets
+                (normally terminalSpacing/2)
             [tier-internal trailing fixed] len = n_phys - term_hi (usually 0)
             [fillers]                    len = n_total - n_phys
         """
         base = base.detach()
         ne_in_tier = term_hi - term_lo
         ne_used = min(ne_in_tier, x_term.shape[0])
-        shift = self.term_shift
 
         pos = torch.empty_like(base)
         pos.copy_(base)
         pos[:n_mov].copy_(x_mov)
         pos[n_total:n_total + n_mov].copy_(y_mov)
         if ne_used > 0:
-            pos[term_lo:term_lo + ne_used].copy_(x_term[:ne_used] + shift)
+            pos[term_lo:term_lo + ne_used].copy_(
+                x_term[:ne_used] + term_shift[0, :ne_used])
             pos[n_total + term_lo:n_total + term_lo + ne_used].copy_(
-                y_term[:ne_used] + shift)
+                y_term[:ne_used] + term_shift[1, :ne_used])
         pos[n_phys:n_total].copy_(x_fil)
         pos[n_total + n_phys:2 * n_total].copy_(y_fil)
         return pos
 
-    def _build_term_pos(self, x_term_mov, y_term_mov, x_term_fil, y_term_fil):
-        """Assemble dp_terminal's pos tensor with movable terminal_NIs +
-        fillers; trailing fixed nodes (if any) come from current base pos.
+    def _build_term_pos(self, x_term_mov, y_term_mov, x_term_fil, y_term_fil,
+                        x_top_mov, y_top_mov, x_bot_mov, y_bot_mov):
+        """Assemble HBTs, fillers, and cell anchors from the same candidate.
+
+        Anchors remain fixed in the terminal optimizer's view, but their
+        coordinates must follow the owning cells. Cell forces are already
+        computed by the tier objectives; these mirrors are not independent
+        optimization variables and keep the existing fixed-pin gradient mask.
         """
         base = self.dp_term.basic_place.data_collections.pos[0].detach()
         n_mov = self.n_term_mov
@@ -550,6 +634,13 @@ class D2DCoPlace(object):
         pos.copy_(base)
         pos[:n_mov].copy_(x_term_mov)
         pos[n_total:n_total + n_mov].copy_(y_term_mov)
+        for (anchor_ids, cell_ids), x_mov, y_mov in zip(
+                self._term_anchor_maps, (x_top_mov, x_bot_mov),
+                (y_top_mov, y_bot_mov)):
+            pos[:n_total].index_copy_(
+                0, anchor_ids, x_mov.index_select(0, cell_ids))
+            pos[n_total:].index_copy_(
+                0, anchor_ids, y_mov.index_select(0, cell_ids))
         pos[n_phys:n_total].copy_(x_term_fil)
         pos[n_total + n_phys:2 * n_total].copy_(y_term_fil)
         return pos
@@ -560,7 +651,7 @@ class D2DCoPlace(object):
             self.dp_top.basic_place.data_collections.pos[0], self.n_top_phys,
             self.n_top_total, self.n_top_mov, self.top_term_lo,
             self.top_term_hi, x_top_mov, y_top_mov, x_term_mov, y_term_mov,
-            x_top_fil, y_top_fil)
+            x_top_fil, y_top_fil, self._top_term_shift)
 
     def _build_pos_bot(self, x_bot_mov, y_bot_mov, x_term_mov, y_term_mov,
                        x_bot_fil, y_bot_fil):
@@ -568,11 +659,13 @@ class D2DCoPlace(object):
             self.dp_bot.basic_place.data_collections.pos[0], self.n_bot_phys,
             self.n_bot_total, self.n_bot_mov, self.bot_term_lo,
             self.bot_term_hi, x_bot_mov, y_bot_mov, x_term_mov, y_term_mov,
-            x_bot_fil, y_bot_fil)
+            x_bot_fil, y_bot_fil, self._bot_term_shift)
 
-    def _build_pos_term(self, x_term_mov, y_term_mov, x_term_fil, y_term_fil):
+    def _build_pos_term(self, x_term_mov, y_term_mov, x_term_fil, y_term_fil,
+                        x_top_mov, y_top_mov, x_bot_mov, y_bot_mov):
         return self._build_term_pos(x_term_mov, y_term_mov, x_term_fil,
-                                    y_term_fil)
+                                    y_term_fil, x_top_mov, y_top_mov,
+                                    x_bot_mov, y_bot_mov)
 
     def _build_all_pos(self, mov_node_pos_all):
         """Return (pos_top, pos_bot, pos_term) for the current mov_node_pos_all."""
@@ -580,7 +673,8 @@ class D2DCoPlace(object):
          y_tm, y_bm, y_em, y_tf, y_bf, y_ef) = self._split(mov_node_pos_all)
         pos_top = self._build_pos_top(x_tm, y_tm, x_em, y_em, x_tf, y_tf)
         pos_bot = self._build_pos_bot(x_bm, y_bm, x_em, y_em, x_bf, y_bf)
-        pos_term = self._build_pos_term(x_em, y_em, x_ef, y_ef)
+        pos_term = self._build_pos_term(x_em, y_em, x_ef, y_ef,
+                                        x_tm, y_tm, x_bm, y_bm)
         return pos_top, pos_bot, pos_term
 
     def _sync_placedb_pos(self, mov_node_pos_all):
@@ -604,7 +698,8 @@ class D2DCoPlace(object):
                                           y_bf)
             self.dp_bot.basic_place.data_collections.pos[0].data.copy_(pos_bot)
             del pos_bot
-            pos_term = self._build_pos_term(x_em, y_em, x_ef, y_ef)
+            pos_term = self._build_pos_term(x_em, y_em, x_ef, y_ef,
+                                            x_tm, y_tm, x_bm, y_bm)
             self.dp_term.basic_place.data_collections.pos[0].data.copy_(
                 pos_term)
 
@@ -743,7 +838,8 @@ class D2DCoPlace(object):
             del pos_bot, obj_bot
 
             with torch.no_grad():
-                pos_term = self._build_pos_term(x_em, y_em, x_ef, y_ef)
+                pos_term = self._build_pos_term(x_em, y_em, x_ef, y_ef,
+                                                x_tm, y_tm, x_bm, y_bm)
             pos_term.requires_grad_(True)
             obj_term, _ = self.model_term.obj_and_grad_fn(pos_term)
             scatter_term_grad(p, pos_term.grad)
@@ -804,7 +900,8 @@ class D2DCoPlace(object):
                 pos_bot[nb_total + nb_phys:2 * nb_total])
             del pos_bot
 
-            pos_term = self._build_pos_term(x_em, y_em, x_ef, y_ef)
+            pos_term = self._build_pos_term(x_em, y_em, x_ef, y_ef,
+                                            x_tm, y_tm, x_bm, y_bm)
             self.dp_term.basic_place.op_collections.move_boundary_op(pos_term)
             data[self._off_term_mov:self._off_term_mov + ne].copy_(
                 pos_term[:ne])
@@ -833,7 +930,8 @@ class D2DCoPlace(object):
                 pos_bot)
             bot_value = float(ov_bot.sum().item())
             del pos_bot, ov_bot
-            pos_term = self._build_pos_term(x_em, y_em, x_ef, y_ef)
+            pos_term = self._build_pos_term(x_em, y_em, x_ef, y_ef,
+                                            x_tm, y_tm, x_bm, y_bm)
             ov_term, _ = self.dp_term.basic_place.op_collections.density_overflow_op(
                 pos_term)
             term_value = float(ov_term.sum().item())
@@ -864,7 +962,8 @@ class D2DCoPlace(object):
                              self.dp_bot.basic_place.data_collections)
             del pos_bot
 
-            pos_term = self._build_pos_term(x_em, y_em, x_ef, y_ef)
+            pos_term = self._build_pos_term(x_em, y_em, x_ef, y_ef,
+                                            x_tm, y_tm, x_bm, y_bm)
             cur_term = EvalMetrics.EvalMetrics(iteration)
             cur_term.gamma = self.model_term.gamma.data
             cur_term.density_weight = self.model_term.density_weight.data
@@ -888,7 +987,8 @@ class D2DCoPlace(object):
             self.placer.op_wrapper.d2d_op_collections.pos_flattened_op(
                 self.placer.tier, flat_pos, [pos_top, pos_bot])
             del pos_top, pos_bot
-            pos_term = self._build_pos_term(x_em, y_em, x_ef, y_ef)
+            pos_term = self._build_pos_term(x_em, y_em, x_ef, y_ef,
+                                            x_tm, y_tm, x_bm, y_bm)
             terminal_names = self.dp_term.placedb.node_names[
                 :self.num_terminal_NIs]
             return self.placer.op_wrapper.d2d_op_collections.hpwl_d2d_op(
@@ -960,7 +1060,8 @@ class D2DCoPlace(object):
                  lambda: self._build_pos_bot(x_bm, y_bm, x_em, y_em, x_bf,
                                              y_bf)),
                 ("terminal", self.dp_term,
-                 lambda: self._build_pos_term(x_em, y_em, x_ef, y_ef)),
+                 lambda: self._build_pos_term(x_em, y_em, x_ef, y_ef,
+                                              x_tm, y_tm, x_bm, y_bm)),
             )
             for tag, dp, build_pos in entries:
                 figdir = "%s/%s/%s/plot" % (result_dir, tag, subdir)

@@ -148,8 +148,6 @@ void terminal_insert(const int *tier, const T *pin_x, const T *pin_y,
     // Bonding center from cross-tier pin bbox; DREAMPlace pos is left-bottom.
     const T center_x = (inner_min_x + inner_max_x) / 2;
     const T center_y = (inner_min_y + inner_max_y) / 2;
-    const float pin_ox = static_cast<float>(terminal_size_x) / 2.f;
-    const float pin_oy = static_cast<float>(terminal_size_y) / 2.f;
 
     terminal_count++;
     for (int tier_id = 0; tier_id < num_tiers; ++tier_id) {
@@ -177,7 +175,9 @@ void terminal_insert(const int *tier, const T *pin_x, const T *pin_y,
         auxListRef[tier_id].add_node(net_name, terminal_size_x,
                                      terminal_size_y, x, y, TERMINAL_NI);
       }
-      auxListRef[tier_id].add_pin(net_name, net_name, 'O', pin_ox, pin_oy);
+      // Bookshelf uses center-relative pin offsets; zero is the bonding
+      // center. DREAMPlace adds half the node size when reading the net.
+      auxListRef[tier_id].add_pin(net_name, net_name, 'O', 0.f, 0.f);
     }
   }
 }
@@ -269,14 +269,15 @@ void partitionAuxLauncher(
 
       const int index_pin = num_pins * tier_id + original_pin_id;
       IO_type = (pin_id == netpin_start[net_id]) ? 'I' : 'O';
-      // pin offsets are relative to the node center in DREAMPlace; AUX uses
-      // offsets relative to the lower-left corner.
+      // DREAMPlace stores lower-left offsets; Bookshelf stores center-relative
+      // offsets. Subtract exactly half the exported integer dimensions (the
+      // same conversion as add_node), not ceil(half), to preserve odd sizes.
       aux_list[tier_id].add_pin(
           net_name, node_name, IO_type,
           static_cast<float>(pin_offset_x[index_pin] -
-                             ceil(node_size_x[index_node] / 2)),
+                             static_cast<int>(node_size_x[index_node]) * 0.5),
           static_cast<float>(pin_offset_y[index_pin] -
-                             ceil(node_size_y[index_node] / 2)));
+                             static_cast<int>(node_size_y[index_node]) * 0.5));
     }
     // if all nodes are in the same tier, not cut
     if (num_nodes_in_net > 0 &&

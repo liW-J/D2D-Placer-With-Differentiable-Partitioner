@@ -269,7 +269,9 @@ class D2Dplacer:
 
         A single ``mov_node_pos_all = [top_cell | bot_cell | terminal]`` is
         shared by the three placedbs; per-layer preconditioned grads are
-        scattered back to it before the Nesterov step.
+        scattered back to it before the Nesterov step. The terminal layer's
+        fixed cell anchors mirror the current top/bottom cell coordinates
+        at every objective evaluation, including line-search candidates.
 
         Prerequisites: ``partition()`` and ``terminal_insert()`` must have
         been called so that ``dp_tier[0/1]`` and ``dp_terminal`` are properly

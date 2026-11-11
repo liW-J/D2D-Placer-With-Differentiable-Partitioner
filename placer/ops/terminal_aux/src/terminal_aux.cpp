@@ -130,8 +130,6 @@ void terminal_insert(
           static_cast<T>(terminal_size_x + terminal_spacing);
       const T term_h =
           static_cast<T>(terminal_size_y + terminal_spacing);
-      const float pin_ox = static_cast<float>(term_w) / 2.f;
-      const float pin_oy = static_cast<float>(term_h) / 2.f;
 
       terminal_count++;
       // LOG(INFO, "terminal_count: %d", terminal_count);
@@ -163,7 +161,9 @@ void terminal_insert(
 
         // LOG(DEBUG, "Intersection Center: (%f, %f)", center_x, center_y);
 
-        terminalAuxRef.add_pin(tier_net_name, net_name, 'O', pin_ox, pin_oy);
+        // Bookshelf pin offsets are relative to the node center. The reader
+        // adds half the outer-box size to obtain its lower-left offset.
+        terminalAuxRef.add_pin(tier_net_name, net_name, 'O', 0.f, 0.f);
       }
     }
   }
@@ -222,13 +222,12 @@ void terminalAuxLauncher(
           terminal_aux.add_net(tier_net_name);
           for (int pin_id = netpin_start[net_id];
                pin_id < netpin_start[net_id + 1]; ++pin_id) {
-            int node_id = pin2node_map[flat_netpin[pin_id]];
+            const int original_pin_id = flat_netpin[pin_id];
+            const int node_id = pin2node_map[original_pin_id];
             if (node_id < 0 || node_id >= num_movable_nodes) {
               continue;
             }
             if (tier[node_id] == tier_id) {
-              int index_node = num_movable_nodes * tier_id + node_id;
-
               const std::string node_name = bookshelfNodeName(node_names[node_id], node_id);
               if (!terminal_aux.check_node_exist(node_name)) {
                 int node_pos_x = pos_2d_x[node_id];
@@ -237,16 +236,17 @@ void terminalAuxLauncher(
                                       node_pos_y, TERMINAL_NI);
               }
               if (!terminal_aux.check_pin_exist(tier_net_name, node_name)) {
-                int index_pin = num_pins * tier_id + pin_id;
+                const int index_pin = num_pins * tier_id + original_pin_id;
                 (pin_id == netpin_start[net_id]) ? IO_type = 'I'
                                                  : IO_type = 'O';
-                // when add pin to aux file
+                // This zero-size anchor mirrors the cell's lower-left corner.
+                // Its Bookshelf center is that same point, so preserve the
+                // DREAMPlace lower-left pin offset without subtracting the
+                // original cell's half-size.
                 terminal_aux.add_pin(
                     tier_net_name, node_name, IO_type,
-                    static_cast<float>(pin_offset_x[index_pin] -
-                                       ceil(node_size_x[index_node] / 2)),
-                    static_cast<float>(pin_offset_y[index_pin] -
-                                       ceil(node_size_y[index_node] / 2)));
+                    static_cast<float>(pin_offset_x[index_pin]),
+                    static_cast<float>(pin_offset_y[index_pin]));
               }
             }
           }
