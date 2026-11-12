@@ -1,4 +1,4 @@
-"""CPU regression tests for HBT anchors during joint placement.
+"""CPU and CUDA regression tests for HBT anchors during joint placement.
 
 Run with ``python3 -m unittest discover -s unittest/co_place_unittest -v``.
 Only DREAMPlace's compiled dependencies and placement models are replaced;
@@ -6,6 +6,7 @@ mapping, position assembly, objective dispatch, metrics and writeback use the
 production D2DCoPlace implementation and real PyTorch tensors.
 """
 
+import functools
 import importlib.util
 from pathlib import Path
 import sys
@@ -78,8 +79,9 @@ class _Metrics:
         self.overflow = ops["overflow"](pos)[0]
 
 
-def _database(names, n_mov, n_fixed, n_ni, xs, ys, terminal=False):
-    pos = torch.tensor(xs + ys, dtype=torch.float64, requires_grad=True)
+def _database(names, n_mov, n_fixed, n_ni, xs, ys, terminal=False,
+              device="cpu", dtype=torch.float64):
+    pos = torch.tensor(xs + ys, dtype=dtype, device=device, requires_grad=True)
     placedb = SimpleNamespace(
         node_names=names,
         node2pin_map=[np.array([i]) for i in range(len(names))],
@@ -141,14 +143,27 @@ def _helper(placer=None):
 
 
 class AnchorSyncTest(unittest.TestCase):
+    device = "cpu"
+    dtype = torch.float64
+
+    def setUp(self):
+        factory = functools.partial(_database, device=self.device, dtype=self.dtype)
+        patcher = patch(__name__ + "._database", factory)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_names_map_current_cells_without_moving_true_fixed_nodes(self):
         co = _helper()
         p = co.pack_initial()
+        self.assertEqual(p.device.type, torch.device(self.device).type)
+        for anchor_ids, cell_ids in co._term_anchor_maps:
+            self.assertEqual(anchor_ids.device, p.device)
+            self.assertEqual(cell_ids.device, p.device)
         original_base = co.dp_term.pos.detach().clone()
         top, bot, term = co._build_all_pos(p)
         expected = torch.tensor(
             [10, 700, 60, 0, 20, 40, 70,
-             110, 800, 160, 100, 120, 140, 170], dtype=p.dtype)
+             110, 800, 160, 100, 120, 140, 170], dtype=p.dtype, device=p.device)
         torch.testing.assert_close(term, expected)
         torch.testing.assert_close(co.dp_term.pos, original_base)
         # The existing HBT -> tier synchronization still includes spacing/2.
@@ -212,7 +227,7 @@ class AnchorSyncTest(unittest.TestCase):
             co.params.result_dir_root = temp_dir
             co.plot(p, 2)
         self.assertEqual(len(drawn), 1)
-        torch.testing.assert_close(drawn[0], expected)
+        torch.testing.assert_close(drawn[0], expected.to(drawn[0].device))
 
         co.writeback(p)
         torch.testing.assert_close(co.dp_term.pos, expected)
@@ -253,6 +268,17 @@ class AnchorSyncTest(unittest.TestCase):
         placer.dreamplace.dp_terminal.placedb.node_names[2] = "top_b"
         with self.assertRaises(ValueError):
             _helper(placer)
+
+
+@unittest.skipUnless(torch.cuda.is_available(), "CUDA device required")
+class CUDAAnchorSyncTest(AnchorSyncTest):
+    device = "cuda:0"
+    dtype = torch.float32
+
+
+@unittest.skipUnless(torch.cuda.is_available(), "CUDA device required")
+class CUDADoubleAnchorSyncTest(CUDAAnchorSyncTest):
+    dtype = torch.float64
 
 
 if __name__ == "__main__":

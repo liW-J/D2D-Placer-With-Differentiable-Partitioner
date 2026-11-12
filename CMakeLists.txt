@@ -158,6 +158,13 @@ if (CUDA_FOUND)
   cuda_select_nvcc_arch_flags(CUDA_ARCH_FLAGS ${CMAKE_CUDA_ARCHITECTURES})
   message(STATUS "CUDA_ARCH_FLAGS: ${CUDA_ARCH_FLAGS}")
   list(APPEND CUDA_NVCC_FLAGS ${CUDA_ARCH_FLAGS} --compiler-options;-fPIC)
+  # FindCUDA does not propagate CUDA_VISIBILITY_PRESET to NVCC's host code.
+  # Keep generated kernel stubs local to each Python extension: otherwise
+  # loading multiple detailed-placement modules can bind a stub to another
+  # module's CUDA registration (invalid device ordinal / illegal access).
+  if(UNIX AND NOT APPLE AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    list(APPEND CUDA_NVCC_FLAGS --compiler-options;-fvisibility=hidden)
+  endif()
 endif(CUDA_FOUND)
 
 
